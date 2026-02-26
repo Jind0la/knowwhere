@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KnowWhere Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            kw: { 900: '#0a0e1a', 800: '#111827', 700: '#1e293b', 600: '#334155', accent: '#818cf8' }
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="bg-kw-900 text-gray-200 min-h-screen font-sans">
+
+  <header class="border-b border-kw-600 px-6 py-4 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded-lg bg-kw-accent flex items-center justify-center text-white font-bold text-sm">KW</div>
+      <h1 class="text-xl font-semibold text-white">KnowWhere <span class="text-kw-accent">Dashboard</span></h1>
+    </div>
+    <div id="health-badge" class="flex items-center gap-2 text-sm">
+      <span class="w-2 h-2 rounded-full bg-gray-500" id="health-dot"></span>
+      <span id="health-text">connecting…</span>
+    </div>
+  </header>
+
+  <main class="max-w-6xl mx-auto px-6 py-8 grid gap-6">
+
+    <!-- Stats Row -->
+    <section class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div class="bg-kw-800 rounded-xl p-5 border border-kw-700">
+        <p class="text-xs uppercase tracking-wider text-gray-400 mb-1">Server Status</p>
+        <p class="text-2xl font-bold text-white" id="stat-status">–</p>
+      </div>
+      <div class="bg-kw-800 rounded-xl p-5 border border-kw-700">
+        <p class="text-xs uppercase tracking-wider text-gray-400 mb-1">Total Nodes</p>
+        <p class="text-2xl font-bold text-kw-accent" id="stat-nodes">–</p>
+      </div>
+      <div class="bg-kw-800 rounded-xl p-5 border border-kw-700">
+        <p class="text-xs uppercase tracking-wider text-gray-400 mb-1">Dream Cycles</p>
+        <p class="text-2xl font-bold text-white" id="stat-dreams">–</p>
+        <p class="text-xs text-gray-500 mt-1" id="stat-dream-last">last run: –</p>
+      </div>
+    </section>
+
+    <!-- Search -->
+    <section class="bg-kw-800 rounded-xl p-5 border border-kw-700">
+      <h2 class="text-sm uppercase tracking-wider text-gray-400 mb-3">Fractal Search</h2>
+      <div class="flex gap-3">
+        <input
+          id="search-input"
+          type="text"
+          placeholder="Search memory nodes…"
+          class="flex-1 bg-kw-700 border border-kw-600 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-kw-accent"
+        />
+        <button
+          id="search-btn"
+          class="bg-kw-accent hover:bg-indigo-500 text-white font-medium px-5 py-2 rounded-lg transition"
+        >
+          Search
+        </button>
+      </div>
+      <div id="search-results" class="mt-4 space-y-2 hidden"></div>
+    </section>
+
+    <!-- Recent Nodes -->
+    <section class="bg-kw-800 rounded-xl p-5 border border-kw-700">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-sm uppercase tracking-wider text-gray-400">Recent Nodes</h2>
+        <button id="refresh-btn" class="text-xs text-kw-accent hover:underline">Refresh</button>
+      </div>
+      <div id="recent-nodes" class="space-y-2">
+        <p class="text-gray-500 text-sm">Loading…</p>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

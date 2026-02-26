@@ -1,0 +1,39 @@
+use utoipa::OpenApi;
+
+use crate::api::routes;
+use crate::memory::dream::DreamStatus;
+use crate::memory::{FractalNode, Relation};
+use crate::multimodal::MultimodalData;
+
+#[derive(OpenApi)]
+#[openapi(
+    info(
+        title = "KnowWhere API",
+        version = "0.1.0",
+        description = "Pointer-first fractal memory service for AI agents"
+    ),
+    paths(
+        routes::health,
+        routes::embed_text,
+        routes::store_session,
+        routes::store_external,
+        routes::retrieve,
+        routes::retrieve_fractal,
+        routes::recent_nodes,
+        routes::dream_status,
+    ),
+    components(schemas(
+        routes::HealthResponse,
+        routes::EmbedRequest,
+        routes::EmbedResponse,
+        routes::StoreSessionRequest,
+        routes::StoreExternalRequest,
+        routes::StoreNodeResponse,
+        routes::RetrieveFractalRequest,
+        FractalNode,
+        Relation,
+        MultimodalData,
+        DreamStatus,
+    ))
+)]
+pub struct ApiDoc;

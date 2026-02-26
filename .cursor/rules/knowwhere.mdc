@@ -1,0 +1,38 @@
+---
+alwaysApply: true
+---
+# KnowWhere Project Rules – Strict & Non-Negotiable
+
+## Core Philosophy – Pointer-First
+- **Sessions / Chats / Agent-Interaktionen**: Immer den vollständigen Text + Embeddings speichern.
+- **Externe Daten** (Kamera-Bilder, Google Drive, Frigate, Sensoren etc.): **NIE** die Rohdatei speichern. Nur: `original_pointer` (String) + Embedding + Metadaten.
+- Jeder neue Knoten muss die Regel `content: Option<String>` für Sessions und `original_pointer: Option<String>` für Externe haben.
+
+## Tech Stack (2026 Standard)
+- Backend: Rust 1.85+ mit Axum 0.8, Tokio, Tower
+- Embeddings: pluggable (Grok, OpenAI, local via candle oder ollama)
+- Vector Store: USearch (für MVP) später erweiterbar auf LanceDB
+- Graph: einfacher in-memory + später NebulaGraph/Memgraph
+- Storage: S3/MinIO kompatibel (nur Pointers + kleine Metadaten)
+- SDK: Python zuerst (LangChain/LlamaIndex compatible)
+
+## Coding Standards
+- Immer async
+- Fehler mit anyhow::Result
+- Logging mit tracing
+- Keine raw data storage außer bei Sessions
+- Jede API-Route muss in OpenAPI-Spec dokumentiert werden
+- Tests: cargo test immer zuerst
+
+## Workflow in Cursor
+- Immer zuerst Plan Mode (Shift+Tab) aktivieren
+- Referenziere immer PRD.md und ARCHITECTURE.md
+- Baue eine Funktion / Datei nach der anderen
+- Nach jedem großen Change: "cargo check" und "cargo test" ausführen
+
+## Never
+- Keine raw Dateien speichern (außer Sessions)
+- Keine Credentials in Code
+- Kein globaler State ohne Mutex/Arc
+
+Dieses Rule-File gilt für ALLE zukünftigen Prompts.
