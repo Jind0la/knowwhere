@@ -1,13 +1,11 @@
-"""KnowWhere Python SDK – Client and LangChain Memory integration."""
+"""KnowWhere Python SDK – HTTP client for the fractal memory service."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import Any, Optional
 
 import requests
-from pydantic import BaseModel, Field
-from langchain_core.chat_history import BaseChatMessageHistory
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 
 
 class KnowWhereError(Exception):
@@ -19,25 +17,42 @@ class KnowWhereError(Exception):
         super().__init__(f"KnowWhere API error {status_code}: {detail}")
 
 
-class StoreNodeResponse(BaseModel):
+@dataclass
+class StoreNodeResponse:
     id: str
     message: str
 
 
-class HealthResponse(BaseModel):
+@dataclass
+class HealthResponse:
     status: str
     node_count: int
 
 
-class EmbedResponse(BaseModel):
+@dataclass
+class EmbedResponse:
     vector: list[float]
     dimension: int
     provider: str
 
 
-class DreamStatusResponse(BaseModel):
+@dataclass
+class DreamStatusResponse:
     last_run: Optional[str] = None
     cycle_count: int = 0
+
+
+def _sanitize_error(text: str, status_code: int) -> str:
+    """Replace HTML error pages with a clear message, truncate long text."""
+    stripped = text.lstrip()
+    if stripped.startswith(("<!DOCTYPE", "<html", "<HTML")):
+        return (
+            f"Server returned HTML instead of JSON (status {status_code},"
+            " wrong port or server not running?)"
+        )
+    if len(text) > 500:
+        return text[:500] + "..."
+    return text
 
 
 class KnowWhereClient:
@@ -45,9 +60,9 @@ class KnowWhereClient:
 
     def __init__(
         self,
-        base_url: str = "http://localhost:3000",
+        base_url: str = "http://localhost:3737",
         api_key: Optional[str] = None,
-        timeout: float = 30.0,
+        timeout: float = 10.0,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
@@ -67,16 +82,35 @@ class KnowWhereClient:
             method, url, json=json, timeout=self.timeout,
         )
         if resp.status_code >= 400:
-            raise KnowWhereError(resp.status_code, resp.text)
+            raise KnowWhereError(
+                resp.status_code,
+                _sanitize_error(resp.text, resp.status_code),
+            )
         return resp
+
+    def is_alive(self, timeout: float = 2.0) -> bool:
+        """Quick health probe – returns True if the server responds 200."""
+        try:
+            resp = self._session.get(
+                f"{self.base_url}/health", timeout=timeout,
+            )
+            return resp.status_code == 200
+        except Exception:
+            return False
 
     def health(self) -> HealthResponse:
         resp = self._request("GET", "/health")
-        return HealthResponse(**resp.json())
+        data = resp.json()
+        return HealthResponse(status=data["status"], node_count=data["node_count"])
 
     def embed(self, text: str) -> EmbedResponse:
         resp = self._request("POST", "/embed", json={"text": text})
-        return EmbedResponse(**resp.json())
+        data = resp.json()
+        return EmbedResponse(
+            vector=data["vector"],
+            dimension=data["dimension"],
+            provider=data["provider"],
+        )
 
     def store_session(
         self,
@@ -90,7 +124,8 @@ class KnowWhereClient:
         if vector:
             payload["vector"] = vector
         resp = self._request("POST", "/store_session", json=payload)
-        return StoreNodeResponse(**resp.json())
+        data = resp.json()
+        return StoreNodeResponse(id=data["id"], message=data["message"])
 
     def store_external(
         self,
@@ -108,7 +143,8 @@ class KnowWhereClient:
         if multimodal:
             payload["multimodal"] = multimodal
         resp = self._request("POST", "/store_external", json=payload)
-        return StoreNodeResponse(**resp.json())
+        data = resp.json()
+        return StoreNodeResponse(id=data["id"], message=data["message"])
 
     def retrieve(self, node_id: str) -> dict[str, Any]:
         resp = self._request("GET", f"/retrieve/{node_id}")
@@ -130,70 +166,12 @@ class KnowWhereClient:
 
     def dream_status(self) -> DreamStatusResponse:
         resp = self._request("GET", "/dream/status")
-        return DreamStatusResponse(**resp.json())
+        data = resp.json()
+        return DreamStatusResponse(
+            last_run=data.get("last_run"),
+            cycle_count=data.get("cycle_count", 0),
+        )
 
     def recent_nodes(self, limit: int = 20) -> list[dict[str, Any]]:
         resp = self._request("GET", f"/nodes/recent?limit={limit}")
         return resp.json()
-
-
-class KnowWhereMemory(BaseChatMessageHistory):
-    """LangChain-compatible chat history backed by KnowWhere fractal retrieval.
-
-    Stores every message as a session node and retrieves relevant
-    context via embedding similarity + fractal zooming.
-    """
-
-    def __init__(
-        self,
-        client: KnowWhereClient,
-        top_k: int = 5,
-        max_depth: int = 3,
-    ) -> None:
-        self.client = client
-        self.top_k = top_k
-        self.max_depth = max_depth
-        self._messages: list[BaseMessage] = []
-
-    @property
-    def messages(self) -> list[BaseMessage]:
-        return list(self._messages)
-
-    def add_message(self, message: BaseMessage) -> None:
-        self._messages.append(message)
-        content = message.content if isinstance(message.content, str) else str(message.content)
-        role = "Human" if isinstance(message, HumanMessage) else "AI"
-        try:
-            self.client.store_session(
-                content=f"{role}: {content}",
-                metadata={"source": "langchain", "role": role.lower()},
-            )
-        except Exception as exc:
-            print(f"[KnowWhereMemory] store error: {exc}")
-
-    def clear(self) -> None:
-        self._messages = []
-
-    def search_context(self, query: str) -> list[dict[str, Any]]:
-        """Retrieve relevant past context for a query via fractal search."""
-        embed_resp = self.client.embed(query)
-        return self.client.retrieve_fractal(
-            embed_resp.vector,
-            top_k=self.top_k,
-            max_depth=self.max_depth,
-        )
-
-    def get_context_string(self, query: str) -> str:
-        """Retrieve relevant past context as formatted string."""
-        try:
-            nodes = self.search_context(query)
-            parts: list[str] = []
-            for node in nodes:
-                if node.get("content"):
-                    parts.append(node["content"])
-                elif node.get("original_pointer"):
-                    parts.append(f"[pointer: {node['original_pointer']}]")
-            return "\n---\n".join(parts)
-        except Exception as exc:
-            print(f"[KnowWhereMemory] search error: {exc}")
-            return ""

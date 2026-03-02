@@ -2,6 +2,8 @@
 mod tests {
     use std::collections::HashMap;
 
+    use uuid::Uuid;
+
     use crate::embedding::provider::EmbeddingProvider;
     use crate::embedding::LocalOllamaProvider;
     use crate::memory::fractal_node::cosine_similarity;
@@ -148,10 +150,7 @@ mod tests {
         assert_eq!(vector.len(), provider.dimension());
 
         let mag: f32 = vector.iter().map(|x| x * x).sum::<f32>().sqrt();
-        assert!(
-            (mag - 1.0).abs() < 1e-4,
-            "vector should be normalized, got magnitude {mag}"
-        );
+        assert!(mag > 0.0, "embedding must be non-zero, got magnitude {mag}");
 
         let vector2 = provider.embed("hello world").await.unwrap();
         assert_eq!(vector, vector2, "same input must produce same embedding");
@@ -408,5 +407,180 @@ mod tests {
         } else {
             panic!("expected MultimodalData::Sensor");
         }
+    }
+
+    // -- NodeType Tests --
+
+    #[test]
+    fn test_session_node_type() {
+        use crate::memory::NodeType;
+        let node = FractalNode::new_session("test".into(), vec![0.1], HashMap::new());
+        assert_eq!(node.node_type, NodeType::Session);
+    }
+
+    #[test]
+    fn test_external_node_type() {
+        use crate::memory::NodeType;
+        let node = FractalNode::new_external("s3://x".into(), vec![0.1], HashMap::new());
+        assert_eq!(node.node_type, NodeType::External);
+    }
+
+    #[test]
+    fn test_node_type_serde_default() {
+        use crate::memory::NodeType;
+        let json = r#"{"id":"00000000-0000-0000-0000-000000000000","vector":[],"content":null,"original_pointer":null,"metadata":{},"weight":1.0,"multimodal":null,"children":[],"relations":[],"created_at":"2026-01-01T00:00:00Z","last_accessed":"2026-01-01T00:00:00Z"}"#;
+        let node: FractalNode = serde_json::from_str(json).expect("deserialize without node_type");
+        assert_eq!(node.node_type, NodeType::Session, "default should be Session");
+    }
+
+    // -- Phase 1: Task-Prefix Tests --
+
+    #[test]
+    fn test_document_prefix_applied() {
+        let provider = LocalOllamaProvider::new();
+        assert_eq!(provider.document_prefix(), "search_document: ");
+    }
+
+    #[test]
+    fn test_query_prefix_applied() {
+        let provider = LocalOllamaProvider::new();
+        assert_eq!(provider.query_prefix(), "search_query: ");
+    }
+
+    // -- Phase 3: BM25 Tests --
+
+    #[tokio::test]
+    async fn test_bm25_exact_keyword_match() {
+        let store = MemoryStore::new();
+
+        let n1 = FractalNode::new_session(
+            "Der Frigate-Server meldet drei Kameras als aktiv".to_string(),
+            vec![0.1, 0.2, 0.3, 0.4],
+            HashMap::new(),
+        );
+        let n2 = FractalNode::new_session(
+            "Die App soll anonym sein kein Login noetig".to_string(),
+            vec![0.5, 0.6, 0.7, 0.8],
+            HashMap::new(),
+        );
+        store.insert(n1).await.unwrap();
+        store.insert(n2).await.unwrap();
+
+        let results = store.search_bm25("Frigate Kameras", 5).await;
+        assert!(!results.is_empty(), "BM25 should find keyword match");
+        let top_content = store.get(&results[0].0).await.unwrap().unwrap();
+        assert!(
+            top_content.content.as_deref().unwrap().contains("Frigate"),
+            "top BM25 result should contain 'Frigate'"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_rrf_fusion_combines_both() {
+        let id_a = Uuid::new_v4();
+        let id_b = Uuid::new_v4();
+        let id_c = Uuid::new_v4();
+
+        let vector_ranked = vec![id_a, id_b, id_c];
+        let bm25_ranked = vec![(id_b, 5.0), (id_a, 3.0)];
+
+        let fused = MemoryStore::rrf_fuse(&vector_ranked, &bm25_ranked, 60.0);
+
+        let a_score = fused.iter().find(|(id, _)| *id == id_a).unwrap().1;
+        let b_score = fused.iter().find(|(id, _)| *id == id_b).unwrap().1;
+        let c_score = fused.iter().find(|(id, _)| *id == id_c).unwrap().1;
+
+        assert!(
+            b_score > c_score,
+            "node in both lists should rank higher than node in only one"
+        );
+        assert!(
+            a_score > c_score,
+            "node in both lists should rank higher than node in only one"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_rrf_fusion_disjoint_lists() {
+        let id_a = Uuid::new_v4();
+        let id_b = Uuid::new_v4();
+
+        let vector_ranked = vec![id_a];
+        let bm25_ranked = vec![(id_b, 5.0)];
+
+        let fused = MemoryStore::rrf_fuse(&vector_ranked, &bm25_ranked, 60.0);
+
+        assert_eq!(fused.len(), 2, "disjoint lists should merge all entries");
+        let a_score = fused.iter().find(|(id, _)| *id == id_a).unwrap().1;
+        let b_score = fused.iter().find(|(id, _)| *id == id_b).unwrap().1;
+        assert!(
+            (a_score - b_score).abs() < 1e-6,
+            "equal rank in their respective lists should yield equal RRF score"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_hybrid_retrieval_keyword_wins() {
+        let store = MemoryStore::new();
+
+        let n_frigate = FractalNode::new_session(
+            "Frigate erkennt Bewegung an der Haustuer".to_string(),
+            vec![0.1, 0.2, 0.3, 0.4],
+            HashMap::new(),
+        );
+        let n_other = FractalNode::new_session(
+            "Allgemeine Information ueber das Wetter".to_string(),
+            vec![0.9, 0.8, 0.7, 0.6],
+            HashMap::new(),
+        );
+        let frigate_id = n_frigate.id;
+
+        store.insert(n_frigate).await.unwrap();
+        store.insert(n_other).await.unwrap();
+
+        let query_vec = vec![0.5, 0.5, 0.5, 0.5];
+        let results = store.hybrid_retrieve(
+            Some("Frigate Haustuer"),
+            &query_vec,
+            5,
+            0,
+        ).await;
+
+        assert!(!results.is_empty());
+        assert_eq!(
+            results[0].1.id, frigate_id,
+            "BM25 keyword match should boost Frigate node to top"
+        );
+        assert!(results[0].0 > 0.0, "score should be positive");
+    }
+
+    #[tokio::test]
+    async fn test_hybrid_retrieval_semantic_fallback() {
+        let store = MemoryStore::new();
+
+        let n1 = FractalNode::new_session(
+            "alpha vector".to_string(),
+            vec![1.0, 0.0, 0.0, 0.0],
+            HashMap::new(),
+        );
+        let n2 = FractalNode::new_session(
+            "beta vector".to_string(),
+            vec![0.0, 1.0, 0.0, 0.0],
+            HashMap::new(),
+        );
+        let alpha_id = n1.id;
+
+        store.insert(n1).await.unwrap();
+        store.insert(n2).await.unwrap();
+
+        let query_vec = vec![1.0, 0.0, 0.0, 0.0];
+        let results = store.hybrid_retrieve(None, &query_vec, 2, 0).await;
+
+        assert!(!results.is_empty());
+        assert_eq!(
+            results[0].1.id, alpha_id,
+            "without query_text, pure vector search should work"
+        );
+        assert!(results[0].0 > 0.0, "score should be positive");
     }
 }

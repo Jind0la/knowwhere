@@ -9,10 +9,81 @@ use serde_json::Value;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
-use crate::embedding::EmbeddingProvider;
+use crate::embedding::{EmbeddingProvider, embed_document, embed_query};
 use crate::memory::dream::DreamStatus;
-use crate::memory::{DreamMode, FractalNode};
+use crate::memory::{DreamMode, FractalNode, NodeType};
 use crate::multimodal::MultimodalData;
+
+#[derive(Serialize, ToSchema)]
+pub struct ScoredNode {
+    pub score: f32,
+    pub id: Uuid,
+    #[serde(default)]
+    pub node_type: NodeType,
+    pub content: Option<String>,
+    pub original_pointer: Option<String>,
+    #[schema(value_type = Object)]
+    pub metadata: HashMap<String, serde_json::Value>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+impl ScoredNode {
+    fn from_node(score: f32, n: FractalNode) -> Self {
+        Self {
+            score,
+            id: n.id,
+            node_type: n.node_type,
+            content: n.content,
+            original_pointer: n.original_pointer,
+            metadata: n.metadata,
+            created_at: n.created_at,
+        }
+    }
+}
+
+/// Strip markdown/table/emoji formatting for cleaner embeddings.
+fn clean_for_embedding(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty()
+            || trimmed == "---"
+            || trimmed == "```"
+            || trimmed.starts_with("| -")
+            || trimmed.starts_with("|--")
+        {
+            continue;
+        }
+        let mut cleaned: String = trimmed
+            .replace("**", "")
+            .replace("##", "")
+            .replace('#', "")
+            .replace('|', " ")
+            .replace("✅", "")
+            .replace("❌", "")
+            .replace("⚠️", "")
+            .replace("🤖", "")
+            .replace("🚀", "")
+            .replace("🧠", "")
+            .replace("```", "");
+        // Collapse whitespace
+        while cleaned.contains("  ") {
+            cleaned = cleaned.replace("  ", " ");
+        }
+        let cleaned = cleaned.trim().trim_start_matches('-').trim();
+        if cleaned.is_empty() || cleaned.len() < 3 {
+            continue;
+        }
+        if !out.is_empty() {
+            out.push(' ');
+        }
+        out.push_str(cleaned);
+    }
+    if out.len() > 1024 {
+        out.truncate(out.floor_char_boundary(1024));
+    }
+    out
+}
 use crate::storage::MemoryStore;
 
 #[derive(Clone)]
@@ -80,9 +151,7 @@ pub async fn embed_text(
     State(state): State<AppState>,
     Json(req): Json<EmbedRequest>,
 ) -> Result<Json<EmbedResponse>, (StatusCode, String)> {
-    let vector = state
-        .embedding
-        .embed(&req.text)
+    let vector = embed_query(&*state.embedding, &req.text)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
@@ -130,11 +199,12 @@ pub async fn store_session(
 ) -> Result<(StatusCode, Json<StoreNodeResponse>), (StatusCode, String)> {
     let vector = match req.vector {
         Some(v) if !v.is_empty() => v,
-        _ => state
-            .embedding
-            .embed(&req.content)
-            .await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("auto-embed failed: {e}")))?,
+        _ => {
+            let embed_text = clean_for_embedding(&req.content);
+            embed_document(&*state.embedding, &embed_text)
+                .await
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("auto-embed failed: {e}")))?
+        }
     };
 
     let node = FractalNode::new_session(req.content, vector, req.metadata);
@@ -191,12 +261,12 @@ pub async fn store_external(
                 if !emb.is_empty() {
                     emb.to_vec()
                 } else {
-                    state.embedding.embed(&req.pointer).await.map_err(|e| {
+                    embed_document(&*state.embedding, &req.pointer).await.map_err(|e| {
                         (StatusCode::INTERNAL_SERVER_ERROR, format!("auto-embed failed: {e}"))
                     })?
                 }
             } else {
-                state.embedding.embed(&req.pointer).await.map_err(|e| {
+                embed_document(&*state.embedding, &req.pointer).await.map_err(|e| {
                     (StatusCode::INTERNAL_SERVER_ERROR, format!("auto-embed failed: {e}"))
                 })?
             }
@@ -257,6 +327,8 @@ pub async fn retrieve(
 #[derive(Deserialize, ToSchema)]
 pub struct RetrieveFractalRequest {
     pub query_vector: Vec<f32>,
+    #[serde(default)]
+    pub query_text: Option<String>,
     #[serde(default = "default_top_k")]
     pub top_k: usize,
     #[serde(default = "default_max_depth")]
@@ -276,19 +348,88 @@ fn default_max_depth() -> usize {
     tag = "memory",
     request_body = RetrieveFractalRequest,
     responses(
-        (status = 200, description = "Fractal retrieval results", body = Vec<FractalNode>)
+        (status = 200, description = "Fractal retrieval results", body = Vec<ScoredNode>)
     )
 )]
 pub async fn retrieve_fractal(
     State(state): State<AppState>,
     Json(req): Json<RetrieveFractalRequest>,
-) -> Json<Vec<FractalNode>> {
-    tracing::info!(top_k = req.top_k, max_depth = req.max_depth, "fractal retrieve");
+) -> Json<Vec<ScoredNode>> {
+    tracing::info!(
+        top_k = req.top_k,
+        max_depth = req.max_depth,
+        has_query_text = req.query_text.is_some(),
+        "fractal retrieve"
+    );
     let results = state
         .store
-        .retrieve_fractal(&req.query_vector, req.top_k, req.max_depth)
+        .hybrid_retrieve(
+            req.query_text.as_deref(),
+            &req.query_vector,
+            req.top_k,
+            req.max_depth,
+        )
         .await;
-    Json(results)
+    let scored: Vec<ScoredNode> = results
+        .into_iter()
+        .map(|(score, node)| ScoredNode::from_node(score, node))
+        .collect();
+    Json(scored)
+}
+
+// -- Delete Node --
+
+#[utoipa::path(
+    delete,
+    path = "/nodes/{id}",
+    tag = "memory",
+    params(
+        ("id" = Uuid, Path, description = "Node UUID to delete")
+    ),
+    responses(
+        (status = 200, description = "Node deleted"),
+        (status = 404, description = "Node not found", body = String),
+        (status = 500, description = "Internal error", body = String)
+    )
+)]
+pub async fn delete_node(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<StoreNodeResponse>, (StatusCode, String)> {
+    tracing::info!(%id, "deleting node");
+    match state.store.delete(&id).await {
+        Ok(true) => Ok(Json(StoreNodeResponse {
+            id,
+            message: "node deleted".to_string(),
+        })),
+        Ok(false) => Err((StatusCode::NOT_FOUND, format!("node {id} not found"))),
+        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
+    }
+}
+
+// -- Purge Dummy Nodes --
+
+#[derive(Serialize, ToSchema)]
+pub struct PurgeResponse {
+    pub removed: usize,
+    pub message: String,
+}
+
+#[utoipa::path(
+    post,
+    path = "/nodes/purge_dummy",
+    tag = "memory",
+    responses(
+        (status = 200, description = "Dummy nodes purged", body = PurgeResponse)
+    )
+)]
+pub async fn purge_dummy(State(state): State<AppState>) -> Json<PurgeResponse> {
+    let removed = state.store.purge_dummy_vectors().await;
+    tracing::info!(removed, "purged dummy-vector nodes");
+    Json(PurgeResponse {
+        removed,
+        message: format!("{removed} dummy nodes removed"),
+    })
 }
 
 // -- Recent Nodes --
@@ -318,6 +459,63 @@ pub async fn recent_nodes(
 ) -> Json<Vec<FractalNode>> {
     let limit = q.limit.min(100);
     Json(state.store.recent(limit).await)
+}
+
+// -- Re-embed All Nodes --
+
+#[derive(Serialize, ToSchema)]
+pub struct ReembedResponse {
+    pub updated: usize,
+    pub failed: usize,
+    pub message: String,
+}
+
+#[utoipa::path(
+    post,
+    path = "/nodes/reembed_all",
+    tag = "memory",
+    responses(
+        (status = 200, description = "Re-embedding complete", body = ReembedResponse)
+    )
+)]
+pub async fn reembed_all(
+    State(state): State<AppState>,
+) -> Json<ReembedResponse> {
+    let all_nodes = state.store.list_all().await.unwrap_or_default();
+    let mut updated = 0usize;
+    let mut failed = 0usize;
+
+    for node in &all_nodes {
+        let text = match (&node.content, &node.original_pointer) {
+            (Some(c), _) => clean_for_embedding(c),
+            (_, Some(p)) => p.clone(),
+            _ => continue,
+        };
+        if text.is_empty() {
+            continue;
+        }
+
+        match embed_document(&*state.embedding, &text).await {
+            Ok(vec) => {
+                if state.store.update_vector(&node.id, vec).await.unwrap_or(false) {
+                    updated += 1;
+                } else {
+                    failed += 1;
+                }
+            }
+            Err(e) => {
+                tracing::warn!(id = %node.id, "reembed failed: {e}");
+                failed += 1;
+            }
+        }
+    }
+
+    tracing::info!(updated, failed, "reembed_all complete");
+    Json(ReembedResponse {
+        updated,
+        failed,
+        message: format!("{updated} nodes re-embedded, {failed} failed"),
+    })
 }
 
 // -- Dream Status --

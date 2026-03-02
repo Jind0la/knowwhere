@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use axum::middleware;
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use axum::Router;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::ServeDir;
@@ -39,7 +39,12 @@ async fn run() -> anyhow::Result<()> {
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
         .init();
 
-    let store = MemoryStore::new();
+    let data_dir = std::env::var("KNOWWHERE_DATA_DIR").unwrap_or_else(|_| "./data".into());
+    let store = MemoryStore::with_persistence(&data_dir)
+        .unwrap_or_else(|e| {
+            tracing::warn!("persistence init failed ({e}), using in-memory only");
+            MemoryStore::new()
+        });
     let dream = DreamMode::new(store.clone());
 
     let embedding: Arc<dyn EmbeddingProvider> =
@@ -50,7 +55,8 @@ async fn run() -> anyhow::Result<()> {
             tracing::info!("using OpenAI embedding provider");
             create_provider(ProviderKind::OpenAI, Some(key))
         } else {
-            tracing::warn!("no embedding API key found, using local-ollama placeholder");
+            let model = std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "nomic-embed-text-v2-moe".into());
+            tracing::info!(model, "no embedding API key found, using local ollama");
             create_provider(ProviderKind::LocalOllama, None)
         };
 
@@ -59,11 +65,12 @@ async fn run() -> anyhow::Result<()> {
     tokio::spawn(dream.clone().micro_dream_loop());
     tracing::info!("dream mode started (micro-dream every 1h)");
 
-    {
+    if let Ok(frigate_url) = std::env::var("FRIGATE_URL") {
         let connector_store = store.clone();
         let connector_embedding = embedding.clone();
+        tracing::info!(url = %frigate_url, "connector manager started (frigate poller every 30s)");
         tokio::spawn(async move {
-            let frigate = FrigateConnector::new("http://frigate:5000".into());
+            let frigate = FrigateConnector::new(frigate_url);
             loop {
                 match frigate.poll_events().await {
                     Ok(events) => {
@@ -84,8 +91,11 @@ async fn run() -> anyhow::Result<()> {
                 tokio::time::sleep(std::time::Duration::from_secs(30)).await;
             }
         });
-        tracing::info!("connector manager started (frigate poller every 30s)");
+    } else {
+        tracing::info!("frigate connector disabled (set FRIGATE_URL to enable)");
     }
+
+    let shutdown_store = store.clone();
 
     let state = routes::AppState {
         store,
@@ -102,6 +112,9 @@ async fn run() -> anyhow::Result<()> {
         .route("/retrieve/{id}", get(routes::retrieve))
         .route("/retrieve_fractal", post(routes::retrieve_fractal))
         .route("/nodes/recent", get(routes::recent_nodes))
+        .route("/nodes/purge_dummy", post(routes::purge_dummy))
+        .route("/nodes/reembed_all", post(routes::reembed_all))
+        .route("/nodes/{id}", delete(routes::delete_node))
         .route("/dream/status", get(routes::dream_status))
         .route_layer(middleware::from_fn(auth::auth_middleware))
         .layer(axum::Extension(api_key.clone()));
@@ -121,12 +134,41 @@ async fn run() -> anyhow::Result<()> {
         tracing::warn!("KNOWWHERE_API_KEY not set – auth disabled (dev mode)");
     }
 
-    let addr = "0.0.0.0:3000";
+    let port = std::env::var("KNOWWHERE_PORT").unwrap_or_else(|_| "3737".into());
+    let addr = format!("0.0.0.0:{port}");
     tracing::info!("KnowWhere server listening on {addr}");
-    tracing::info!("Swagger UI: http://localhost:3000/swagger-ui/");
+    tracing::info!("Swagger UI: http://localhost:{port}/swagger-ui/");
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app).await?;
+
+    let shutdown = async move {
+        let ctrl_c = tokio::signal::ctrl_c();
+        #[cfg(unix)]
+        let terminate = async {
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                .expect("failed to install SIGTERM handler")
+                .recv()
+                .await;
+        };
+        #[cfg(not(unix))]
+        let terminate = std::future::pending::<()>();
+
+        tokio::select! {
+            _ = ctrl_c => {},
+            _ = terminate => {},
+        }
+
+        tracing::info!("shutdown signal received, saving state…");
+        if let Err(e) = shutdown_store.save_to_disk().await {
+            tracing::warn!("final save failed: {e}");
+        } else {
+            tracing::info!("state saved to disk");
+        }
+    };
+
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown)
+        .await?;
 
     Ok(())
 }

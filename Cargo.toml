@@ -7,7 +7,7 @@ license = "MIT"
 repository = "https://github.com/NimarMoradbakhti/knowwhere"
 
 [dependencies]
-axum = "0.8"
+axum = { version = "0.8", features = ["macros"] }
 tokio = { version = "1", features = ["full"] }
 tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.6", features = ["trace", "cors", "fs"] }
@@ -23,6 +23,7 @@ async-trait = "0.1"
 reqwest = { version = "0.12", features = ["json"] }
 utoipa = { version = "5", features = ["axum_extras", "chrono", "uuid"] }
 utoipa-swagger-ui = { version = "9", features = ["axum"] }
+bm25 = "2.3.2"
 
 [dev-dependencies]
 http-body-util = "0.1"

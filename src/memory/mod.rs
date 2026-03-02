@@ -5,4 +5,4 @@ pub mod fractal_node;
 mod tests;
 
 pub use dream::DreamMode;
-pub use fractal_node::{cosine_similarity, FractalNode, Relation};
+pub use fractal_node::{cosine_similarity, FractalNode, NodeType, Relation};

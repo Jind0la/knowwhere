@@ -14,25 +14,129 @@
 
 ---
 
-KnowWhere is a long-term memory backend for AI agents. It stores session data (full text + embeddings) and references external data sources via **pointers only** — never raw files. It features fractal vector retrieval, a "Dream Mode" for organic cluster formation, and pluggable embedding providers (Grok, OpenAI, local Ollama).
+KnowWhere is a long-term memory backend for AI agents. It stores session data (full text + embeddings) and references external data sources via **pointers only** — never raw files. It features **hybrid retrieval** (semantic vector search + BM25 keyword search fused via Reciprocal Rank Fusion), fractal zooming through memory clusters, a "Dream Mode" for organic cluster formation, and pluggable embedding providers.
 
-## Screenshots
+## How It Works
 
-| Dashboard | Swagger UI | LangChain Example |
-|:---------:|:----------:|:-----------------:|
-| ![Dashboard](docs/screenshots/dashboard.png) | ![Swagger UI](docs/screenshots/swagger-ui.png) | ![LangChain](docs/screenshots/langchain-example.png) |
+```
+User Message ──→ store_session ──→ [Embedding + BM25 Index]
+                                          │
+Next Prompt  ──→ retrieve_fractal ──→ [Hybrid Search] ──→ Ranked Context
+                                          │
+AI Response  ──→ store_session ──→ [Embedding + BM25 Index]
+```
 
-> Screenshots coming soon — run the server locally to explore!
+Every user message and AI response is embedded and indexed. On the next query, KnowWhere performs hybrid retrieval (vector similarity + keyword matching), returning ranked results with relevance scores. The full conversation loop is preserved.
 
-## Quickstart (3 Commands)
+## Quickstart
+
+### Local (recommended for development)
 
 ```bash
 git clone https://github.com/NimarMoradbakhti/knowwhere.git
 cd knowwhere
+cargo run
+```
+
+Requires Rust 1.85+ via [rustup](https://rustup.rs) and [Ollama](https://ollama.ai) running locally with the `nomic-embed-text-v2-moe` model:
+
+```bash
+ollama pull nomic-embed-text-v2-moe
+```
+
+Open [http://localhost:3737/swagger-ui/](http://localhost:3737/swagger-ui/) for the interactive API docs.
+
+### Docker
+
+```bash
 docker compose up --build
 ```
 
-Open [http://localhost:3000](http://localhost:3000) for the Dashboard and [http://localhost:3000/swagger-ui/](http://localhost:3000/swagger-ui/) for the API docs.
+## Core Concepts
+
+### Pointer-First Principle
+- **Session nodes** (`store_session`): Full text + embedding stored. Used for conversations, decisions, notes.
+- **External nodes** (`store_external`): Only a pointer string + embedding + metadata. Never raw files. Used for cameras, sensors, documents.
+
+### Hybrid Retrieval
+KnowWhere combines two search strategies for optimal results:
+1. **Semantic search** via USearch (cosine similarity on embeddings)
+2. **Keyword search** via BM25 (exact term matching, German-optimized)
+3. **Reciprocal Rank Fusion (RRF)** merges both ranked lists into a single result
+
+### Fractal Zooming
+Nodes can have children. During retrieval, KnowWhere "zooms" into the best-matching child nodes up to `max_depth` levels, finding increasingly specific context.
+
+### Dream Mode
+A background process that periodically clusters related nodes and strengthens connections — making retrieval organically better over time.
+
+## API Endpoints
+
+| Method | Path                | Auth     | Description                                    |
+|--------|---------------------|----------|------------------------------------------------|
+| GET    | `/health`           | Public   | Server status + node count                     |
+| GET    | `/swagger-ui/`      | Public   | Interactive OpenAPI documentation               |
+| POST   | `/embed`            | Required | Generate embedding vector for text              |
+| POST   | `/store_session`    | Required | Store session node (full content + embedding)   |
+| POST   | `/store_external`   | Required | Store external pointer (no raw data)            |
+| GET    | `/retrieve/{id}`    | Required | Retrieve single node by UUID                    |
+| POST   | `/retrieve_fractal` | Required | Hybrid fractal search (returns `ScoredNode[]`)  |
+| GET    | `/nodes/recent`     | Required | Recent nodes (sorted by `created_at`)           |
+| DELETE | `/nodes/{id}`       | Required | Delete node by UUID                             |
+| POST   | `/nodes/purge_dummy`| Required | Remove nodes with placeholder vectors           |
+| POST   | `/nodes/reembed_all`| Required | Re-embed all nodes with current provider        |
+| GET    | `/dream/status`     | Required | Dream mode status                               |
+
+### Key Response Types
+
+**ScoredNode** (returned by `/retrieve_fractal`):
+```json
+{
+  "score": 0.032,
+  "id": "uuid",
+  "node_type": "Session",
+  "content": "The app should be anonymous...",
+  "original_pointer": null,
+  "metadata": { "source": "user:Nimar" },
+  "created_at": "2026-03-02T14:20:28Z"
+}
+```
+
+Note: The `vector` field is intentionally excluded from retrieval responses to save bandwidth.
+
+**NodeType**: `Session` (full text stored) or `External` (pointer only).
+
+## Agent Integration (OpenClaw)
+
+KnowWhere ships with an OpenClaw plugin (`knowwhere-memory`) that provides a complete memory loop:
+
+| Hook              | Purpose                                      |
+|-------------------|----------------------------------------------|
+| `message_received`| Stores every incoming user message            |
+| `llm_output`      | Stores every AI response (with model info)    |
+| `before_prompt_build` | Retrieves and injects relevant context    |
+
+The plugin also handles health checks, self-reference filtering, and score-based relevance gating.
+
+### Plugin Configuration
+
+In `openclaw.json`:
+```json
+{
+  "plugins": {
+    "entries": {
+      "knowwhere-memory": {
+        "enabled": true,
+        "config": {
+          "url": "http://127.0.0.1:3737",
+          "topK": 5,
+          "maxDepth": 3
+        }
+      }
+    }
+  }
+}
+```
 
 ## Python SDK
 
@@ -61,70 +165,48 @@ client = KnowWhereClient()
 memory = KnowWhereMemory(client=client)
 memory.add_user_message("Remember: deploy on Friday")
 context = memory.get_context_string("When do we deploy?")
-print(context)
 ```
 
 ## Environment Variables
 
-Copy the example file and fill in your values:
+| Variable             | Required | Default                  | Description                                              |
+|----------------------|----------|--------------------------|----------------------------------------------------------|
+| `KNOWWHERE_PORT`     | No       | `3737`                   | Server listen port                                       |
+| `KNOWWHERE_API_KEY`  | No       | *(unset)*                | If set, all routes except `/health` require Bearer token |
+| `KNOWWHERE_DATA_DIR` | No       | `./data`                 | Directory for persisted state (`state.json`)             |
+| `GROK_API_KEY`       | No       | *(unset)*                | Grok/xAI embedding provider API key                      |
+| `OPENAI_API_KEY`     | No       | *(unset)*                | OpenAI embedding provider API key                        |
+| `OLLAMA_MODEL`       | No       | `nomic-embed-text-v2-moe`| Local Ollama embedding model name                        |
+| `FRIGATE_URL`        | No       | *(unset)*                | Frigate NVR URL (enables camera event connector)         |
+| `RUST_LOG`           | No       | `info`                   | Tracing log level                                        |
 
-```bash
-cp .env.example .env
-```
-
-| Variable             | Required | Default        | Description                                              |
-|----------------------|----------|----------------|----------------------------------------------------------|
-| `KNOWWHERE_API_KEY`  | No       | *(unset)*      | If set, all routes except `/health` require Bearer token |
-| `GROK_API_KEY`       | No       | *(unset)*      | Grok embedding provider API key (xAI)                    |
-| `OPENAI_API_KEY`     | No       | *(unset)*      | OpenAI embedding provider API key                        |
-| `RUST_LOG`           | No       | `info`         | Tracing log level (`debug`, `info`, `warn`, `error`)     |
-
-If neither `GROK_API_KEY` nor `OPENAI_API_KEY` is set, KnowWhere falls back to a local-ollama placeholder.
+If neither `GROK_API_KEY` nor `OPENAI_API_KEY` is set, KnowWhere falls back to local Ollama.
 
 ## Authentication
 
-KnowWhere uses Bearer token authentication (MVP mode).
-
 ```bash
 export KNOWWHERE_API_KEY=my-secret-key-123
-docker compose up --build
+cargo run
 ```
 
 ```bash
-curl -H "Authorization: Bearer my-secret-key-123" http://localhost:3000/embed \
+curl -H "Authorization: Bearer my-secret-key-123" http://localhost:3737/embed \
   -d '{"text":"hello"}' -H "Content-Type: application/json"
 ```
 
-**Public endpoints** (no token required): `/health`, `/swagger-ui/*`
-
-**With the Python SDK:**
-
-```python
-client = KnowWhereClient(api_key="my-secret-key-123")
-```
-
-## API Endpoints
-
-| Method | Path                | Auth     | Description                          |
-|--------|---------------------|----------|--------------------------------------|
-| GET    | `/health`           | Public   | Server status + node count           |
-| GET    | `/swagger-ui/`      | Public   | Interactive API documentation        |
-| POST   | `/embed`            | Required | Generate embedding for text          |
-| POST   | `/store_session`    | Required | Store session (full content)         |
-| POST   | `/store_external`   | Required | Store external pointer (no raw data) |
-| GET    | `/retrieve/{id}`    | Required | Retrieve node by ID                  |
-| POST   | `/retrieve_fractal` | Required | Fractal vector search                |
-| GET    | `/nodes/recent`     | Required | Recent nodes (sorted by created_at)  |
-| GET    | `/dream/status`     | Required | Dream mode status                    |
+Public endpoints (no token): `/health`, `/swagger-ui/*`
 
 ## Architecture
 
-- **Backend:** Rust (Axum 0.8, Tokio, Tower)
-- **Embeddings:** Pluggable (Grok, OpenAI, local-ollama)
-- **Vector Store:** USearch (cosine similarity)
+- **Backend:** Rust 1.85+ (Axum 0.8, Tokio, Tower)
+- **Embeddings:** Pluggable — Grok (xAI), OpenAI, local Ollama (`nomic-embed-text-v2-moe`)
+- **Vector Store:** USearch (cosine similarity, HNSW)
+- **Keyword Search:** BM25 with cached scorer (German-optimized)
+- **Fusion:** Reciprocal Rank Fusion (RRF, k=60)
 - **Graph:** In-memory fractal graph with Dream Mode clustering
+- **Persistence:** JSON state file with debounced auto-save + graceful shutdown
+- **Connectors:** Frigate NVR (optional, pointer-only)
 - **SDK:** Python 3.11+ with LangChain/LlamaIndex compatibility
-- **Dashboard:** Vanilla JS + Tailwind CSS
 - **Docs:** OpenAPI 3.0 via utoipa + Swagger UI
 - **Principle:** Pointer-First — external data is never stored, only referenced
 
@@ -133,33 +215,22 @@ client = KnowWhereClient(api_key="my-secret-key-123")
 ### Railway
 
 ```bash
-# Install Railway CLI, then:
-railway login
-railway init
-railway up
+railway login && railway init && railway up
 ```
-
-Set environment variables in the Railway dashboard. The included `Dockerfile` is detected automatically.
 
 ### Fly.io
 
 ```bash
-# Install flyctl, then:
 fly launch
 fly secrets set KNOWWHERE_API_KEY=your-secret
-fly secrets set GROK_API_KEY=your-key
 fly deploy
 ```
 
-Fly.io will detect the `Dockerfile` and deploy accordingly. Ensure port 3000 is exposed.
-
-### Local (without Docker)
+### Local
 
 ```bash
 cargo run
 ```
-
-Requires Rust 1.85+ installed via [rustup](https://rustup.rs).
 
 ## Running Tests
 
@@ -175,7 +246,7 @@ Contributions are welcome! Please open an issue or pull request on [GitHub](http
 
 > **Beta Notice**
 >
-> KnowWhere is currently in **Beta (v0.1.0)**. We are actively looking for early testers and feedback.
+> KnowWhere is currently in **Beta (v0.2.0)**. We are actively looking for early testers and feedback.
 > Reach out to **@NimarMoradbakhti** on X or via email to get involved!
 
 ## License

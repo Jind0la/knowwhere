@@ -1,6 +1,9 @@
 pub mod provider;
 
-pub use provider::{EmbeddingProvider, GrokProvider, LocalOllamaProvider, OpenAIProvider};
+pub use provider::{
+    EmbeddingProvider, GrokProvider, LocalOllamaProvider, OpenAIProvider,
+    embed_document, embed_query,
+};
 
 use std::sync::Arc;
 

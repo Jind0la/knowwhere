@@ -7,12 +7,13 @@ Prerequisites:
     3. Run this example:            python sdk/python/examples/langchain_example.py
 """
 
-from knowwhere import KnowWhereClient, KnowWhereMemory
+from knowwhere import KnowWhereClient
+from knowwhere.langchain import KnowWhereMemory
 from langchain_core.messages import HumanMessage, AIMessage
 
 
 def main() -> None:
-    client = KnowWhereClient(base_url="http://localhost:3000")
+    client = KnowWhereClient(base_url="http://localhost:3737")
 
     # --- 1. Health Check ---
     print("=== Health Check ===")

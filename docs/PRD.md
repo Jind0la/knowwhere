@@ -1,95 +1,160 @@
-Der komplette, aktualisierte Bauplan für KnowWhere
-(Stand: 26. Februar 2026 – final fixiert mit Pointer-First + Session-Speicher-Regel)
-1. Produktname & One-Sentence Pitch
-KnowWhere
-„Dein KI-Gedächtnis – ohne jemals deine Daten anzufassen.“
-KnowWhere ist das erste echte Plug-and-Play Langzeitgedächtnis für KI: ein fraktales, adaptives, multimodales Memory-System, das alle Session- und Chat-Daten vollständig speichert, aber externe Rohdateien (Kamera, Google Drive, Sensoren etc.) nur als Pointer referenziert. So wird jede KI über Monate und Jahre hinweg zum echten digitalen Zwilling deines Denkens – ohne Datenduplikation, ohne Lock-in, ohne Risiko.
-2. The Why – Simon Sinek Style
-Why:
-Weil KI heute brillant, aber amnesiekrank ist. Sie vergisst nach wenigen Minuten deine Prinzipien, deine Vision, deine „Nie wieder so!“-Entscheidungen. Wir bauen KnowWhere, weil echte Intelligenz ohne echtes, langfristiges Gedächtnis unmöglich ist – und weil dieses Gedächtnis deine Datenhoheit respektieren muss. Kein weiterer Cloud-Tresor. Sondern eine Brücke, die deine bestehenden Tools mit echter Erinnerung verbindet.
-How:
-Durch eine komplett neue fraktale Architektur mit organisch wachsenden, überlappenden Clustern und einem inkrementellen „Dream Mode“.
-What:
-Ein schlanker, eigenständiger Memory-Service (Cloud + Self-Hosted) mit winzigen SDKs, der in 3 Zeilen in jeden Agenten, LLM oder Framework integriert wird.
-3. First Principles (Elon-Musk-Style)
+# KnowWhere — Product Requirements Document
 
-Intelligenz = Verknüpfung vergangener Erfahrungen mit neuen Situationen.
-Speicher = totes Regal. Gedächtnis = lebendiges Netzwerk.
-Der User behält 100 % Kontrolle über seine Rohdaten.
-Skalierung muss exponentiell effizient sein.
-Kein „Erklär mir nochmal…“ darf je wieder nötig sein.
+> Stand: 2. Maerz 2026 — v0.2.0
 
-4. Outcome – Was der User am Ende wirklich hat
+## 1. Produktname & One-Sentence Pitch
 
-Nach 6 Monaten Vibe-Coding: Die KI kennt deine komplette App-Vision, alle früheren Entscheidungen und Fehler – automatisch.
-Nach 3 Monaten Smart-Home: Dein Agent weiß von allein „Person X betritt um 20:15 den Raum, spricht über Projekt Y, Temperatur 22,3 °C“.
-70–90 % weniger Wiederholungen, kreativere Vorschläge, echte persönliche KI.
+**KnowWhere**
+„Dein KI-Gedaechtnis – ohne jemals deine Daten anzufassen."
 
-North Star Metric:
+KnowWhere ist das erste echte Plug-and-Play Langzeitgedaechtnis fuer KI: ein fraktales, adaptives, multimodales Memory-System, das alle Session- und Chat-Daten vollstaendig speichert, aber externe Rohdateien (Kamera, Google Drive, Sensoren etc.) nur als Pointer referenziert. So wird jede KI ueber Monate und Jahre hinweg zum echten digitalen Zwilling deines Denkens – ohne Datenduplikation, ohne Lock-in, ohne Risiko.
+
+## 2. The Why – Simon Sinek Style
+
+**Why:**
+Weil KI heute brillant, aber amnesiekrank ist. Sie vergisst nach wenigen Minuten deine Prinzipien, deine Vision, deine „Nie wieder so!"-Entscheidungen. Wir bauen KnowWhere, weil echte Intelligenz ohne echtes, langfristiges Gedaechtnis unmoeglich ist – und weil dieses Gedaechtnis deine Datenhoheit respektieren muss.
+
+**How:**
+Durch eine komplett neue fraktale Architektur mit organisch wachsenden, ueberlappenden Clustern, Hybrid Search (Vektor + Keyword), und einem inkrementellen „Dream Mode".
+
+**What:**
+Ein schlanker, eigenstaendiger Memory-Service (Cloud + Self-Hosted) mit winzigen SDKs, der in 3 Zeilen in jeden Agenten, LLM oder Framework integriert wird.
+
+## 3. First Principles
+
+1. Intelligenz = Verknuepfung vergangener Erfahrungen mit neuen Situationen.
+2. Speicher = totes Regal. Gedaechtnis = lebendiges Netzwerk.
+3. Der User behaelt 100 % Kontrolle ueber seine Rohdaten.
+4. Skalierung muss exponentiell effizient sein.
+5. Kein „Erklaer mir nochmal…" darf je wieder noetig sein.
+
+## 4. Outcome – Was der User am Ende wirklich hat
+
+- **Nach 6 Monaten Vibe-Coding:** Die KI kennt deine komplette App-Vision, alle frueheren Entscheidungen und Fehler – automatisch.
+- **Nach 3 Monaten Smart-Home:** Dein Agent weiss von allein „Person X betritt um 20:15 den Raum, spricht ueber Projekt Y, Temperatur 22,3 °C".
+- **70–90 % weniger Wiederholungen**, kreativere Vorschlaege, echte persoenliche KI.
+
+**North Star Metric:**
 30-Day Context Fidelity > 92 % (Queries, die korrekt auf historische Kontexte zugreifen – ohne Korrektur).
-5. High-Level Architektur (hybride Pointer-First)
-text[LLM / Agent / Kamera-System] 
-    ←→ KnowWhere Client SDK 
-    ←→ KnowWhere Memory Service
+
+## 5. High-Level Architektur
+
+```
+[LLM / Agent / Kamera-System]
+    ←→ KnowWhere Client SDK / Plugin
+    ←→ KnowWhere Memory Service (Rust, Port 3737)
            ↓
-    Fraktale Vector + Graph Engine
+    Hybrid Retrieval Engine
+    ├── USearch (Vektor / Cosine Similarity)
+    ├── BM25 (Keyword / deutsch-optimiert)
+    └── Reciprocal Rank Fusion
            ↓
     Storage:
     • Sessions/Chats → volle Daten + Embeddings
     • Externe Quellen → nur Pointer + Embedding + Metadaten
-6. Die fraktale Datenstruktur
-Ruststruct FractalNode {
+    • Persistenz → state.json mit Auto-Save + Graceful Shutdown
+```
+
+## 6. Die fraktale Datenstruktur
+
+```rust
+pub enum NodeType { Session, External }
+
+pub struct FractalNode {
     id: UUID,
-    vector: Vec<f32>,
+    node_type: NodeType,
+    vector: Vec<f32>,                  // 768-dim (nomic-embed-text-v2-moe)
     content: Option<String>,           // Nur bei Sessions voll
     original_pointer: Option<String>,  // Bei externen Daten
     metadata: HashMap<String, Value>,
     weight: f64,
+    multimodal: Option<MultimodalData>,
     children: Vec<FractalNode>,
     relations: Vec<Relation>,
     created_at: DateTime,
     last_accessed: DateTime,
 }
-7. Die vier Kern-Operationen
+```
 
-store_session(...) → volle Speicherung von Chats/Sessions
-store_external(pointer, embedding, metadata) → nur Pointer
-retrieve(...) → intelligentes Zoomen durch Cluster
-adapt(...) → neue Version + Relationen
+## 7. Die Kern-Operationen
 
-8. Der Dream Mode (inkrementell)
+| Operation           | Beschreibung                                          | Status |
+|---------------------|-------------------------------------------------------|--------|
+| `store_session`     | Volle Speicherung von Chats/Sessions + auto-embed     | ✓      |
+| `store_external`    | Nur Pointer + Embedding + Metadaten                   | ✓      |
+| `retrieve_fractal`  | Hybrid Search + fraktales Zoomen → `ScoredNode[]`     | ✓      |
+| `embed`             | Text → Embedding-Vektor (mit Task-Prefix)             | ✓      |
+| `reembed_all`       | Alle Nodes neu embedden (nach Modellwechsel)          | ✓      |
+| `delete` / `purge`  | Einzelne Nodes loeschen / Dummies entfernen           | ✓      |
+| Dream Mode          | Periodisches Micro-Clustering (stuendlich)            | ✓      |
+| Persistence         | Auto-Save + Graceful Shutdown (SIGINT/SIGTERM)        | ✓      |
 
-Stündliche Micro-Dreams (2–5 Min)
-Wöchentlicher Full-Dream (15–45 Min bei 10 Mio Knoten)
-Organische Cluster-Bildung durch Verbindungen → Retrieval wird immer besser
+## 8. Der Dream Mode (inkrementell)
 
-9. Plug-and-Play Integration
-Pythonmemory = KnowWhere(
-    base_url="https://api.knowwhere.ai",
-    api_key=...,
-    project_id="my-app"
-)
+- Stuendliche Micro-Dreams (leichtgewichtiges Clustering)
+- Woechentlicher Full-Dream (geplant fuer spaetere Phasen)
+- Organische Cluster-Bildung durch Verbindungen → Retrieval wird immer besser
 
-memory.store_session("Hey, die App soll anonym sein...")
-memory.store_external(
-    pointer="frigate://camera/2026-02-26T20:15.jpg",
-    embedding=clip_embedding,
-    metadata={"temp": 22.3}
-)
-10. Tech-Stack
+## 9. Plug-and-Play Integration
 
-Backend: Rust (Tokio + Axum)
-Engine: USearch + NebulaGraph
-Storage: LanceDB + S3/MinIO (nur Pointers)
-Embeddings: Multi-Provider
+### OpenClaw (produktionsreif)
 
-11. Roadmap
-Phase 0 (3 Wochen): MVP – Sessions + Text/Bild-Pointers
-Phase 1 (4 Wochen): Dream Mode + Audio/Sensoren
-Phase 2 (4 Wochen): Webhooks für Drive, Frigate, Home Assistant
-Phase 3: Open-Source-Core + Cloud-SaaS
-12. Eventualitäten & Lösungen
+Plugin mit drei Hooks:
+- `message_received` → User-Nachrichten speichern
+- `llm_output` → AI-Antworten speichern (mit Modell-Info)
+- `before_prompt_build` → Kontext abrufen und injizieren
 
-API-Ausfall → Lazy-Loading + optional Preview-Cache
-Datenschutz → E2E-Verschlüsselung + Right-to-be-forgotten
-Kosten → extrem niedrig (nur ~5–10 KB pro Knoten)
+### Python SDK
+
+```python
+from knowwhere import KnowWhereClient
+
+client = KnowWhereClient(base_url="http://localhost:3737")
+client.store_session("Die App soll anonym sein, kein Login")
+results = client.retrieve_fractal("Welche Design-Entscheidung?")
+```
+
+### Beliebiger Agent (3-Schritt-Muster)
+
+1. `POST /store_session` — Nachricht speichern
+2. `POST /embed` + `POST /retrieve_fractal` — Kontext abrufen
+3. Kontext in Prompt injizieren
+
+## 10. Tech-Stack
+
+| Komponente       | Technologie                            | Status      |
+|------------------|----------------------------------------|-------------|
+| Backend          | Rust 1.85+ (Axum 0.8, Tokio, Tower)   | ✓ Produktion |
+| Embedding        | Ollama `nomic-embed-text-v2-moe` (768d)| ✓ Produktion |
+| Embedding (Cloud)| Grok (xAI), OpenAI                     | ✓ Optional   |
+| Vector Store     | USearch (HNSW, Cosine)                 | ✓ Produktion |
+| Keyword Search   | BM25 (Cached Scorer, German)           | ✓ Produktion |
+| Fusion           | Reciprocal Rank Fusion (k=60)          | ✓ Produktion |
+| Persistence      | JSON state file (debounced auto-save)  | ✓ Produktion |
+| Connectors       | Frigate NVR (pointer-first)            | ✓ Optional   |
+| SDK              | Python (LangChain-kompatibel)          | ✓ Beta       |
+| Dashboard        | Vanilla JS + Tailwind                  | ✓ Beta       |
+| API Docs         | OpenAPI 3.0 + Swagger UI               | ✓ Produktion |
+
+## 11. Roadmap
+
+| Phase                  | Beschreibung                                      | Status       |
+|------------------------|---------------------------------------------------|--------------|
+| Phase 0 (MVP)          | Sessions, Text-Pointers, REST API, USearch        | ✓ Abgeschlossen |
+| Phase 0.5 (Hybrid)     | BM25, RRF, nomic-v2-moe, ScoredNode, Persistence | ✓ Abgeschlossen |
+| Phase 1 (Dream)        | Dream Mode + Audio/Sensoren                       | ✓ Micro-Dream  |
+| Phase 1.5 (Integration)| OpenClaw Plugin (voller Memory Loop)              | ✓ Abgeschlossen |
+| Phase 2 (Connectors)   | Webhooks fuer Drive, Frigate, Home Assistant       | In Planung   |
+| Phase 3 (Scale)        | LanceDB/NebulaGraph, Multi-Tenant, Cloud-SaaS     | In Planung   |
+| Phase 4 (Open Source)   | Open-Source-Core + Cloud-Hosting-Angebot          | In Planung   |
+
+## 12. Eventualitaeten & Loesungen
+
+| Risiko                   | Loesung                                             |
+|--------------------------|-----------------------------------------------------|
+| Externer API-Ausfall     | Lazy-Loading + Fallback auf lokales Ollama           |
+| Datenschutz              | Pointer-First + E2E-Verschluesselung (geplant)      |
+| Speicherkosten           | ~5–10 KB pro Knoten (nur Embeddings + Metadaten)     |
+| Mac RAM-Engpass          | BM25-Caching, Ollama-Modell-Cleanup, Debounced Save  |
+| Streaming-Delivery       | `llm_output` Hook statt `message_sent`               |
+| Context-Qualitaet        | Markdown-Cleaning + Task-Prefixes + Hybrid Search    |

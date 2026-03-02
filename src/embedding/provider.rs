@@ -7,6 +7,26 @@ pub trait EmbeddingProvider: Send + Sync {
     async fn embed(&self, text: &str) -> Result<Vec<f32>>;
     fn dimension(&self) -> usize;
     fn name(&self) -> &str;
+    fn document_prefix(&self) -> &str { "" }
+    fn query_prefix(&self) -> &str { "" }
+}
+
+pub async fn embed_document(provider: &dyn EmbeddingProvider, text: &str) -> Result<Vec<f32>> {
+    let p = provider.document_prefix();
+    if p.is_empty() {
+        provider.embed(text).await
+    } else {
+        provider.embed(&format!("{p}{text}")).await
+    }
+}
+
+pub async fn embed_query(provider: &dyn EmbeddingProvider, text: &str) -> Result<Vec<f32>> {
+    let p = provider.query_prefix();
+    if p.is_empty() {
+        provider.embed(text).await
+    } else {
+        provider.embed(&format!("{p}{text}")).await
+    }
 }
 
 // -- Grok (xAI) --
@@ -123,15 +143,30 @@ impl EmbeddingProvider for OpenAIProvider {
     }
 }
 
-// -- Local Ollama (Placeholder: deterministischer Pseudo-Embedding-Generator) --
+// -- Local Ollama (real HTTP embedding via nomic-embed-text) --
 
 pub struct LocalOllamaProvider {
-    dim: usize,
+    client: reqwest::Client,
+    base_url: String,
+    model: String,
+}
+
+#[derive(Deserialize)]
+struct OllamaEmbeddingResponse {
+    embedding: Vec<f32>,
 }
 
 impl LocalOllamaProvider {
     pub fn new() -> Self {
-        Self { dim: 384 }
+        let base_url =
+            std::env::var("OLLAMA_URL").unwrap_or_else(|_| "http://localhost:11434".into());
+        let model = std::env::var("OLLAMA_MODEL")
+            .unwrap_or_else(|_| "nomic-embed-text-v2-moe".into());
+        Self {
+            client: reqwest::Client::new(),
+            base_url,
+            model,
+        }
     }
 }
 
@@ -143,35 +178,35 @@ impl Default for LocalOllamaProvider {
 
 #[async_trait]
 impl EmbeddingProvider for LocalOllamaProvider {
+    fn document_prefix(&self) -> &str { "search_document: " }
+    fn query_prefix(&self) -> &str { "search_query: " }
+
     async fn embed(&self, text: &str) -> Result<Vec<f32>> {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
+        let resp: OllamaEmbeddingResponse = self
+            .client
+            .post(format!("{}/api/embeddings", self.base_url))
+            .json(&serde_json::json!({
+                "model": self.model,
+                "prompt": text
+            }))
+            .send()
+            .await
+            .context("ollama embedding request failed")?
+            .error_for_status()
+            .context("ollama API returned error status")?
+            .json()
+            .await
+            .context("failed to parse ollama embedding response")?;
 
-        let mut hasher = DefaultHasher::new();
-        text.hash(&mut hasher);
-        let seed = hasher.finish();
-
-        let mut vec = Vec::with_capacity(self.dim);
-        let mut state = seed;
-        for _ in 0..self.dim {
-            state = state
-                .wrapping_mul(6364136223846793005)
-                .wrapping_add(1442695040888963407);
-            vec.push(((state >> 33) as f32) / (u32::MAX as f32) * 2.0 - 1.0);
+        if resp.embedding.is_empty() {
+            anyhow::bail!("ollama returned empty embedding");
         }
 
-        let mag: f32 = vec.iter().map(|x| x * x).sum::<f32>().sqrt();
-        if mag > 0.0 {
-            for v in &mut vec {
-                *v /= mag;
-            }
-        }
-
-        Ok(vec)
+        Ok(resp.embedding)
     }
 
     fn dimension(&self) -> usize {
-        self.dim
+        768
     }
 
     fn name(&self) -> &str {

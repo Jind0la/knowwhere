@@ -2,7 +2,7 @@ use utoipa::OpenApi;
 
 use crate::api::routes;
 use crate::memory::dream::DreamStatus;
-use crate::memory::{FractalNode, Relation};
+use crate::memory::{FractalNode, NodeType, Relation};
 use crate::multimodal::MultimodalData;
 
 #[derive(OpenApi)]
@@ -20,6 +20,9 @@ use crate::multimodal::MultimodalData;
         routes::retrieve,
         routes::retrieve_fractal,
         routes::recent_nodes,
+        routes::delete_node,
+        routes::purge_dummy,
+        routes::reembed_all,
         routes::dream_status,
     ),
     components(schemas(
@@ -29,8 +32,12 @@ use crate::multimodal::MultimodalData;
         routes::StoreSessionRequest,
         routes::StoreExternalRequest,
         routes::StoreNodeResponse,
+        routes::PurgeResponse,
+        routes::ReembedResponse,
         routes::RetrieveFractalRequest,
+        routes::ScoredNode,
         FractalNode,
+        NodeType,
         Relation,
         MultimodalData,
         DreamStatus,

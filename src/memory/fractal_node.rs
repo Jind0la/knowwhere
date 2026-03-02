@@ -9,6 +9,13 @@ use uuid::Uuid;
 
 use crate::multimodal::MultimodalData;
 
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default, PartialEq)]
+pub enum NodeType {
+    #[default]
+    Session,
+    External,
+}
+
 pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     let dot: f32 = a.iter().zip(b).map(|(x, y)| x * y).sum();
     let mag_a = a.iter().map(|x| x * x).sum::<f32>().sqrt();
@@ -29,6 +36,8 @@ pub struct Relation {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct FractalNode {
     pub id: Uuid,
+    #[serde(default)]
+    pub node_type: NodeType,
     pub vector: Vec<f32>,
     pub content: Option<String>,
     pub original_pointer: Option<String>,
@@ -49,6 +58,7 @@ impl FractalNode {
         let now = Utc::now();
         Self {
             id: Uuid::new_v4(),
+            node_type: NodeType::Session,
             vector,
             content: Some(content),
             original_pointer: None,
@@ -71,6 +81,7 @@ impl FractalNode {
         let now = Utc::now();
         Self {
             id: Uuid::new_v4(),
+            node_type: NodeType::External,
             vector,
             content: None,
             original_pointer: Some(pointer),
@@ -94,6 +105,7 @@ impl FractalNode {
         let now = Utc::now();
         Self {
             id: Uuid::new_v4(),
+            node_type: NodeType::External,
             vector,
             content: None,
             original_pointer: Some(pointer),
