@@ -75,7 +75,8 @@ knowwhere/
 ├── data/                     # Persisted state (state.json)
 ├── docs/
 │   ├── PRD.md
-│   └── ARCHITECTURE.md       # This file
+│   ├── ARCHITECTURE.md       # This file
+│   └── IMPORT_GUIDE.md       # Host-system memory import playbook
 ├── sdk/python/
 │   └── knowwhere/
 │       ├── client.py
@@ -180,10 +181,73 @@ Additionally, an internal hook (`handler.js`) monitors server health and notifie
 Any agent platform can integrate via these steps:
 
 1. **Health check** — `GET /health` before first operation
-2. **Store messages** — `POST /store_session` with `{ content, metadata: { source } }`
-3. **Retrieve context** — `POST /embed` + `POST /retrieve_fractal` with vector + query text
-4. **Circuit breaker** — After N failures, pause and retry with exponential backoff
-5. **Notify user** — Report when memory goes offline/online
+2. **Import existing memories** — Read the host system's existing memory files and session history, store them as Session nodes with `metadata.source: "import:<system>"` and `metadata.imported_from: "<original_path>"`
+3. **Store messages** — `POST /store_session` with `{ content, metadata: { source } }`
+4. **Retrieve context** — `POST /embed` + `POST /retrieve_fractal` with vector + query text
+5. **Circuit breaker** — After N failures, pause and retry with exponential backoff
+6. **Notify user** — Report when memory goes offline/online
+
+### Integration Rules (Non-Negotiable)
+
+When connecting KnowWhere to an existing agent system:
+
+- **NEVER delete, overwrite, or reset** the host system's existing memories, session history, identity files, or configuration
+- **ALWAYS import** existing memories into KnowWhere first — they become additional nodes
+- **ALWAYS add** to host config files (e.g. append a section to SOUL.md) — never replace content
+- **ALWAYS keep** the host's original memory system running alongside KnowWhere
+- KnowWhere is an **additive layer**, not a replacement
+
+## Memory Import Pipeline
+
+When KnowWhere connects to an existing agent system, it must import the host's existing memories before activating the live memory loop. The import follows a structured pipeline:
+
+```
+┌─────────────────────────────────────────────────────┐
+│  Host System (OpenClaw, LangChain, etc.)            │
+│                                                     │
+│  ┌──────────┐ ┌──────────┐ ┌────────────────────┐  │
+│  │ Identity │ │ Memory   │ │ Agent Knowledge    │  │
+│  │ Files    │ │ Files    │ │ (research, output) │  │
+│  └────┬─────┘ └────┬─────┘ └────────┬───────────┘  │
+└───────┼─────────────┼────────────────┼──────────────┘
+        │             │                │
+        ▼             ▼                ▼
+┌─────────────────────────────────────────────────────┐
+│  Import Pipeline                                    │
+│                                                     │
+│  1. Discover  → Scan paths for known systems        │
+│  2. Classify  → Identity / Memory / Research / Noise│
+│  3. Filter    → Skip cron, system msgs, duplicates  │
+│  4. Import    → POST /store_session with metadata   │
+│  5. Verify    → Test queries across all domains     │
+└─────────────────────────────────────────────────────┘
+```
+
+### Import Metadata Schema
+
+Every imported node carries structured metadata for traceability:
+
+```json
+{
+  "source": "import:openclaw:business-agent:konkurrenzanalyse.md",
+  "imported_from": "~/.openclaw/workspace-business-agent/research/konkurrenzanalyse.md",
+  "import_type": "openclaw_agent_knowledge",
+  "agent": "business-agent",
+  "original_file": "konkurrenzanalyse.md"
+}
+```
+
+### Known Host Systems
+
+| System | Detection | Memory Location | Noise Sources |
+|--------|-----------|-----------------|---------------|
+| OpenClaw | `~/.openclaw/openclaw.json` | `workspace/MEMORY.md`, `memory/*.md`, sub-agent workspaces | Cron jobs, system messages, heartbeat |
+| LangChain | `langchain` in deps | In-memory or SQLite/Redis | Intermediate chain outputs |
+| LlamaIndex | `storage/` dir | `docstore.json`, `chat_store.json` | Index rebuild artifacts |
+| CrewAI | `crewai` in deps | Task results, agent memory | Delegation logs |
+| Cursor | `.cursor/rules/` | `agent-transcripts/*.jsonl` | Tool call metadata |
+
+Full import documentation: `docs/IMPORT_GUIDE.md`
 
 ## Connectors
 

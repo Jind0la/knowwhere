@@ -27,6 +27,7 @@ Ein schlanker, eigenstaendiger Memory-Service (Cloud + Self-Hosted) mit winzigen
 3. Der User behaelt 100 % Kontrolle ueber seine Rohdaten.
 4. Skalierung muss exponentiell effizient sein.
 5. Kein „Erklaer mir nochmal…" darf je wieder noetig sein.
+6. **KnowWhere ist additiv, niemals destruktiv.** Bestehende Memory-Systeme, Dateien und Konversationshistorien des Host-Systems werden respektiert, nicht ersetzt oder geloescht.
 
 ## 4. Outcome – Was der User am Ende wirklich hat
 
@@ -144,11 +145,60 @@ results = client.retrieve_fractal("Welche Design-Entscheidung?")
 | Phase 0.5 (Hybrid)     | BM25, RRF, nomic-v2-moe, ScoredNode, Persistence | ✓ Abgeschlossen |
 | Phase 1 (Dream)        | Dream Mode + Audio/Sensoren                       | ✓ Micro-Dream  |
 | Phase 1.5 (Integration)| OpenClaw Plugin (voller Memory Loop)              | ✓ Abgeschlossen |
+| Phase 1.7 (Import)     | Memory-Import aus Host-Systemen (OpenClaw done)   | ✓ Abgeschlossen |
 | Phase 2 (Connectors)   | Webhooks fuer Drive, Frigate, Home Assistant       | In Planung   |
+| Phase 2.5 (Discovery)  | Auto-Discovery + Auto-Import von Host-Memories    | In Planung   |
 | Phase 3 (Scale)        | LanceDB/NebulaGraph, Multi-Tenant, Cloud-SaaS     | In Planung   |
 | Phase 4 (Open Source)   | Open-Source-Core + Cloud-Hosting-Angebot          | In Planung   |
 
-## 12. Eventualitaeten & Loesungen
+### Phase 2.5: Auto-Discovery (Vision)
+
+KnowWhere soll bestehende Memory-Systeme **automatisch erkennen** und importieren:
+
+1. **Scan** — `POST /import/discover` scannt definierte Pfade nach bekannten Agent-Systemen
+2. **Classify** — Gefundene Dateien werden automatisch klassifiziert (Memory, Identity, Research, Noise)
+3. **Preview** — User bekommt eine Vorschau: "Gefunden: 42 Memory-Dateien, 6 Agent-Profile, 159 Sessions"
+4. **Import** — `POST /import/execute` importiert mit konfigurierbaren Filtern (skip_cron, min_length etc.)
+5. **Verify** — Automatische Test-Queries ueber alle importierten Domaenen
+
+Erkannte Systeme: OpenClaw, LangChain, LlamaIndex, CrewAI, Cursor, Custom.
+Details: siehe `docs/IMPORT_GUIDE.md`
+
+## 12. Integration Rules (Non-Negotiable)
+
+Wenn KnowWhere in ein bestehendes Agent-System (OpenClaw, LangChain, etc.) integriert wird, gelten folgende Regeln:
+
+### 12.1 Keine Daten loeschen
+
+KnowWhere darf **niemals** bestehende Memories, Dateien oder Konversationshistorien des Host-Systems loeschen, ueberschreiben oder zuruecksetzen. Dazu gehoeren:
+
+- Session-Historien / Transkripte
+- Memory-Dateien (z.B. MEMORY.md, daily logs)
+- Identitaets- und Konfigurationsdateien (z.B. IDENTITY.md, SOUL.md, BOOTSTRAP.md)
+- Bestehende Embeddings oder Vektordatenbanken
+
+### 12.2 Bestehende Memories importieren
+
+Bei der Installation muss KnowWhere die vorhandenen Memories des Host-Systems **importieren**:
+
+1. Bestehende Session-Historien einlesen und als Session-Nodes speichern
+2. Memory-Dateien (z.B. `memory/*.md`) einlesen und indexieren
+3. Originaldateien als Referenz beibehalten — KnowWhere ist eine zusaetzliche Schicht, kein Ersatz
+
+### 12.3 Additiv integrieren
+
+- Host-System-Dateien nur **ergaenzen**, nie ersetzen
+- Neue Abschnitte zu bestehenden Konfigurationsdateien hinzufuegen, bestehende Inhalte nicht aendern
+- Das Host-Memory-System (z.B. OpenClaws `memory-core`, `MEMORY.md`) kann parallel weiterlaufen
+- KnowWhere kommt als Layer obendrauf und liefert zusaetzlichen Kontext
+
+### 12.4 Graceful Degradation
+
+- Wenn KnowWhere offline ist, muss das Host-System normal weiterarbeiten
+- Keine harten Abhaengigkeiten — KnowWhere ist immer optional
+- Circuit-Breaker-Pattern fuer alle API-Aufrufe
+
+## 13. Eventualitaeten & Loesungen
 
 | Risiko                   | Loesung                                             |
 |--------------------------|-----------------------------------------------------|

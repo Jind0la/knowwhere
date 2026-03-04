@@ -106,6 +106,24 @@ Note: The `vector` field is intentionally excluded from retrieval responses to s
 
 **NodeType**: `Session` (full text stored) or `External` (pointer only).
 
+## Integration Philosophy
+
+**KnowWhere is additive, never destructive.**
+
+When connecting KnowWhere to an existing agent system, it must:
+
+1. **Discover** — scan the host system for existing memories, identity files, agent knowledge, and session history
+2. **Import** — bring all existing knowledge into KnowWhere as Session nodes with full provenance metadata
+3. **Preserve** — all original files stay untouched. Nothing gets deleted, overwritten, or reset
+4. **Layer** — KnowWhere adds a retrieval layer on top. The host's memory system keeps running
+5. **Degrade gracefully** — if KnowWhere goes offline, the host system works normally
+
+This means: no deleting `MEMORY.md`, no resetting conversation history, no overwriting identity files. Import first, then enhance.
+
+### Proven Import Results (OpenClaw)
+
+Our first integration imported 100 nodes from OpenClaw covering personal info, agent identity, 5 sub-agent workspaces (research, business strategy, design, dev, marketing), daily logs, conversation history, and project context. All knowledge is now retrievable via a single hybrid search query. See `docs/IMPORT_GUIDE.md` for the full playbook.
+
 ## Agent Integration (OpenClaw)
 
 KnowWhere ships with an OpenClaw plugin (`knowwhere-memory`) that provides a complete memory loop:
