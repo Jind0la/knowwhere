@@ -15,7 +15,7 @@ use knowwhere_server::connectors::frigate::FrigateConnector;
 use knowwhere_server::connectors::store_external_event;
 use knowwhere_server::embedding::{create_provider, EmbeddingProvider, ProviderKind};
 use knowwhere_server::memory::events::InMemoryEventStore;
-use knowwhere_server::memory::DreamMode;
+use knowwhere_server::memory::{DreamMode, GovernancePolicy};
 use knowwhere_server::storage::MemoryStore;
 
 fn main() {
@@ -102,6 +102,7 @@ async fn run() -> anyhow::Result<()> {
         store,
         dream,
         embedding,
+        governance_policy: GovernancePolicy::default_policy(),
         events: InMemoryEventStore::new(),
     };
 
