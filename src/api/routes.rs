@@ -133,7 +133,7 @@ fn clean_for_embedding(text: &str) -> String {
 }
 use crate::storage::MemoryStore;
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone)]
 pub struct AppState {
     pub store: MemoryStore,
     pub dream: DreamMode,
