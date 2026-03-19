@@ -139,7 +139,6 @@ pub struct AppState {
     pub dream: DreamMode,
     pub embedding: Arc<dyn EmbeddingProvider>,
     /// Active governance policy for Stage 2 retrieval validation.
-    #[serde(skip)]
     pub governance_policy: GovernancePolicy,
     /// In-memory event store for Layer 0 (appended to on each mutation).
     /// For production with multiple nodes, use PostgresStore instead.

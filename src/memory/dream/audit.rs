@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::memory::governance::{AuditResult, GovernanceCandidate};
-use crate::memory::types::{MemoryStatus, MemoryType};
+use crate::memory::types::{ConflictState, MemoryStatus, MemoryType};
 
 /// Result of an audit run.
 #[derive(Debug, Clone, Serialize, Deserialize)]
