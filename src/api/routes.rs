@@ -789,7 +789,7 @@ pub async fn update_governance_policy(
         policy = match preset.as_str() {
             "strict" => GovernancePolicy::strict(),
             "lenient" => GovernancePolicy::lenient(),
-            _ => GovernancePolicy::default(),
+            _ => GovernancePolicy::default_policy(),
         };
     }
 

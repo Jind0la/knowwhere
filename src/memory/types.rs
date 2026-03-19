@@ -152,7 +152,7 @@ impl MemoryType {
 
     /// Whether this type can have `contradicts` edges.
     pub fn can_contradict(&self) -> bool {
-        matches!(MemoryType::Semantic | MemoryType::Meta)
+        matches!(self, MemoryType::Semantic | MemoryType::Meta)
     }
 
     /// Parse from string (for API input).

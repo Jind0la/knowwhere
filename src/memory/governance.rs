@@ -44,9 +44,11 @@ pub struct GovernancePolicy {
 
     /// Days after which a memory gets a recency penalty.
     pub recency_penalty_after_days: u32,
+}
 
+impl GovernancePolicy {
     /// Default policy (permissive).
-    pub fn default() -> Self {
+    pub fn default_policy() -> Self {
         Self {
             min_confidence: 0.5,
             max_age_days: None,
@@ -77,7 +79,7 @@ pub struct GovernancePolicy {
             min_confidence: 0.3,
             max_age_days: None,
             blocked_sensitivities: vec![Sensitivity::Restricted],
-            supersession_enabled: false, // Include superseded for context
+            supersession_enabled: false,
             conflict_check_enabled: false,
             recency_boost_enabled: false,
             recency_penalty_after_days: 365,
@@ -87,7 +89,7 @@ pub struct GovernancePolicy {
 
 impl Default for GovernancePolicy {
     fn default() -> Self {
-        Self::default()
+        Self::default_policy()
     }
 }
 
