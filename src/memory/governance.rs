@@ -20,7 +20,7 @@ use super::types::{ConflictState, MemoryStatus, MemoryType, Sensitivity};
 
 /// Policy rules for memory retrieval governance.
 /// These are applied as Stage 2 validation after Hybrid Retrieval (Stage 1).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct GovernancePolicy {
     /// Minimum confidence score to pass (0.0–1.0).
     /// Default: 0.5
@@ -125,7 +125,7 @@ impl ValidationResult {
     }
 
     pub fn fail(issues: Vec<ValidationIssue>) -> Self {
-        let multiplier = issues.iter().map(|i| i.score_impact()).fold(1.0, |acc, m| acc * m);
+        let multiplier = issues.iter().map(|i| i.score_impact).fold(1.0, |acc, m| acc * m);
         Self {
             passed: false,
             issues,
@@ -213,7 +213,7 @@ impl GovernanceValidator {
         if !candidate.status.is_retrievable() {
             issues.push(ValidationIssue {
                 issue_type: IssueType::InvalidStatus,
-                description: IssueType::InvalidStatus.description(&candidate.status.to_string()),
+                description: IssueType::InvalidStatus.description(&format!("{:?}", candidate.status)),
                 score_impact: IssueType::InvalidStatus.score_impact(),
             });
         }
@@ -249,7 +249,7 @@ impl GovernanceValidator {
         if self.policy.blocked_sensitivities.contains(&candidate.sensitivity) {
             issues.push(ValidationIssue {
                 issue_type: IssueType::SensitivityBlocked,
-                description: IssueType::SensitivityBlocked.description(&candidate.sensitivity.to_string()),
+                description: IssueType::SensitivityBlocked.description(&format!("{:?}", candidate.sensitivity)),
                 score_impact: IssueType::SensitivityBlocked.score_impact(),
             });
         }

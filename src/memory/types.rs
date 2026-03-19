@@ -196,16 +196,13 @@ impl std::fmt::Display for MemoryType {
 // -----------------------------------------------------------------------------
 
 /// Sensitivity level for governance policy.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum Sensitivity {
-    /// Normal information — no restrictions.
+    #[default]
     Normal,
-    /// Low sensitivity — can be shared in broad contexts.
     Low,
-    /// High sensitivity — restricted access, extra logging.
     High,
-    /// Restricted — only with explicit policy approval.
     Restricted,
 }
 
@@ -235,14 +232,12 @@ impl Sensitivity {
 // -----------------------------------------------------------------------------
 
 /// Memory conflict state for governance.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum ConflictState {
-    /// No conflict known.
+    #[default]
     None,
-    /// A potential conflict is under review.
     Pending,
-    /// The conflict has been resolved (by consolidation or user).
     Resolved,
 }
 
@@ -262,20 +257,15 @@ impl ConflictState {
 // -----------------------------------------------------------------------------
 
 /// Lifecycle status of a memory.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum MemoryStatus {
-    /// Active and available for retrieval.
+    #[default]
     Active,
-    /// Draft — not yet confirmed.
     Draft,
-    /// Archived — kept for history but not used in retrieval.
     Archived,
-    /// Soft deleted.
     Deleted,
-    /// Superseded by a newer version.
     Superseded,
-    /// Potentially outdated — needs review.
     Stale,
 }
 
@@ -303,18 +293,14 @@ impl MemoryStatus {
 // -----------------------------------------------------------------------------
 
 /// Where a memory originated from.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum MemorySource {
-    /// From a conversation or chat session.
+    #[default]
     Conversation,
-    /// From a document upload or import.
     Document,
-    /// Imported from an external system.
     Import,
-    /// Manually created by user.
     Manual,
-    /// Created by consolidation (Dream Mode).
     Consolidation,
 }
 

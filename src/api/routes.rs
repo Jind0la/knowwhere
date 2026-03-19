@@ -13,7 +13,7 @@ use crate::embedding::{EmbeddingProvider, embed_document, embed_query};
 use crate::memory::dream::DreamStatus;
 use crate::memory::types::{ConflictState, MemorySource, MemoryStatus, MemoryType, Sensitivity};
 use crate::memory::{
-    DreamMode, Event, FractalNode, GovernancePolicy, GovernanceValidator, InMemoryEventStore,
+    DreamMode, Event, EventStore, FractalNode, GovernancePolicy, GovernanceValidator, InMemoryEventStore,
 };
 use crate::multimodal::MultimodalData;
 
@@ -133,7 +133,7 @@ fn clean_for_embedding(text: &str) -> String {
 }
 use crate::storage::MemoryStore;
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct AppState {
     pub store: MemoryStore,
     pub dream: DreamMode,

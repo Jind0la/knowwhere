@@ -316,6 +316,7 @@ use tokio::sync::RwLock;
 /// Simple in-memory event store.
 /// Suitable for development and single-instance deployments.
 /// For production with multiple instances, use PostgresStore instead.
+#[derive(Clone)]
 pub struct InMemoryEventStore {
     events: Arc<RwLock<Vec<Event>>>,
 }

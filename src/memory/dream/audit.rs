@@ -15,8 +15,8 @@ use chrono::{Duration, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::memory::governance::{AuditIssue, AuditResult, GovernanceCandidate};
-use crate::memory::types::{ConflictState, MemoryStatus, MemoryType};
+use crate::memory::governance::{AuditResult, GovernanceCandidate};
+use crate::memory::types::{MemoryType};
 
 /// Result of an audit run.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -297,16 +297,23 @@ impl AuditEngine {
         visited: &mut Vec<Uuid>,
         depth: usize,
     ) -> Result<Vec<Uuid>> {
-        if depth > 20 || visited.contains(&memory_id) {
-            return Ok(visited.clone());
-        }
-        visited.push(memory_id);
+        let mut current_id = memory_id;
+        let mut current_depth = depth;
 
-        if let Some(superseded_by) = store.get_superseded_by(memory_id).await? {
-            return self.follow_supersession_chain(store, superseded_by, visited, depth + 1).await;
-        }
+        loop {
+            if current_depth > 20 || visited.contains(&current_id) {
+                return Ok(visited.clone());
+            }
+            visited.push(current_id);
 
-        Ok(visited.clone())
+            match store.get_superseded_by(current_id).await? {
+                Some(superseded_by) => {
+                    current_id = superseded_by;
+                    current_depth += 1;
+                }
+                None => return Ok(visited.clone()),
+            }
+        }
     }
 
     async fn auto_mark_stale<M: MemoryStore>(

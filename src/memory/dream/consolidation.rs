@@ -241,10 +241,10 @@ impl<C: ConsolidationStore> ConsolidationEngine<C> {
             cosine_similarity(vec_a, vec_b) as f64
         } else {
             // Simple keyword overlap as fallback
-            let a_words: std::collections::HashSet<_> =
-                a.content.to_lowercase().split_whitespace().collect();
-            let b_words: std::collections::HashSet<_> =
-                b.content.to_lowercase().split_whitespace().collect();
+            let a_lower = a.content.to_lowercase();
+            let b_lower = b.content.to_lowercase();
+            let a_words: std::collections::HashSet<_> = a_lower.split_whitespace().collect();
+            let b_words: std::collections::HashSet<_> = b_lower.split_whitespace().collect();
 
             let intersection = a_words.intersection(&b_words).count() as f64;
             let union = a_words.union(&b_words).count() as f64;
