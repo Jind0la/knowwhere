@@ -26,5 +26,10 @@ utoipa = { version = "5", features = ["axum_extras", "chrono", "uuid"] }
 utoipa-swagger-ui = { version = "9", features = ["axum"] }
 bm25 = "2.3.2"
 
+[features]
+default = []
+# Enable PostgreSQL-backed storage layer (requires DATABASE_URL env var at runtime)
+postgres-storage = []
+
 [dev-dependencies]
 http-body-util = "0.1"

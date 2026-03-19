@@ -7,14 +7,8 @@ use serde_json::Value;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use crate::memory::types::{ConflictState, MemorySource, MemoryStatus, MemoryType, Sensitivity};
 use crate::multimodal::MultimodalData;
-
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default, PartialEq)]
-pub enum NodeType {
-    #[default]
-    Session,
-    External,
-}
 
 pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     let dot: f32 = a.iter().zip(b).map(|(x, y)| x * y).sum();
@@ -33,11 +27,21 @@ pub struct Relation {
     pub strength: f64,
 }
 
+/// A fractal memory node.
+///
+/// # Type System
+///
+/// - `memory_type`: What kind of memory this is (episodic/semantic/preference/procedural/meta)
+/// - `source`: Where the memory originated (conversation/document/import/manual/consolidation)
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct FractalNode {
     pub id: Uuid,
+    /// Memory type — replaces the old NodeType enum.
+    #[serde(default = "default_memory_type")]
+    pub memory_type: MemoryType,
+    /// Where this memory came from.
     #[serde(default)]
-    pub node_type: NodeType,
+    pub source: MemorySource,
     pub vector: Vec<f32>,
     pub content: Option<String>,
     pub original_pointer: Option<String>,
@@ -50,6 +54,44 @@ pub struct FractalNode {
     pub relations: Vec<Relation>,
     pub created_at: DateTime<Utc>,
     pub last_accessed: DateTime<Utc>,
+
+    // -- Governance fields (Layer 4) --
+    /// Confidence score 0.0–1.0. Default is type-specific (see MemoryType::default_confidence).
+    #[serde(default = "default_confidence")]
+    pub confidence: f64,
+    /// Sensitivity level for access control.
+    #[serde(default)]
+    pub sensitivity: Sensitivity,
+    /// If Some, this memory has been superseded by the given ID.
+    #[serde(default)]
+    pub superseded_by: Option<Uuid>,
+    /// Conflict state for semantic/meta memories.
+    #[serde(default)]
+    pub conflict_state: ConflictState,
+    /// Provenance tracking: how we know this.
+    #[serde(default)]
+    pub provenance: Value,
+    /// Importance 1–10, used for scoring.
+    #[serde(default = "default_importance")]
+    pub importance: i32,
+    /// Lifecycle status.
+    #[serde(default)]
+    pub status: MemoryStatus,
+    /// How many times this memory has been accessed.
+    #[serde(default)]
+    pub access_count: i32,
+}
+
+fn default_memory_type() -> MemoryType {
+    MemoryType::Episodic
+}
+
+fn default_confidence() -> f64 {
+    0.8
+}
+
+fn default_importance() -> i32 {
+    5
 }
 
 impl FractalNode {
@@ -58,7 +100,8 @@ impl FractalNode {
         let now = Utc::now();
         Self {
             id: Uuid::new_v4(),
-            node_type: NodeType::Session,
+            memory_type: MemoryType::Episodic,
+            source: MemorySource::Conversation,
             vector,
             content: Some(content),
             original_pointer: None,
@@ -69,6 +112,14 @@ impl FractalNode {
             relations: Vec::new(),
             created_at: now,
             last_accessed: now,
+            confidence: MemoryType::Episodic.default_confidence(),
+            sensitivity: Sensitivity::Normal,
+            superseded_by: None,
+            conflict_state: ConflictState::None,
+            provenance: serde_json::json!({"method": "session"}),
+            importance: MemoryType::Episodic.default_importance(),
+            status: MemoryStatus::Active,
+            access_count: 0,
         }
     }
 
@@ -81,7 +132,8 @@ impl FractalNode {
         let now = Utc::now();
         Self {
             id: Uuid::new_v4(),
-            node_type: NodeType::External,
+            memory_type: MemoryType::Semantic,
+            source: MemorySource::Import,
             vector,
             content: None,
             original_pointer: Some(pointer),
@@ -92,6 +144,14 @@ impl FractalNode {
             relations: Vec::new(),
             created_at: now,
             last_accessed: now,
+            confidence: MemoryType::Semantic.default_confidence(),
+            sensitivity: Sensitivity::Normal,
+            superseded_by: None,
+            conflict_state: ConflictState::None,
+            provenance: serde_json::json!({"method": "external"}),
+            importance: MemoryType::Semantic.default_importance(),
+            status: MemoryStatus::Active,
+            access_count: 0,
         }
     }
 
@@ -105,7 +165,8 @@ impl FractalNode {
         let now = Utc::now();
         Self {
             id: Uuid::new_v4(),
-            node_type: NodeType::External,
+            memory_type: MemoryType::Semantic,
+            source: MemorySource::Import,
             vector,
             content: None,
             original_pointer: Some(pointer),
@@ -116,6 +177,49 @@ impl FractalNode {
             relations: Vec::new(),
             created_at: now,
             last_accessed: now,
+            confidence: MemoryType::Semantic.default_confidence(),
+            sensitivity: Sensitivity::Normal,
+            superseded_by: None,
+            conflict_state: ConflictState::None,
+            provenance: serde_json::json!({"method": "external_multimodal"}),
+            importance: MemoryType::Semantic.default_importance(),
+            status: MemoryStatus::Active,
+            access_count: 0,
+        }
+    }
+
+    /// Create a node with explicit memory type (new API).
+    pub fn new_typed(
+        content: Option<String>,
+        pointer: Option<String>,
+        vector: Vec<f32>,
+        metadata: HashMap<String, Value>,
+        memory_type: MemoryType,
+        source: MemorySource,
+    ) -> Self {
+        let now = Utc::now();
+        Self {
+            id: Uuid::new_v4(),
+            memory_type,
+            source,
+            vector,
+            content,
+            original_pointer: pointer,
+            metadata,
+            weight: 1.0,
+            multimodal: None,
+            children: Vec::new(),
+            relations: Vec::new(),
+            created_at: now,
+            last_accessed: now,
+            confidence: memory_type.default_confidence(),
+            sensitivity: Sensitivity::Normal,
+            superseded_by: None,
+            conflict_state: ConflictState::None,
+            provenance: serde_json::json!({}),
+            importance: memory_type.default_importance(),
+            status: MemoryStatus::Active,
+            access_count: 0,
         }
     }
 
@@ -142,4 +246,33 @@ impl FractalNode {
         }
         results
     }
+
+    /// Convert to GovernanceCandidate for Stage 2 validation.
+    pub fn to_governance_candidate(&self) -> crate::memory::GovernanceCandidate {
+        crate::memory::GovernanceCandidate {
+            id: self.id,
+            memory_type: self.memory_type,
+            confidence: self.confidence,
+            sensitivity: self.sensitivity,
+            status: self.status,
+            superseded_by: self.superseded_by,
+            conflict_state: self.conflict_state,
+            created_at: self.created_at,
+            importance: self.importance,
+            access_count: self.access_count,
+            last_accessed: Some(self.last_accessed),
+        }
+    }
+}
+
+/// Backward-compatible alias — NodeType is deprecated in favor of MemoryType + MemorySource.
+#[deprecated(since = "0.2.0", note = "Use MemoryType + MemorySource instead")]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum NodeType {
+    #[default]
+    #[serde(alias = "session", alias = "Session")]
+    Session,
+    #[serde(alias = "external", alias = "External")]
+    External,
 }

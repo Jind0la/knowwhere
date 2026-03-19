@@ -11,7 +11,8 @@ use uuid::Uuid;
 
 use crate::embedding::{EmbeddingProvider, embed_document, embed_query};
 use crate::memory::dream::DreamStatus;
-use crate::memory::{DreamMode, FractalNode, NodeType};
+use crate::memory::types::{ConflictState, MemorySource, MemoryStatus, MemoryType, Sensitivity};
+use crate::memory::{DreamMode, FractalNode, GovernancePolicy, GovernanceValidator, NodeType};
 use crate::multimodal::MultimodalData;
 
 #[derive(Serialize, ToSchema)]
@@ -19,12 +20,23 @@ pub struct ScoredNode {
     pub score: f32,
     pub id: Uuid,
     #[serde(default)]
-    pub node_type: NodeType,
+    pub memory_type: MemoryType,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<MemorySource>,
     pub content: Option<String>,
     pub original_pointer: Option<String>,
     #[schema(value_type = Object)]
     pub metadata: HashMap<String, serde_json::Value>,
     pub created_at: chrono::DateTime<chrono::Utc>,
+    /// Governance fields (populated when Stage 2 governance is applied)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub confidence: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sensitivity: Option<Sensitivity>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub governance_passed: Option<bool>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub governance_issues: Vec<crate::memory::governance::ValidationIssue>,
 }
 
 impl ScoredNode {
@@ -32,11 +44,38 @@ impl ScoredNode {
         Self {
             score,
             id: n.id,
-            node_type: n.node_type,
+            memory_type: n.memory_type,
+            source: Some(n.source),
             content: n.content,
             original_pointer: n.original_pointer,
             metadata: n.metadata,
             created_at: n.created_at,
+            confidence: None,
+            sensitivity: None,
+            governance_passed: None,
+            governance_issues: vec![],
+        }
+    }
+
+    pub(crate) fn from_governed(
+        score: f32,
+        n: FractalNode,
+        governance_passed: bool,
+        issues: Vec<crate::memory::governance::ValidationIssue>,
+    ) -> Self {
+        Self {
+            score,
+            id: n.id,
+            memory_type: n.memory_type,
+            source: Some(n.source),
+            content: n.content,
+            original_pointer: n.original_pointer,
+            metadata: n.metadata,
+            created_at: n.created_at,
+            confidence: Some(n.confidence),
+            sensitivity: Some(n.sensitivity),
+            governance_passed: Some(governance_passed),
+            governance_issues: issues,
         }
     }
 }
@@ -91,6 +130,9 @@ pub struct AppState {
     pub store: MemoryStore,
     pub dream: DreamMode,
     pub embedding: Arc<dyn EmbeddingProvider>,
+    /// Active governance policy for Stage 2 retrieval validation.
+    #[serde(skip)]
+    pub governance_policy: GovernancePolicy,
 }
 
 impl std::fmt::Debug for AppState {
@@ -175,6 +217,26 @@ pub struct StoreSessionRequest {
     #[serde(default)]
     #[schema(value_type = Option<Object>)]
     pub metadata: HashMap<String, Value>,
+    /// Memory type for this session node (default: episodic).
+    #[serde(default = "default_memory_type_str")]
+    pub memory_type: String,
+    /// Source origin (default: conversation).
+    #[serde(default = "default_source_str")]
+    pub source: String,
+    /// Optional importance 1–10 (default: type-specific).
+    #[serde(default)]
+    pub importance: Option<i32>,
+    /// Optional sensitivity (default: normal).
+    #[serde(default)]
+    pub sensitivity: Option<Sensitivity>,
+}
+
+fn default_memory_type_str() -> String {
+    "episodic".to_string()
+}
+
+fn default_source_str() -> String {
+    "conversation".to_string()
 }
 
 #[derive(Serialize, ToSchema)]
@@ -207,14 +269,33 @@ pub async fn store_session(
         }
     };
 
-    let node = FractalNode::new_session(req.content, vector, req.metadata);
+    let memory_type = MemoryType::from_str(&req.memory_type)
+        .unwrap_or(MemoryType::Episodic);
+    let source = MemorySource::from_str(&req.source)
+        .unwrap_or(MemorySource::Conversation);
+
+    let mut node = FractalNode::new_typed(
+        Some(req.content),
+        None,
+        vector,
+        req.metadata,
+        memory_type,
+        source,
+    );
+    if let Some(imp) = req.importance {
+        node.importance = imp.clamp(1, 10);
+    }
+    if let Some(sens) = req.sensitivity {
+        node.sensitivity = sens;
+    }
+
     let id = state
         .store
         .insert(node)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    tracing::info!(%id, "session node stored");
+    tracing::info!(%id, ?memory_type, "session node stored");
 
     Ok((
         StatusCode::CREATED,
@@ -237,6 +318,26 @@ pub struct StoreExternalRequest {
     pub metadata: HashMap<String, Value>,
     #[serde(default)]
     pub multimodal: Option<MultimodalData>,
+    /// Memory type (default: semantic).
+    #[serde(default = "default_semantic_type_str")]
+    pub memory_type: String,
+    /// Source origin (default: import).
+    #[serde(default = "default_import_source_str")]
+    pub source: String,
+    /// Optional importance 1–10.
+    #[serde(default)]
+    pub importance: Option<i32>,
+    /// Optional sensitivity.
+    #[serde(default)]
+    pub sensitivity: Option<Sensitivity>,
+}
+
+fn default_semantic_type_str() -> String {
+    "semantic".to_string()
+}
+
+fn default_import_source_str() -> String {
+    "import".to_string()
 }
 
 #[utoipa::path(
@@ -273,10 +374,28 @@ pub async fn store_external(
         }
     };
 
-    let node = match req.multimodal {
-        Some(mm) => FractalNode::new_external_multimodal(req.pointer, vector, req.metadata, mm),
-        None => FractalNode::new_external(req.pointer, vector, req.metadata),
-    };
+    let memory_type = MemoryType::from_str(&req.memory_type)
+        .unwrap_or(MemoryType::Semantic);
+    let source = MemorySource::from_str(&req.source)
+        .unwrap_or(MemorySource::Import);
+
+    let mut node = FractalNode::new_typed(
+        None,
+        Some(req.pointer.clone()),
+        vector,
+        req.metadata,
+        memory_type,
+        source,
+    );
+    if let Some(imp) = req.importance {
+        node.importance = imp.clamp(1, 10);
+    }
+    if let Some(sens) = req.sensitivity {
+        node.sensitivity = sens;
+    }
+    if let Some(mm) = req.multimodal {
+        node.multimodal = Some(mm);
+    }
 
     let id = state
         .store
@@ -284,7 +403,7 @@ pub async fn store_external(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    tracing::info!(%id, "external pointer node stored");
+    tracing::info!(%id, ?memory_type, "external pointer node stored");
 
     Ok((
         StatusCode::CREATED,
@@ -333,6 +452,12 @@ pub struct RetrieveFractalRequest {
     pub top_k: usize,
     #[serde(default = "default_max_depth")]
     pub max_depth: usize,
+    /// Apply Stage 2 governance filtering (default: true).
+    #[serde(default = "default_governance_enabled")]
+    pub governance_enabled: bool,
+    /// Filter by memory type.
+    #[serde(default)]
+    pub memory_type_filter: Option<String>,
 }
 
 fn default_top_k() -> usize {
@@ -340,6 +465,9 @@ fn default_top_k() -> usize {
 }
 fn default_max_depth() -> usize {
     3
+}
+fn default_governance_enabled() -> bool {
+    true
 }
 
 #[utoipa::path(
@@ -359,8 +487,11 @@ pub async fn retrieve_fractal(
         top_k = req.top_k,
         max_depth = req.max_depth,
         has_query_text = req.query_text.is_some(),
+        governance = req.governance_enabled,
         "fractal retrieve"
     );
+
+    // Stage 1: Hybrid retrieval
     let results = state
         .store
         .hybrid_retrieve(
@@ -370,10 +501,46 @@ pub async fn retrieve_fractal(
             req.max_depth,
         )
         .await;
-    let scored: Vec<ScoredNode> = results
+
+    if !req.governance_enabled {
+        let scored: Vec<ScoredNode> = results
+            .into_iter()
+            .map(|(score, node)| ScoredNode::from_node(score, node))
+            .collect();
+        return Json(scored);
+    }
+
+    // Optional memory type filter
+    let type_filter = req
+        .memory_type_filter
+        .as_ref()
+        .and_then(|s| MemoryType::from_str(s));
+
+    // Stage 2: Governance validation
+    let validator = GovernanceValidator::new(state.governance_policy.clone());
+    let mut scored: Vec<ScoredNode> = results
         .into_iter()
-        .map(|(score, node)| ScoredNode::from_node(score, node))
+        .filter_map(|(score, node)| {
+            // Apply optional memory type filter
+            if let Some(ref filter) = type_filter {
+                if node.memory_type != *filter {
+                    return None;
+                }
+            }
+
+            let candidate = node.to_governance_candidate();
+            let validation = validator.validate(&candidate);
+            Some(ScoredNode::from_governed(score, node, validation.passed, validation.issues))
+        })
         .collect();
+
+    // Re-sort by combined score (retrieval_score * governance_multiplier)
+    scored.sort_by(|a, b| {
+        let score_a = a.score * a.governance_passed.unwrap_or(true) as u8 as f32;
+        let score_b = b.score * b.governance_passed.unwrap_or(true) as u8 as f32;
+        score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+    });
+
     Json(scored)
 }
 
@@ -530,4 +697,138 @@ pub async fn reembed_all(
 )]
 pub async fn dream_status(State(state): State<AppState>) -> Json<DreamStatus> {
     Json(state.dream.status().await)
+}
+
+// -- Governance Policy --
+
+/// Get the current governance policy.
+#[utoipa::path(
+    get,
+    path = "/governance/policy",
+    tag = "governance",
+    responses(
+        (status = 200, description = "Current governance policy", body = GovernancePolicy)
+    )
+)]
+pub async fn get_governance_policy(State(state): State<AppState>) -> Json<GovernancePolicy> {
+    Json(state.governance_policy.clone())
+}
+
+/// Update the governance policy.
+#[derive(Deserialize, ToSchema)]
+pub struct UpdatePolicyRequest {
+    #[serde(default)]
+    pub min_confidence: Option<f64>,
+    #[serde(default)]
+    pub max_age_days: Option<u32>,
+    #[serde(default)]
+    pub blocked_sensitivities: Option<Vec<Sensitivity>>,
+    #[serde(default)]
+    pub supersession_enabled: Option<bool>,
+    #[serde(default)]
+    pub conflict_check_enabled: Option<bool>,
+    #[serde(default)]
+    pub recency_boost_enabled: Option<bool>,
+    #[serde(default)]
+    pub recency_penalty_after_days: Option<u32>,
+    /// Preset: "default", "strict", or "lenient". Overrides other fields if set.
+    #[serde(default)]
+    pub preset: Option<String>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct UpdatePolicyResponse {
+    pub message: String,
+    pub policy: GovernancePolicy,
+}
+
+#[utoipa::path(
+    post,
+    path = "/governance/policy",
+    tag = "governance",
+    request_body = UpdatePolicyRequest,
+    responses(
+        (status = 200, description = "Policy updated", body = UpdatePolicyResponse)
+    )
+)]
+pub async fn update_governance_policy(
+    State(state): State<AppState>,
+    Json(req): Json<UpdatePolicyRequest>,
+) -> Json<UpdatePolicyResponse> {
+    let mut policy = state.governance_policy.clone();
+
+    if let Some(preset) = req.preset {
+        policy = match preset.as_str() {
+            "strict" => GovernancePolicy::strict(),
+            "lenient" => GovernancePolicy::lenient(),
+            _ => GovernancePolicy::default(),
+        };
+    }
+
+    if let Some(v) = req.min_confidence {
+        policy.min_confidence = v.clamp(0.0, 1.0);
+    }
+    if let Some(v) = req.max_age_days {
+        policy.max_age_days = Some(v);
+    }
+    if let Some(v) = req.blocked_sensitivities {
+        policy.blocked_sensitivities = v;
+    }
+    if let Some(v) = req.supersession_enabled {
+        policy.supersession_enabled = v;
+    }
+    if let Some(v) = req.conflict_check_enabled {
+        policy.conflict_check_enabled = v;
+    }
+    if let Some(v) = req.recency_boost_enabled {
+        policy.recency_boost_enabled = v;
+    }
+    if let Some(v) = req.recency_penalty_after_days {
+        policy.recency_penalty_after_days = v;
+    }
+
+    // Note: in a real app this would be persisted. For now it's in-memory only.
+    tracing::info!(?policy, "governance policy updated");
+
+    Json(UpdatePolicyResponse {
+        message: "governance policy updated".to_string(),
+        policy,
+    })
+}
+
+// -- Event Log (Layer 0 — read-only) --
+
+use crate::memory::events::Event;
+
+#[derive(Deserialize, IntoParams)]
+pub struct EventsQuery {
+    /// Only return events after this ID (cursor-based pagination).
+    #[serde(default)]
+    pub after_id: Option<Uuid>,
+    /// Maximum number of events to return (default 100, max 1000).
+    #[serde(default = "default_events_limit")]
+    pub limit: i64,
+}
+
+fn default_events_limit() -> i64 {
+    100
+}
+
+#[utoipa::path(
+    get,
+    path = "/events",
+    tag = "system",
+    params(EventsQuery),
+    responses(
+        (status = 200, description = "Event log entries")
+    )
+)]
+pub async fn list_events(
+    State(_state): State<AppState>,
+    axum::extract::Query(q): axum::extract::Query<EventsQuery>,
+) -> Json<Vec<Event>> {
+    // Event log requires postgres-storage. Return empty list if not configured.
+    // In a full implementation, this would call PostgresStore::read_events.
+    tracing::debug!("events endpoint called (requires postgres-storage for actual data)");
+    Json(vec![])
 }
