@@ -7,6 +7,9 @@ pub mod types;
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
+mod governance_test;
+
 pub use dream::{audit, consolidation, DreamMode};
 pub use events::{Event, EventType, EventStore};
 pub use fractal_node::{cosine_similarity, FractalNode, NodeType, Relation};
