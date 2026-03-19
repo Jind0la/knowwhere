@@ -12,7 +12,9 @@ use uuid::Uuid;
 use crate::embedding::{EmbeddingProvider, embed_document, embed_query};
 use crate::memory::dream::DreamStatus;
 use crate::memory::types::{ConflictState, MemorySource, MemoryStatus, MemoryType, Sensitivity};
-use crate::memory::{DreamMode, FractalNode, GovernancePolicy, GovernanceValidator, NodeType};
+use crate::memory::{
+    DreamMode, Event, FractalNode, GovernancePolicy, GovernanceValidator, InMemoryEventStore,
+};
 use crate::multimodal::MultimodalData;
 
 #[derive(Serialize, ToSchema)]
@@ -119,7 +121,13 @@ fn clean_for_embedding(text: &str) -> String {
         out.push_str(cleaned);
     }
     if out.len() > 1024 {
+        let original_len = out.len();
         out.truncate(out.floor_char_boundary(1024));
+        tracing::debug!(
+            original_len,
+            truncated_to = out.len(),
+            "clean_for_embedding: text truncated for embedding"
+        );
     }
     out
 }
@@ -133,6 +141,9 @@ pub struct AppState {
     /// Active governance policy for Stage 2 retrieval validation.
     #[serde(skip)]
     pub governance_policy: GovernancePolicy,
+    /// In-memory event store for Layer 0 (appended to on each mutation).
+    /// For production with multiple nodes, use PostgresStore instead.
+    pub events: InMemoryEventStore,
 }
 
 impl std::fmt::Debug for AppState {
@@ -530,15 +541,32 @@ pub async fn retrieve_fractal(
 
             let candidate = node.to_governance_candidate();
             let validation = validator.validate(&candidate);
+
+            // Hard-blocked nodes (superseded, restricted, invalid status, irrelevant)
+            // are excluded from results entirely.
+            if validation.has_hard_block() {
+                tracing::debug!(node_id = %node.id, "excluded by governance: hard block");
+                return None;
+            }
+
             Some(ScoredNode::from_governed(score, node, validation.passed, validation.issues))
         })
         .collect();
 
-    // Re-sort by combined score (retrieval_score * governance_multiplier)
+    // Re-sort by combined score (retrieval_score * governance_multiplier).
+    // Nodes with hard blocks are already filtered out above.
     scored.sort_by(|a, b| {
-        let score_a = a.score * a.governance_passed.unwrap_or(true) as u8 as f32;
-        let score_b = b.score * b.governance_passed.unwrap_or(true) as u8 as f32;
-        score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+        // Apply governance score multiplier to retrieval score
+        let multiplier_a = a.governance_issues.iter()
+            .map(|i| i.score_impact)
+            .fold(1.0_f64, |acc, m| acc * m) as f32;
+        let multiplier_b = b.governance_issues.iter()
+            .map(|i| i.score_impact)
+            .fold(1.0_f64, |acc, m| acc * m) as f32;
+
+        let effective_a = a.score * multiplier_a;
+        let effective_b = b.score * multiplier_b;
+        effective_b.partial_cmp(&effective_a).unwrap_or(std::cmp::Ordering::Equal)
     });
 
     Json(scored)
@@ -798,8 +826,6 @@ pub async fn update_governance_policy(
 
 // -- Event Log (Layer 0 — read-only) --
 
-use crate::memory::events::Event;
-
 #[derive(Deserialize, IntoParams)]
 pub struct EventsQuery {
     /// Only return events after this ID (cursor-based pagination).
@@ -820,15 +846,19 @@ fn default_events_limit() -> i64 {
     tag = "system",
     params(EventsQuery),
     responses(
-        (status = 200, description = "Event log entries")
+        (status = 200, description = "Event log entries (in-memory, single-node)")
     )
 )]
 pub async fn list_events(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     axum::extract::Query(q): axum::extract::Query<EventsQuery>,
 ) -> Json<Vec<Event>> {
-    // Event log requires postgres-storage. Return empty list if not configured.
-    // In a full implementation, this would call PostgresStore::read_events.
-    tracing::debug!("events endpoint called (requires postgres-storage for actual data)");
-    Json(vec![])
+    let limit = q.limit.min(1000);
+    match state.events.read_after(q.after_id, limit).await {
+        Ok(events) => Json(events),
+        Err(e) => {
+            tracing::warn!("failed to read events: {e}");
+            Json(vec![])
+        }
+    }
 }

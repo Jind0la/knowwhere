@@ -305,3 +305,74 @@ pub trait EventStore: Send + Sync {
     /// Count total events.
     async fn count(&self) -> anyhow::Result<i64>;
 }
+
+// -----------------------------------------------------------------------------
+// In-Memory Event Store
+// -----------------------------------------------------------------------------
+
+use std::sync::Arc;
+use tokio::sync::RwLock;
+
+/// Simple in-memory event store.
+/// Suitable for development and single-instance deployments.
+/// For production with multiple instances, use PostgresStore instead.
+pub struct InMemoryEventStore {
+    events: Arc<RwLock<Vec<Event>>>,
+}
+
+impl InMemoryEventStore {
+    pub fn new() -> Self {
+        Self {
+            events: Arc::new(RwLock::new(Vec::new())),
+        }
+    }
+
+    /// Create a new InMemoryEventStore with some seed events.
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            events: Arc::new(RwLock::new(Vec::with_capacity(capacity))),
+        }
+    }
+}
+
+impl Default for InMemoryEventStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl EventStore for InMemoryEventStore {
+    async fn append(&self, event: &Event) -> anyhow::Result<()> {
+        self.events.write().await.push(event.clone());
+        Ok(())
+    }
+
+    async fn read_after(
+        &self,
+        after_id: Option<Uuid>,
+        limit: i64,
+    ) -> anyhow::Result<Vec<Event>> {
+        let events = self.events.read().await;
+        let start = if let Some(after) = after_id {
+            events.iter().position(|e| e.id == after).map(|p| p + 1).unwrap_or(0)
+        } else {
+            0
+        };
+        Ok(events[start..].iter().take(limit as usize).cloned().collect())
+    }
+
+    async fn read_by_type(&self, event_type: &str, limit: i64) -> anyhow::Result<Vec<Event>> {
+        let events = self.events.read().await;
+        Ok(events
+            .iter()
+            .filter(|e| e.event_type.name() == event_type)
+            .take(limit as usize)
+            .cloned()
+            .collect())
+    }
+
+    async fn count(&self) -> anyhow::Result<i64> {
+        Ok(self.events.read().await.len() as i64)
+    }
+}

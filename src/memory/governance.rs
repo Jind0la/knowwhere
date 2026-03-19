@@ -108,6 +108,12 @@ pub struct ValidationResult {
 }
 
 impl ValidationResult {
+    /// Returns true if any issue has a hard-block impact (score_multiplier = 0.0).
+    /// These nodes should be excluded from retrieval results entirely.
+    pub fn has_hard_block(&self) -> bool {
+        self.issues.iter().any(|i| i.score_impact == 0.0)
+    }
+
     pub fn pass() -> Self {
         Self {
             passed: true,
@@ -427,5 +433,4 @@ impl GovernedScoredNode {
 // Re-exports
 // -----------------------------------------------------------------------------
 
-pub use ValidationIssue as AuditIssue;
 pub use ValidationResult as AuditResult;

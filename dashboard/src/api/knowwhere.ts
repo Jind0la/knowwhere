@@ -33,15 +33,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 // Health
 // ---------------------------------------------------------------------------
 
-export async function health() {
-  return request<{ status: string; node_count: number }>('/health');
+export async function health(): Promise<HealthResponse> {
+  return request<HealthResponse>('/health');
 }
 
 // ---------------------------------------------------------------------------
 // Embedding
 // ---------------------------------------------------------------------------
 
-export async function embedText(text: string) {
+export async function embedText(text: string): Promise<{ vector: number[]; dimension: number; provider: string }> {
   return request<{ vector: number[]; dimension: number; provider: string }>('/embed', {
     method: 'POST',
     body: JSON.stringify({ text }),
@@ -52,16 +52,8 @@ export async function embedText(text: string) {
 // Memory — Store
 // ---------------------------------------------------------------------------
 
-export async function storeSession(body: {
-  content: string;
-  vector?: number[];
-  metadata?: Record<string, unknown>;
-  memory_type?: string;
-  source?: string;
-  importance?: number;
-  sensitivity?: string;
-}) {
-  return request<{ id: string; message: string }>('/store_session', {
+export async function storeSession(body: StoreSessionRequest): Promise<StoreNodeResponse> {
+  return request<StoreNodeResponse>('/store_session', {
     method: 'POST',
     body: JSON.stringify(body),
   });
@@ -91,15 +83,8 @@ export async function retrieveNode(id: string) {
   return request<unknown>(`/retrieve/${id}`);
 }
 
-export async function retrieveFractal(body: {
-  query_vector: number[];
-  query_text?: string;
-  top_k?: number;
-  max_depth?: number;
-  governance_enabled?: boolean;
-  memory_type_filter?: string;
-}) {
-  return request<unknown[]>('/retrieve_fractal', {
+export async function retrieveFractal(body: RetrieveFractalRequest): Promise<ScoredNode[]> {
+  return request<ScoredNode[]>('/retrieve_fractal', {
     method: 'POST',
     body: JSON.stringify(body),
   });
@@ -129,29 +114,12 @@ export async function purgeDummyNodes() {
 // Governance
 // ---------------------------------------------------------------------------
 
-export async function getGovernancePolicy() {
-  return request<{
-    min_confidence: number;
-    max_age_days: number | null;
-    blocked_sensitivities: string[];
-    supersession_enabled: boolean;
-    conflict_check_enabled: boolean;
-    recency_boost_enabled: boolean;
-    recency_penalty_after_days: number;
-  }>('/governance/policy');
+export async function getGovernancePolicy(): Promise<GovernancePolicy> {
+  return request<GovernancePolicy>('/governance/policy');
 }
 
-export async function updateGovernancePolicy(body: {
-  min_confidence?: number;
-  max_age_days?: number;
-  blocked_sensitivities?: string[];
-  supersession_enabled?: boolean;
-  conflict_check_enabled?: boolean;
-  recency_boost_enabled?: boolean;
-  recency_penalty_after_days?: number;
-  preset?: string;
-}) {
-  return request<{ message: string; policy: unknown }>('/governance/policy', {
+export async function updateGovernancePolicy(body: UpdatePolicyRequest): Promise<{ message: string; policy: GovernancePolicy }> {
+  return request<{ message: string; policy: GovernancePolicy }>('/governance/policy', {
     method: 'POST',
     body: JSON.stringify(body),
   });
@@ -161,24 +129,18 @@ export async function updateGovernancePolicy(body: {
 // Dream Mode
 // ---------------------------------------------------------------------------
 
-export async function dreamStatus() {
-  return request<{
-    active: boolean;
-    phase: string;
-    memories_processed: number;
-    consolidations_run: number;
-    last_run: string | null;
-  }>('/dream/status');
+export async function dreamStatus(): Promise<DreamStatus> {
+  return request<DreamStatus>('/dream/status');
 }
 
 // ---------------------------------------------------------------------------
 // Events (Layer 0)
 // ---------------------------------------------------------------------------
 
-export async function listEvents(params?: { after_id?: string; limit?: number }) {
+export async function listEvents(params?: { after_id?: string; limit?: number }): Promise<Event[]> {
   const qs = new URLSearchParams();
   if (params?.after_id) qs.set('after_id', params.after_id);
   if (params?.limit) qs.set('limit', String(params.limit));
   const query = qs.toString() ? `?${qs.toString()}` : '';
-  return request<unknown[]>(`/events${query}`);
+  return request<Event[]>(`/events${query}`);
 }
