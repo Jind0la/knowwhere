@@ -6,7 +6,13 @@ pub mod tiered;
 pub mod types;
 
 #[cfg(feature = "postgres-storage")]
+pub mod namespaces;
+
+#[cfg(feature = "postgres-storage")]
 pub mod self_healing;
+
+#[cfg(feature = "postgres-storage")]
+pub mod skills;
 
 #[cfg(test)]
 mod tests;
