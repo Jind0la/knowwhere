@@ -1225,6 +1225,8 @@ pub async fn get_memory(
 // =============================================================================
 
 use crate::memory::dream::conflict_detection::{ConflictDetector, ConflictGroup};
+use crate::memory::dream::energy_decay::{EnergyDecayWorker, MemoryEnergyInfo, DecayResult, CompressionResult};
+use crate::memory::dream::deduplication::{DeduplicationWorker, DuplicatePair, DeduplicationRunRow, DeduplicationResult};
 
 /// GET /conflicts — list all pending (unresolved) conflicts.
 #[cfg(feature = "postgres-storage")]
@@ -1309,5 +1311,271 @@ pub async fn resolve_conflict(
                 Err((StatusCode::INTERNAL_SERVER_ERROR, msg))
             }
         }
+    }
+}
+
+// =============================================================================
+// Energy Decay Routes (Ebbinghaus forgetting curve)
+// =============================================================================
+
+/// Request body for energy boost.
+#[cfg(feature = "postgres-storage")]
+#[derive(Deserialize, ToSchema)]
+pub struct BoostEnergyRequest {
+    /// Energy units to add (e.g. 20 for a retrieval access).
+    #[schema(default = 20)]
+    pub boost: i32,
+}
+
+/// Response after boosting energy.
+#[cfg(feature = "postgres-storage")]
+#[derive(Serialize, ToSchema)]
+pub struct BoostEnergyResponse {
+    pub memory_id: Uuid,
+    pub boost: i32,
+    pub message: String,
+}
+
+/// POST /memories/{id}/energy/boost — boost energy after memory access
+#[cfg(feature = "postgres-storage")]
+#[utoipa::path(
+    post,
+    path = "/memories/{id}/energy/boost",
+    tag = "dream",
+    params(
+        ("id" = Uuid, Path, description = "Memory ID to boost")
+    ),
+    request_body = BoostEnergyRequest,
+    responses(
+        (status = 200, description = "Energy boosted", body = BoostEnergyResponse),
+        (status = 404, description = "Memory not found", body = String),
+        (status = 503, description = "postgres-storage not configured", body = String)
+    )
+)]
+pub async fn boost_memory_energy(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(req): Json<BoostEnergyRequest>,
+) -> Result<Json<BoostEnergyResponse>, (StatusCode, String)> {
+    let pool = match &state.trajectory_pool {
+        Some(p) => p.clone(),
+        None => return Err((StatusCode::SERVICE_UNAVAILABLE, "postgres-storage not configured".into())),
+    };
+
+    let worker = EnergyDecayWorker::with_defaults(&pool);
+    match worker.boost_energy(id, req.boost).await {
+        Ok(()) => Ok(Json(BoostEnergyResponse {
+            memory_id: id,
+            boost: req.boost,
+            message: format!("energy boosted by {}", req.boost),
+        })),
+        Err(e) => {
+            if e.to_string().contains("0 rows") {
+                Err((StatusCode::NOT_FOUND, format!("memory {} not found or not active", id)))
+            } else {
+                Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+            }
+        }
+    }
+}
+
+/// Query params for low-energy memory listing.
+#[cfg(feature = "postgres-storage")]
+#[derive(Deserialize, ToSchema, IntoParams)]
+pub struct LowEnergyQuery {
+    /// Maximum number of memories to return (default: 10).
+    #[param(default = 10)]
+    pub limit: i32,
+}
+
+/// GET /energy/low?limit=10 — list low-energy memories (candidates for compression)
+#[cfg(feature = "postgres-storage")]
+#[utoipa::path(
+    get,
+    path = "/energy/low",
+    tag = "dream",
+    params(
+        LowEnergyQuery
+    ),
+    responses(
+        (status = 200, description = "Low-energy memories", body = Vec<MemoryEnergyInfo>),
+        (status = 503, description = "postgres-storage not configured", body = String)
+    )
+)]
+pub async fn list_low_energy_memories(
+    State(state): State<AppState>,
+    axum::extract::Query(query): axum::extract::Query<LowEnergyQuery>,
+) -> Result<Json<Vec<MemoryEnergyInfo>>, (StatusCode, String)> {
+    let pool = match &state.trajectory_pool {
+        Some(p) => p.clone(),
+        None => return Err((StatusCode::SERVICE_UNAVAILABLE, "postgres-storage not configured".into())),
+    };
+
+    let worker = EnergyDecayWorker::with_defaults(&pool);
+    match worker.find_low_energy_memories(query.limit).await {
+        Ok(memories) => Ok(Json(memories)),
+        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
+    }
+}
+
+/// POST /energy/decay/apply — apply energy decay to all active memories
+#[cfg(feature = "postgres-storage")]
+#[utoipa::path(
+    post,
+    path = "/energy/decay/apply",
+    tag = "dream",
+    responses(
+        (status = 200, description = "Decay applied", body = DecayResult),
+        (status = 503, description = "postgres-storage not configured", body = String)
+    )
+)]
+pub async fn apply_energy_decay(
+    State(state): State<AppState>,
+) -> Result<Json<DecayResult>, (StatusCode, String)> {
+    let pool = match &state.trajectory_pool {
+        Some(p) => p.clone(),
+        None => return Err((StatusCode::SERVICE_UNAVAILABLE, "postgres-storage not configured".into())),
+    };
+
+    let worker = EnergyDecayWorker::with_defaults(&pool);
+    match worker.apply_decay().await {
+        Ok(result) => Ok(Json(result)),
+        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
+    }
+}
+
+/// Request body for cluster compression.
+#[cfg(feature = "postgres-storage")]
+#[derive(Deserialize, ToSchema)]
+pub struct CompressClusterRequest {
+    /// Memory IDs to compress (2–4 memories).
+    pub memory_ids: Vec<Uuid>,
+}
+
+/// POST /energy/compress — compress a cluster of low-energy memories into one
+#[cfg(feature = "postgres-storage")]
+#[utoipa::path(
+    post,
+    path = "/energy/compress",
+    tag = "dream",
+    request_body = CompressClusterRequest,
+    responses(
+        (status = 200, description = "Cluster compressed", body = CompressionResult),
+        (status = 400, description = "Invalid request (need 2+ memories)", body = String),
+        (status = 503, description = "postgres-storage not configured", body = String)
+    )
+)]
+pub async fn compress_memory_cluster(
+    State(state): State<AppState>,
+    Json(req): Json<CompressClusterRequest>,
+) -> Result<Json<CompressionResult>, (StatusCode, String)> {
+    let pool = match &state.trajectory_pool {
+        Some(p) => p.clone(),
+        None => return Err((StatusCode::SERVICE_UNAVAILABLE, "postgres-storage not configured".into())),
+    };
+
+    if req.memory_ids.len() < 2 {
+        return Err((StatusCode::BAD_REQUEST, "need at least 2 memory IDs to compress".into()));
+    }
+
+    let worker = EnergyDecayWorker::with_defaults(&pool);
+    match worker.compress_cluster(&req.memory_ids).await {
+        Ok(result) => Ok(Json(result)),
+        Err(e) => Err((StatusCode::BAD_REQUEST, e.to_string())),
+    }
+}
+
+// =============================================================================
+// Deduplication Routes
+// =============================================================================
+
+/// GET /deduplication/candidates — find duplicate memory pairs (preview, no merge)
+#[cfg(feature = "postgres-storage")]
+#[utoipa::path(
+    get,
+    path = "/deduplication/candidates",
+    tag = "dream",
+    responses(
+        (status = 200, description = "Duplicate candidate pairs", body = Vec<DuplicatePair>),
+        (status = 503, description = "postgres-storage not configured", body = String)
+    )
+)]
+pub async fn list_deduplication_candidates(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<DuplicatePair>>, (StatusCode, String)> {
+    let pool = match &state.trajectory_pool {
+        Some(p) => p.clone(),
+        None => return Err((StatusCode::SERVICE_UNAVAILABLE, "postgres-storage not configured".into())),
+    };
+
+    let worker = DeduplicationWorker::with_defaults(&pool);
+    match worker.find_duplicates().await {
+        Ok(pairs) => Ok(Json(pairs)),
+        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
+    }
+}
+
+/// POST /deduplication/run — run full deduplication (find + merge all duplicates)
+#[cfg(feature = "postgres-storage")]
+#[utoipa::path(
+    post,
+    path = "/deduplication/run",
+    tag = "dream",
+    responses(
+        (status = 200, description = "Deduplication run result", body = DeduplicationResult),
+        (status = 503, description = "postgres-storage not configured", body = String)
+    )
+)]
+pub async fn run_deduplication(
+    State(state): State<AppState>,
+) -> Result<Json<DeduplicationResult>, (StatusCode, String)> {
+    let pool = match &state.trajectory_pool {
+        Some(p) => p.clone(),
+        None => return Err((StatusCode::SERVICE_UNAVAILABLE, "postgres-storage not configured".into())),
+    };
+
+    let worker = DeduplicationWorker::with_defaults(&pool);
+    match worker.run_deduplication().await {
+        Ok(result) => Ok(Json(result)),
+        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
+    }
+}
+
+/// Query params for recent deduplication runs.
+#[cfg(feature = "postgres-storage")]
+#[derive(Deserialize, ToSchema, IntoParams)]
+pub struct DedupRunsQuery {
+    /// Maximum number of runs to return (default: 10).
+    #[param(default = 10)]
+    pub limit: i32,
+}
+
+/// GET /deduplication/runs — list recent deduplication runs
+#[cfg(feature = "postgres-storage")]
+#[utoipa::path(
+    get,
+    path = "/deduplication/runs",
+    tag = "dream",
+    params(
+        DedupRunsQuery
+    ),
+    responses(
+        (status = 200, description = "Recent deduplication runs", body = Vec<DeduplicationRunRow>),
+        (status = 503, description = "postgres-storage not configured", body = String)
+    )
+)]
+pub async fn list_deduplication_runs(
+    State(state): State<AppState>,
+    axum::extract::Query(query): axum::extract::Query<DedupRunsQuery>,
+) -> Result<Json<Vec<DeduplicationRunRow>>, (StatusCode, String)> {
+    let pool = match &state.trajectory_pool {
+        Some(p) => p.clone(),
+        None => return Err((StatusCode::SERVICE_UNAVAILABLE, "postgres-storage not configured".into())),
+    };
+
+    let worker = DeduplicationWorker::with_defaults(&pool);
+    match worker.recent_runs(query.limit).await {
+        Ok(runs) => Ok(Json(runs)),
+        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
     }
 }

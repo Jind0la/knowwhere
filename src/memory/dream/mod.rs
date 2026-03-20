@@ -24,6 +24,12 @@ pub mod consolidation;
 #[cfg(feature = "postgres-storage")]
 pub mod conflict_detection;
 
+#[cfg(feature = "postgres-storage")]
+pub mod energy_decay;
+
+#[cfg(feature = "postgres-storage")]
+pub mod deduplication;
+
 pub use audit::{AuditConfig, AuditEngine, AuditFinding, AuditReport, AuditFindingType};
 pub use consolidation::{ConsolidationConfig, ConsolidationEngine, ConsolidationReport, MemoryCluster};
 

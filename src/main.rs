@@ -161,6 +161,22 @@ async fn run() -> anyhow::Result<()> {
         .route("/conflicts", get(routes::list_conflicts))
         #[cfg(feature = "postgres-storage")]
         .route("/conflicts/{id}/resolve", post(routes::resolve_conflict))
+        // Energy decay routes (Ebbinghaus forgetting curve)
+        #[cfg(feature = "postgres-storage")]
+        .route("/memories/{id}/energy/boost", post(routes::boost_memory_energy))
+        #[cfg(feature = "postgres-storage")]
+        .route("/energy/low", get(routes::list_low_energy_memories))
+        #[cfg(feature = "postgres-storage")]
+        .route("/energy/decay/apply", post(routes::apply_energy_decay))
+        #[cfg(feature = "postgres-storage")]
+        .route("/energy/compress", post(routes::compress_memory_cluster))
+        // Deduplication routes
+        #[cfg(feature = "postgres-storage")]
+        .route("/deduplication/candidates", get(routes::list_deduplication_candidates))
+        #[cfg(feature = "postgres-storage")]
+        .route("/deduplication/run", post(routes::run_deduplication))
+        #[cfg(feature = "postgres-storage")]
+        .route("/deduplication/runs", get(routes::list_deduplication_runs))
         .route_layer(middleware::from_fn(auth::auth_middleware))
         .layer(axum::Extension(api_key.clone()));
 
