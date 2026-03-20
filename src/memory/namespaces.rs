@@ -16,6 +16,7 @@ use uuid::Uuid;
 use super::types::MemoryType;
 
 /// A named namespace for organizing memories.
+#[cfg(feature = "postgres-storage")]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryNamespace {
     /// Unique identifier.
