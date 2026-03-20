@@ -506,15 +506,17 @@ impl MemoryStore {
             )
         });
 
-        let vector_results = self.retrieve_fractal(query_vector, top_k * 2, max_depth).await;
+        let vector_results = self.retrieve_fractal(
+            query_vector, 
+            top_k * 2, 
+            max_depth,
+            #[cfg(feature = "postgres-storage")]
+            crate::memory::fractal_node::FractalNode::ZOOM_PRUNING_THRESHOLD,
+            #[cfg(feature = "postgres-storage")]
+            trajectory.as_mut().map(|t| t as &mut crate::storage::trajectory::RetrievalTrajectory),
+        ).await;
 
-        #[cfg(feature = "postgres-storage")]
-        if let Some(ref mut traj) = trajectory {
-            for n in &vector_results {
-                let score = crate::memory::cosine_similarity(&n.vector, query_vector);
-                traj.log_search(n.id, score, "initial vector search");
-            }
-        }
+        // Note: trajectory logging is now done inside retrieve_fractal
 
         let vector_ids: Vec<Uuid> = vector_results.iter().map(|n| n.id).collect();
 
@@ -593,6 +595,7 @@ impl MemoryStore {
         top_k: usize,
         max_depth: usize,
         #[cfg(feature = "postgres-storage")] pruning_threshold: f32,
+        #[cfg(feature = "postgres-storage")] trajectory: Option<&mut crate::storage::trajectory::RetrievalTrajectory>,
     ) -> Vec<FractalNode> {
         #[cfg(not(feature = "postgres-storage"))]
         let pruning_threshold = crate::memory::fractal_node::FractalNode::ZOOM_PRUNING_THRESHOLD;
@@ -631,6 +634,15 @@ impl MemoryStore {
                     .flat_map(|node| node.zoom_retrieve(query_vector, max_depth, pruning_threshold))
                     .collect();
                 scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(Ordering::Equal));
+                
+                // Log initial search steps if trajectory is provided
+                #[cfg(feature = "postgres-storage")]
+                if let Some(traj) = trajectory {
+                    for (score, node) in &scored {
+                        traj.log_search(node.id, *score, "usearch_candidate");
+                    }
+                }
+                
                 return scored
                     .into_iter()
                     .take(top_k)
@@ -639,6 +651,12 @@ impl MemoryStore {
             }
         }
 
+        // Fallback: linear scan
+        #[cfg(feature = "postgres-storage")]
+        if let Some(traj) = trajectory {
+            traj.log_info("fallback: linear scan");
+        }
+        
         let nodes = self.nodes.read().await;
         let mut scored: Vec<(f32, FractalNode)> = nodes
             .values()

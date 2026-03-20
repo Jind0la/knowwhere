@@ -1,109 +1,150 @@
-//! Retrieval Trajectory Logging
+//! Trajectory storage for retrieval tracking.
 //!
-//! Tracks the full decision path of each retrieval operation for:
-//! - Observability: understand HOW context was found
-//! - Debugging: trace retrieval failures
-//! - Optimization: identify bottlenecks via RAGAs metrics
-//!
-//! Each retrieval produces a `RetrievalTrajectory` containing `RetrievalStep`s
-//! that log every search attempt, filter, zoom, and rerank decision.
+//! Tracks how memories are accessed, used, and how their relevance decays over time.
+//! Provides both in-memory step accumulation (for fractal zoom) and PostgreSQL
+//! persistence (for audit and analytics).
 
-use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
 use uuid::Uuid;
 
-// -----------------------------------------------------------------------------
-// Trajectory Types
-// -----------------------------------------------------------------------------
+#[cfg(feature = "postgres-storage")]
+use sqlx::{PgPool, Row};
 
-/// A single step within a retrieval trajectory.
+/// Step type labels used in [`RetrievalStep`].
+pub mod step_type {
+    /// Node was visited during fractal zoom.
+    pub const VISITED: &str = "visited";
+    /// Traversed from parent to child during zoom.
+    pub const DESCENDED: &str = "descended";
+    /// A branch was pruned (similarity below threshold or no children).
+    pub const PRUNED: &str = "pruned";
+    /// Informational step (fallback triggered, summary, etc.).
+    pub const INFO: &str = "info";
+    /// Initial search step.
+    pub const INITIAL: &str = "initial";
+    /// Governance filter applied.
+    pub const FILTERED: &str = "filtered";
+    /// Final result in top-k.
+    pub const RESULT: &str = "result";
+}
+
+// ---------------------------------------------------------------------------
+// RetrievalStep — in-memory log entry emitted during fractal zoom
+// ---------------------------------------------------------------------------
+
+/// A single log step emitted during fractal zoom retrieval.
 ///
-/// Records what happened at each stage of retrieval:
-/// - `initial_search`: First vector/BM25 search
-/// - `fractal_zoom`: Following parent-child relationships
-/// - `bm25_search`: Full-text keyword search
-/// - `governance_filter`: Stage 2 governance filtering
-/// - `rerank`: Score adjustment
-/// - `result`: Final included result
+/// Each step records what happened at a particular node (visited,
+/// descended into, or pruned) along with the similarity score and
+/// optional metadata. These steps are accumulated in a `Vec<RetrievalStep>`
+/// and can be persisted or inspected after retrieval.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RetrievalStep {
-    /// Zero-based step index within the trajectory.
-    pub step_index: usize,
-    /// What kind of step this was.
+    /// Unique identifier of the memory/node this step refers to.
+    pub memory_id: Uuid,
+    /// Cosine similarity of this node to the query at the time of the step.
+    pub similarity: f32,
+    /// Step type label (`visited`, `descended`, `pruned`, `info`).
     pub step_type: String,
-    /// Which memory was involved (None for aggregate/logging steps).
-    pub memory_id: Option<Uuid>,
-    /// Score before this step's transformation (e.g., before rerank).
-    pub score_before: Option<f32>,
-    /// Score after this step's transformation.
-    pub score_after: Option<f32>,
-    /// Final rank in results (1 = best).
-    pub rank: Option<usize>,
-    /// Human-readable explanation of the decision.
-    pub decision: String,
-    /// Why something was filtered out (if applicable).
+    /// Remaining depth when this node was visited (for `visited` steps).
+    pub remaining_depth: Option<usize>,
+    /// Parent node ID (for `descended` steps).
+    pub parent_id: Option<Uuid>,
+    /// Human-readable reason for pruning or info (for `pruned` / `info` steps).
     pub filter_reason: Option<String>,
+    /// Timestamp when this step was recorded.
+    pub recorded_at: DateTime<Utc>,
 }
 
 impl RetrievalStep {
-    /// Create an initial search step.
-    pub fn initial_search(memory_id: Uuid, score: f32, decision: &str) -> Self {
+    /// Records a node visit during fractal zoom.
+    pub fn visited(memory_id: Uuid, similarity: f32, remaining_depth: usize) -> Self {
         Self {
-            step_index: 0,
-            step_type: "initial_search".to_string(),
-            memory_id: Some(memory_id),
-            score_before: None,
-            score_after: Some(score),
-            rank: None,
-            decision: decision.to_string(),
+            memory_id,
+            similarity,
+            step_type: step_type::VISITED.to_string(),
+            remaining_depth: Some(remaining_depth),
+            parent_id: None,
             filter_reason: None,
+            recorded_at: Utc::now(),
         }
     }
 
-    /// Create a fractal zoom step.
-    pub fn fractal_zoom(memory_id: Uuid, score_before: f32, score_after: f32, decision: &str) -> Self {
+    /// Records a descent from a parent node into a child during zoom.
+    pub fn descended(child_id: Uuid, child_similarity: f32, parent_id: Uuid) -> Self {
         Self {
-            step_index: 0,
-            step_type: "fractal_zoom".to_string(),
-            memory_id: Some(memory_id),
-            score_before: Some(score_before),
-            score_after: Some(score_after),
-            rank: None,
-            decision: decision.to_string(),
+            memory_id: child_id,
+            similarity: child_similarity,
+            step_type: step_type::DESCENDED.to_string(),
+            remaining_depth: None,
+            parent_id: Some(parent_id),
             filter_reason: None,
+            recorded_at: Utc::now(),
         }
     }
 
-    /// Create a filter step (node excluded).
-    pub fn filtered(memory_id: Uuid, score_before: f32, reason: &str) -> Self {
+    /// Records that a node's sub-tree was pruned.
+    pub fn pruned(memory_id: Uuid, similarity: f32, reason: &str) -> Self {
         Self {
-            step_index: 0,
-            step_type: "governance_filter".to_string(),
-            memory_id: Some(memory_id),
-            score_before: Some(score_before),
-            score_after: None,
-            rank: None,
-            decision: "filtered".to_string(),
+            memory_id,
+            similarity,
+            step_type: step_type::PRUNED.to_string(),
+            remaining_depth: None,
+            parent_id: None,
             filter_reason: Some(reason.to_string()),
+            recorded_at: Utc::now(),
         }
     }
 
-    /// Create a final result step.
-    pub fn result(memory_id: Uuid, rank: usize, score: f32, decision: &str) -> Self {
+    /// Records an informational step (e.g., fallback triggered, summary note).
+    pub fn info(memory_id: Uuid, message: impl Into<String>) -> Self {
         Self {
-            step_index: 0,
-            step_type: "result".to_string(),
-            memory_id: Some(memory_id),
-            score_before: Some(score),
-            score_after: Some(score),
-            rank: Some(rank),
-            decision: decision.to_string(),
-            filter_reason: None,
+            memory_id,
+            similarity: 0.0,
+            step_type: step_type::INFO.to_string(),
+            remaining_depth: None,
+            parent_id: None,
+            filter_reason: Some(message.into()),
+            recorded_at: Utc::now(),
         }
+    }
+
+    /// Records an initial search step.
+    pub fn initial(memory_id: Uuid, score: f32, decision: &str) -> Self {
+        Self {
+            memory_id,
+            similarity: score,
+            step_type: step_type::INITIAL.to_string(),
+            remaining_depth: None,
+            parent_id: None,
+            filter_reason: Some(decision.to_string()),
+            recorded_at: Utc::now(),
+        }
+    }
+
+    /// Records a governance filter step.
+    pub fn filtered(memory_id: Uuid, score: f32, reason: &str) -> Self {
+        Self {
+            memory_id,
+            similarity: score,
+            step_type: step_type::FILTERED.to_string(),
+            remaining_depth: None,
+            parent_id: None,
+            filter_reason: Some(reason.to_string()),
+            recorded_at: Utc::now(),
+        }
+    }
+
+    /// Returns `true` if this step represents a pruned branch.
+    pub fn is_pruned(&self) -> bool {
+        self.step_type == step_type::PRUNED
     }
 }
+
+// ---------------------------------------------------------------------------
+// RetrievalTrajectory — complete trajectory wrapper
+// ---------------------------------------------------------------------------
 
 /// A complete retrieval trajectory for one query.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -141,36 +182,40 @@ impl RetrievalTrajectory {
         }
     }
 
-    /// Add a step with auto-incremented index.
-    pub fn add_step(&mut self, mut step: RetrievalStep) {
-        step.step_index = self.steps.len();
+    /// Add a step with auto-incremented index metadata.
+    pub fn add_step(&mut self, step: RetrievalStep) {
         self.steps.push(step);
     }
 
-    /// Log an initial search.
+    /// Add an initial search step.
     pub fn log_search(&mut self, memory_id: Uuid, score: f32, decision: &str) {
-        self.add_step(RetrievalStep::initial_search(memory_id, score, decision));
+        self.add_step(RetrievalStep::initial(memory_id, score, decision));
     }
 
-    /// Log a fractal zoom.
-    pub fn log_zoom(&mut self, memory_id: Uuid, score_before: f32, score_after: f32, decision: &str) {
-        self.add_step(RetrievalStep::fractal_zoom(memory_id, score_before, score_after, decision));
+    /// Add a fractal zoom step.
+    pub fn log_zoom(&mut self, child_id: Uuid, child_similarity: f32, parent_id: Uuid) {
+        self.add_step(RetrievalStep::descended(child_id, child_similarity, parent_id));
     }
 
-    /// Log a filtered node.
+    /// Add a pruned step.
+    pub fn log_pruned(&mut self, memory_id: Uuid, similarity: f32, reason: &str) {
+        self.add_step(RetrievalStep::pruned(memory_id, similarity, reason));
+    }
+
+    /// Add an info step.
+    pub fn log_info(&mut self, message: impl Into<String>) {
+        self.add_step(RetrievalStep::info(Uuid::nil(), message));
+    }
+
+    /// Add a filtered step.
     pub fn log_filtered(&mut self, memory_id: Uuid, score: f32, reason: &str) {
         self.add_step(RetrievalStep::filtered(memory_id, score, reason));
     }
-
-    /// Log a final result.
-    pub fn log_result(&mut self, memory_id: Uuid, rank: usize, score: f32, decision: &str) {
-        self.add_step(RetrievalStep::result(memory_id, rank, score, decision));
-    }
 }
 
-// -----------------------------------------------------------------------------
-// Storage Operations
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Database persistence (PostgreSQL)
+// ---------------------------------------------------------------------------
 
 /// Row type returned by GET /retrieval/runs
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -240,7 +285,7 @@ impl<'a> TrajectoryStore<'a> {
         .await?;
 
         // Insert all steps
-        for step in &trajectory.steps {
+        for (i, step) in trajectory.steps.iter().enumerate() {
             sqlx::query!(
                 r#"
                 INSERT INTO retrieval_trajectory (
@@ -250,14 +295,14 @@ impl<'a> TrajectoryStore<'a> {
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                 "#,
                 run_id,
-                step.step_index as i32,
+                i as i32,
                 &step.step_type,
                 step.memory_id,
-                step.score_before as _,
-                step.score_after as _,
-                step.rank as _,
-                &step.decision,
-                step.filter_reason,
+                step.similarity as _,  // similarity maps to score_after
+                step.similarity as _,  // we don't have score_before, use same
+                step.remaining_depth.map(|d| d as i32),  // rank from remaining_depth if available
+                step.filter_reason.clone(),
+                step.filter_reason.clone(),
             )
             .execute(self.pool)
             .await?;
@@ -319,7 +364,7 @@ impl<'a> TrajectoryStore<'a> {
         Ok(row)
     }
 
-    /// Get all trajectory steps for a run.
+    /// Get all trajectory steps for a retrieval run.
     pub async fn get_trajectory(&self, run_id: Uuid) -> Result<Vec<TrajectoryStepRow>> {
         let rows = sqlx::query_as!(
             TrajectoryStepRow,
@@ -328,7 +373,7 @@ impl<'a> TrajectoryStore<'a> {
                    score_before, score_after, rank, decision, filter_reason, created_at
             FROM retrieval_trajectory
             WHERE run_id = $1
-            ORDER BY step_index ASC
+            ORDER BY step_index
             "#,
             run_id
         )
