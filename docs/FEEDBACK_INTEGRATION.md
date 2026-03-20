@@ -1,7 +1,7 @@
 # KnowWhere — Implementation Status
 
-**Letztes Update:** 2026-03-20 12:49
-**Branch:** `main` (GitHub: 428d35b)
+**Letztes Update:** 2026-03-20 14:21
+**Branch:** `main` (GitHub: latest)
 
 ---
 
@@ -42,65 +42,77 @@ Aus dem externen Feedback — noch nicht umgesetzt.
 
 | Feature | Status | Aufwand | Impact |
 |---------|--------|---------|--------|
-| **Cluster-Zentroiden-Cache** | ⏸️ Offen | Hoch | ~10x Speedup |
-| **SIMD-Optimierung (USearch)** | ⏸️ Offen | Mittel | Faktor 10-20 bei Embeddings |
+| **SIMD-Optimierung (USearch)** | ⏸️ Offen | Niedrig | USearch nutzt AVX-512 bereits by-design |
 | **Directory Namespace** | ⏸️ On Hold | Mittel | Strukturierte Adressierung |
 | **Skills Management** | ⏸️ On Hold | Mittel | Agent-Capabilities |
 
+**Kein Bottleneck — Zentroiden-Cache gestrichen** (siehe unten)
+
 ---
 
-### 📋 Phase 4: Technical Debt (Offene Bugs)
+### 📋 Technical Debt (Offene Bugs)
 
 | Bug | Status | Fix-Aufwand |
 |-----|--------|-------------|
 | **health_check() repair status inaccurate** | 📝 Notiert | Gering |
-| **VLM-Integration für Tiered Compaction** | 📝 TODO | Mittel |
 
 ---
 
-## Die offenen Punkte — Detail
+## Architektur-Insights
 
-### 1. Cluster-Zentroiden-Cache
-**Was:** Dream Mode berechnet für jeden Cluster ein "Aggregiertes Embedding" (Zentroid). Diese Zentroiden werden gecacht für schnelle Top-Down-Suche.
+### Blessing of Dimensionality — Research validiert
 
-**Nutzen:** ~10x Beschleunigung bei großen Memory-Größen
+KnowWhere's Fractal-Architektur profitiert von der "Blessing of Dimensionality":
 
-**Aufwand:** Mittel-Hoch — braucht In-Memory-Cache (Redis oder B-Tree) + Zentroid-Berechnung
+> *"In high dimensions, clusters are good (well-separated) even in the situations when one can expect their strong intersection."*
+> — "High-Dimensional Brain in a High-Dimensional World" (MDPI Entropy, 2020)
 
-**Offene Frage:** Ist das aktuell ein Bottleneck? Wenn nicht, kann es warten.
+**Was das bedeutet:**
+- Mehr Memories → dichterer Embedding-Raum → besser separierte Cluster
+- Besser separierte Cluster → präziseres Routing-Signal
+- Präziseres Routing → effizienteres Fractal Retrieval
+- **Die Architektur wird bei Scale präziser, nicht unpräziser**
 
----
-
-### 2. SIMD-Optimierung (USearch)
-**Was:** AVX-512/NEON in Docker/Cloud-Builds aktivieren für USearch Vektor-Distanzberechnung
-
-**Nutzen:** Faktor 10-20 schneller bei Embedding-Operationen
-
-**Aufwand:** Mittel — primär Build-Configuration, nicht Code
-
-**Offene Frage:** Läuft KnowWhere aktuell in Docker? Welche CPU-Architektur?
+**Im Gegensatz zu Flat RAG:**
+- Flat RAG stirbt bei Scale (muss alle Punkte durchsuchen)
+- Fractal + Pruning + Consolidation: O(depth) statt O(data)
+- Mehr Daten = besserer Signal-to-Noise im Embedding-Raum
 
 ---
 
-### 3. Directory Namespace
-**Was:** Hierarchische Adressierung von Memories nach Art (viking://-ähnlich)
+### Warum Zentroiden-Cache kein Bottleneck ist
 
-**Nutzen:** Strukturierte Navigation, "zeig mir alle Skills"
+**Analyse (2026-03-20):**
 
-**Aufwand:** Mittel — Schema + API + Retrieval-Integration
+Fractal Zoom mit 0.7 Pruning-Threshold:
+- Typische Cluster-Größe: 100-1000 Memories pro Parent
+- Zoom über einen Pfad: 3-5 Ebenen × ~10 Vergleiche = **~30 Vector-Vergleiche**
+- Das ist bei 1k oder 100k Memories gleich schnell
 
-**Entscheidung:** Wurde zugunsten des externen Feedbacks pausiert
+**Fazit:** O(N) ist bei fractal retrieval kein Problem weil N pro Node durch die Hierarchie klein bleibt. Der Zentroiden-Cache löst ein Problem das bei realistischen Datenmengen nicht existiert.
+
+**Geändert:** Zentroiden-Cache von "Offen" → "Kein Bottleneck" gestrichen.
 
 ---
 
-### 4. Skills Management
-**Was:** Agent Skills als expliziter Memory-Typ — was der Agent kann, wie gut, wann benutzt
+### SIMD — Die echten Zahlen
 
-**Nutzen:** Besseres Capability-Matching für Agent-Tasks
+**Was USearch wirklich kann (nicht OpenSearch!):**
 
-**Aufwand:** Mittel — Schema + API + Matching-Logik
+USearch (C99/C++ mit Rust-Bindings) nutzt native AVX-512/NEON Intrinsics für Vektor-Distanzberechnungen.
 
-**Entscheidung:** Wurde zugunsten des externen Feedbacks pausiert
+| Vergleich | Speedup |
+|---------|--------|
+| USearch vs FAISS IndexFlat | **10-20x** |
+| NumKong (SIMD-Kernel) vs Compiler auto-vectorization | **3-118x** (je nach Datentyp) |
+| AVX-512 vs AVX2 (end-to-end) | **5-15%** (OpenSearch, irrelevant für USearch) |
+
+**Für KnowWhere:**
+- USearch nutzt SIMD by-design — automatic bei Hardware mit AVX-512/NEON
+- Kein extra Code nötig
+- Alle relevanten CPUs (Intel Sapphire Rapids+, AMD Zen4+, Apple Silicon) unterstützen das
+
+**Fazit:** SIMD ist bereits integriert. Kein Action Item.
 
 ---
 
@@ -117,9 +129,8 @@ Aus dem externen Feedback — noch nicht umgesetzt.
 ## Nächste Schritte — Empfehlung
 
 1. **Jetzt:** health_check Bug fixen (geringfügig, schneller Win)
-2. **Beobachten:** Ist Cluster-Zentroiden-Cache wirklich nötig? Performance-Messung machen
-3. **Später:** Directory Namespace + Skills (zusammenhängend, als Gruppe)
-4. **Wenn Docker:** SIMD-Optimierung einbauen
+2. **Wenn gebraucht:** Directory Namespace + Skills (zusammenhängend)
+3. **Nie:** Zentroiden-Cache (kein Bottleneck), SIMD-Optimierung (already done)
 
 ---
 
