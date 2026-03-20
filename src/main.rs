@@ -19,6 +19,7 @@ use knowwhere_server::connectors::store_external_event;
 use knowwhere_server::embedding::{create_provider, EmbeddingProvider, ProviderKind};
 use knowwhere_server::memory::events::InMemoryEventStore;
 use knowwhere_server::memory::{DreamMode, GovernancePolicy};
+use knowwhere_server::scheduler::{AuditScheduler, ConsolidationScheduler, SchedulerConfig};
 use knowwhere_server::storage::MemoryStore;
 use knowwhere_server::vlm::{VlmConfig, VlmWorker};
 
@@ -134,6 +135,29 @@ async fn run() -> anyhow::Result<()> {
         tracing::warn!("no OPENAI_API_KEY or GROK_API_KEY found — VLM summarization disabled");
         (None, None)
     };
+
+    // -- Dream Mode Background Schedulers --
+    let scheduler_config = SchedulerConfig::from_env();
+    if scheduler_config.is_enabled() {
+        // ConsolidationScheduler: periodically enqueues L2 nodes for VLM summarization
+        let consolidation = ConsolidationScheduler::new(
+            store.clone(),
+            vlm_worker.clone(),
+            scheduler_config.clone(),
+        );
+        let _ = consolidation.spawn();
+
+        // AuditScheduler: periodically applies energy decay, deduplication, conflict detection
+        #[cfg(feature = "postgres-storage")]
+        let audit = AuditScheduler::new(store.clone(), trajectory_pool.clone(), scheduler_config.clone());
+        #[cfg(not(feature = "postgres-storage"))]
+        let audit = AuditScheduler::new(store.clone(), scheduler_config.clone());
+        let _ = audit.spawn();
+
+        tracing::info!("Dream Mode scheduler started");
+    } else {
+        tracing::info!("Dream Mode scheduler disabled (DREAM_ENABLED=false)");
+    }
 
     let state = routes::AppState {
         store,

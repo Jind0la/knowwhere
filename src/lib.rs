@@ -3,5 +3,6 @@ pub mod connectors;
 pub mod embedding;
 pub mod memory;
 pub mod multimodal;
+pub mod scheduler;
 pub mod storage;
 pub mod vlm;
