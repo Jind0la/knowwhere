@@ -125,8 +125,13 @@ impl<'a> DeduplicationWorker<'a> {
 
     /// Find all pairs of active memories with cosine similarity above threshold.
     ///
-    /// Uses PostgreSQL's `<=>` (cosine distance) operator from pgvector.
-    /// Only returns pairs where `m1.id < m2.id` to avoid duplicate pairs.
+    /// Uses ANN (Approximate Nearest Neighbor) search via pgvector HNSW index.
+    /// For each active memory, finds the top-5 nearest neighbors using
+    /// `CROSS JOIN LATERAL` with `ORDER BY ... LIMIT 5`, then filters to
+    /// pairs with similarity > threshold.
+    ///
+    /// This is O(n × log(m)) instead of the previous O(n²) cross-join.
+    /// Safety-capped at 1000 pairs per run to avoid DB overload.
     ///
     /// # Returns
     /// A list of `(id_a, id_b, similarity)` tuples ordered by similarity descending.
@@ -137,42 +142,45 @@ impl<'a> DeduplicationWorker<'a> {
         // We want similarity > threshold, which means distance < (1 - threshold).
         let max_distance = 1.0 - threshold as f64;
 
-        let rows = sqlx::query!(
+        let rows = sqlx::query_as!(
+            DuplicatePair,
             r#"
-            SELECT
-                m1.id AS id_a,
-                m2.id AS id_b,
-                (1.0 - (m1.embedding <=> m2.embedding))::float4 AS similarity
-            FROM memories m1, memories m2
-            WHERE m1.id < m2.id
-              AND m1.status = 'active'
-              AND m2.status = 'active'
-              AND m1.embedding IS NOT NULL
-              AND m2.embedding IS NOT NULL
-              AND m1.embedding <=> m2.embedding < $1
+            WITH neighbors AS (
+                SELECT
+                    m.id as source_id,
+                    m2.id as neighbor_id,
+                    (1.0 - (m.embedding <=> m2.embedding))::float4 as similarity
+                FROM memories m
+                CROSS JOIN LATERAL (
+                    SELECT id, embedding
+                    FROM memories m2
+                    WHERE m2.id != m.id
+                      AND m2.status = 'active'
+                      AND m2.embedding IS NOT NULL
+                    ORDER BY m.embedding <=> m2.embedding
+                    LIMIT 5
+                ) m2
+                WHERE m.status = 'active'
+                  AND m.embedding IS NOT NULL
+            )
+            SELECT source_id as "id_a!", neighbor_id as "id_b!", similarity
+            FROM neighbors
+            WHERE similarity > $1::float4
             ORDER BY similarity DESC
+            LIMIT 1000
             "#,
-            max_distance,
+            max_distance as f32,
         )
         .fetch_all(self.pool)
         .await?;
 
-        let pairs = rows
-            .into_iter()
-            .map(|r| DuplicatePair {
-                id_a: r.id_a,
-                id_b: r.id_b,
-                similarity: r.similarity,
-            })
-            .collect();
-
         tracing::debug!(
-            count = pairs.len(),
+            count = rows.len(),
             threshold = threshold,
-            "duplicate candidates found"
+            "duplicate candidates found (ANN-based)"
         );
 
-        Ok(pairs)
+        Ok(rows)
     }
 
     /// Merge two duplicate memories into a single new memory.
