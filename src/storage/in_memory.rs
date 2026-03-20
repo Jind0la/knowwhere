@@ -488,6 +488,26 @@ impl MemoryStore {
         fused
     }
 
+    /// Boost energy for memories that made it into the final top-k retrieval results.
+    ///
+    /// This is the "access boost" part of the Ebbinghaus energy model — memories
+    /// that appear in retrieval results are considered recently used and get their
+    /// energy increased so they don't decay away prematurely.
+    #[cfg(feature = "postgres-storage")]
+    async fn boost_energy_for_retrieval(
+        pool: &sqlx::PgPool,
+        result_ids: &[Uuid],
+        boost: i32,
+    ) {
+        use crate::memory::dream::energy_decay::EnergyDecayWorker;
+        let worker = EnergyDecayWorker::with_defaults(pool);
+        for id in result_ids {
+            if let Err(e) = worker.boost_energy(*id, boost).await {
+                tracing::warn!(memory_id = %id, "failed to boost energy: {}", e);
+            }
+        }
+    }
+
     pub async fn hybrid_retrieve(
         &self,
         query_text: Option<&str>,
@@ -552,6 +572,11 @@ impl MemoryStore {
                         tracing::warn!("failed to log retrieval trajectory: {e}");
                     }
                 }
+                // Boost energy for memories that made it into top-k (Ebbinghaus access boost)
+                if let Some(ts) = trajectory_store {
+                    let top_k_ids: Vec<Uuid> = results.iter().map(|(_, n)| n.id).collect();
+                    Self::boost_energy_for_retrieval(ts.pool(), &top_k_ids, 20).await;
+                }
             }
             return results;
         }
@@ -584,6 +609,13 @@ impl MemoryStore {
                     tracing::warn!("failed to log retrieval trajectory: {e}");
                 }
             }
+        }
+
+        // Boost energy for memories in top-k (Ebbinghaus access boost)
+        #[cfg(feature = "postgres-storage")]
+        if let Some(ts) = trajectory_store {
+            let top_k_ids: Vec<Uuid> = results.iter().map(|(_, n)| n.id).collect();
+            Self::boost_energy_for_retrieval(ts.pool(), &top_k_ids, 20).await;
         }
 
         results

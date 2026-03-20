@@ -257,6 +257,11 @@ impl<'a> TrajectoryStore<'a> {
         Self { pool }
     }
 
+    /// Returns a reference to the underlying PostgreSQL connection pool.
+    pub fn pool(&self) -> &'a PgPool {
+        self.pool
+    }
+
     /// Log a complete retrieval trajectory to PostgreSQL.
     ///
     /// Returns the run_id of the inserted retrieval_runs row.
