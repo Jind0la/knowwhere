@@ -20,6 +20,7 @@ use knowwhere_server::embedding::{create_provider, EmbeddingProvider, ProviderKi
 use knowwhere_server::memory::events::InMemoryEventStore;
 use knowwhere_server::memory::{DreamMode, GovernancePolicy};
 use knowwhere_server::storage::MemoryStore;
+use knowwhere_server::vlm::{VlmConfig, VlmWorker};
 
 fn main() {
     std::thread::Builder::new()
@@ -123,6 +124,17 @@ async fn run() -> anyhow::Result<()> {
             None
         };
 
+    // -- VLM Background Worker (3-stage fallback: GPT-5-nano → GPT-4o-mini → Grok-4-fast) --
+    let vlm_config = VlmConfig::from_env();
+    let (vlm_worker, _vlm_join) = if vlm_config.is_configured() {
+        let (h, j) = VlmWorker::spawn(store.clone(), embedding.clone(), vlm_config);
+        tracing::info!("VLM summarization worker started (OPENAI_API_KEY or GROK_API_KEY detected)");
+        (Some(h), Some(j))
+    } else {
+        tracing::warn!("no OPENAI_API_KEY or GROK_API_KEY found — VLM summarization disabled");
+        (None, None)
+    };
+
     let state = routes::AppState {
         store,
         dream,
@@ -131,6 +143,7 @@ async fn run() -> anyhow::Result<()> {
         events: InMemoryEventStore::new(),
         #[cfg(feature = "postgres-storage")]
         trajectory_pool,
+        vlm_worker,
     };
 
     let api_key = ApiKey(std::env::var("KNOWWHERE_API_KEY").ok());
@@ -146,6 +159,9 @@ async fn run() -> anyhow::Result<()> {
         .route("/nodes/reembed_all", post(routes::reembed_all))
         .route("/nodes/{id}", delete(routes::delete_node))
         .route("/dream/status", get(routes::dream_status))
+        // -- VLM Summarization Worker (3-stage fallback) --
+        .route("/vlm/status", get(routes::vlm_status))
+        .route("/vlm/summarize", post(routes::vlm_enqueue))
         // -- postgres-storage features (trajectory + tiered context) --
         #[cfg(feature = "postgres-storage")]
         .route("/retrieval/runs", get(routes::list_retrieval_runs))

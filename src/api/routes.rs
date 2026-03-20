@@ -12,10 +12,9 @@ use uuid::Uuid;
 use crate::embedding::{EmbeddingProvider, embed_document, embed_query};
 use crate::memory::dream::DreamStatus;
 use crate::memory::types::{ConflictState, ContextTier, MemorySource, MemoryStatus, MemoryType, Sensitivity};
-use crate::memory::{
-    DreamMode, Event, EventStore, FractalNode, GovernancePolicy, GovernanceValidator, InMemoryEventStore,
-};
+use crate::memory::{DreamMode, Event, EventStore, FractalNode, GovernancePolicy, GovernanceValidator, InMemoryEventStore};
 use crate::multimodal::MultimodalData;
+use crate::vlm::{SummaryContext, VlmJob, VlmWorkerStatus};
 
 #[derive(Serialize, ToSchema)]
 pub struct ScoredNode {
@@ -146,6 +145,8 @@ pub struct AppState {
     /// PostgreSQL connection pool for trajectory logging and tiered context (postgres-storage feature).
     #[cfg(feature = "postgres-storage")]
     pub trajectory_pool: Option<std::sync::Arc<sqlx::PgPool>>,
+    /// VLM background worker handle for async summarization.
+    pub vlm_worker: Option<crate::vlm::VlmWorkerHandle>,
 }
 
 impl std::fmt::Debug for AppState {
@@ -2308,4 +2309,100 @@ pub async fn match_skills(
         Ok(skills) => Ok(Json(skills)),
         Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
     }
+}
+
+// ---------------------------------------------------------------------------
+// VLM Worker Routes — Summarization via Background Worker
+// ---------------------------------------------------------------------------
+
+/// Request body for enqueuing a summarization job.
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct VlmEnqueueRequest {
+    /// IDs of memory nodes to summarize.
+    pub node_ids: Vec<Uuid>,
+    /// Context level for the summary.
+    #[serde(default)]
+    pub context: SummaryContext,
+    /// Optional priority (1–10, higher = processed first). Default 5.
+    #[serde(default = "default_vlm_priority")]
+    pub priority: u8,
+}
+
+fn default_vlm_priority() -> u8 {
+    5
+}
+
+/// Response after enqueuing a job.
+#[derive(Serialize, ToSchema)]
+pub struct VlmEnqueueResponse {
+    pub job_id: Uuid,
+    pub queue_depth: usize,
+}
+
+/// GET /vlm/status — Worker queue status.
+#[utoipa::path(
+    get,
+    path = "/vlm/status",
+    tag = "vlm",
+    responses(
+        (status = 200, description = "VLM worker status", body = VlmWorkerStatus),
+        (status = 503, description = "VLM worker not configured", body = String)
+    )
+)]
+pub async fn vlm_status(
+    State(state): State<AppState>,
+) -> Result<Json<VlmWorkerStatus>, (StatusCode, String)> {
+    match &state.vlm_worker {
+        Some(handle) => {
+            let status = handle.status().await;
+            Ok(Json(status))
+        }
+        None => Err((StatusCode::SERVICE_UNAVAILABLE, "VLM worker not configured (set OPENAI_API_KEY or GROK_API_KEY)".into())),
+    }
+}
+
+/// POST /vlm/summarize — Enqueue a summarization job (non-blocking).
+#[utoipa::path(
+    post,
+    path = "/vlm/summarize",
+    tag = "vlm",
+    request_body = VlmEnqueueRequest,
+    responses(
+        (status = 202, description = "Job enqueued", body = VlmEnqueueResponse),
+        (status = 400, description = "Invalid request", body = String),
+        (status = 503, description = "VLM worker not configured", body = String)
+    )
+)]
+pub async fn vlm_enqueue(
+    State(state): State<AppState>,
+    Json(req): Json<VlmEnqueueRequest>,
+) -> Result<(StatusCode, Json<VlmEnqueueResponse>), (StatusCode, String)> {
+    let handle = state.vlm_worker
+        .as_ref()
+        .ok_or_else(|| (StatusCode::SERVICE_UNAVAILABLE, "VLM worker not configured".into()))?;
+
+    if req.node_ids.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "node_ids must not be empty".into()));
+    }
+
+    if req.priority == 0 || req.priority > 10 {
+        return Err((StatusCode::BAD_REQUEST, "priority must be 1–10".into()));
+    }
+
+    let job = VlmJob::new(req.node_ids.clone(), req.context)
+        .with_priority(req.priority);
+
+    let job_id = job.id;
+
+    handle.enqueue(job).await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let status = handle.status().await;
+
+    tracing::info!(job_id = %job_id, queue_depth = status.queue_depth, "VLM job enqueued");
+
+    Ok((StatusCode::ACCEPTED, Json(VlmEnqueueResponse {
+        job_id,
+        queue_depth: status.queue_depth,
+    })))
 }

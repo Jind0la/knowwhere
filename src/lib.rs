@@ -4,3 +4,4 @@ pub mod embedding;
 pub mod memory;
 pub mod multimodal;
 pub mod storage;
+pub mod vlm;
