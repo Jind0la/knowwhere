@@ -54,7 +54,7 @@ Aus dem externen Feedback — noch nicht umgesetzt.
 
 | Bug | Status | Fix-Aufwand |
 |-----|--------|-------------|
-| **health_check() repair status inaccurate** | 📝 Notiert | Gering |
+| **health_check() repair status inaccurate** | ✅ Gefixt (commit 4d67beb) | — |
 
 ---
 
