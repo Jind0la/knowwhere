@@ -494,8 +494,28 @@ impl MemoryStore {
         query_vector: &[f32],
         top_k: usize,
         max_depth: usize,
+        #[cfg(feature = "postgres-storage")] trajectory_store: Option<&crate::storage::TrajectoryStore>,
     ) -> Vec<(f32, FractalNode)> {
+        let start = Instant::now();
+
+        #[cfg(feature = "postgres-storage")]
+        let mut trajectory = trajectory_store.map(|ts| {
+            crate::storage::RetrievalTrajectory::new(
+                query_text.unwrap_or("").to_string(),
+                query_vector.to_vec(),
+            )
+        });
+
         let vector_results = self.retrieve_fractal(query_vector, top_k * 2, max_depth).await;
+
+        #[cfg(feature = "postgres-storage")]
+        if let Some(ref mut traj) = trajectory {
+            for n in &vector_results {
+                let score = crate::memory::cosine_similarity(&n.vector, query_vector);
+                traj.log_search(n.id, score, "initial vector search");
+            }
+        }
+
         let vector_ids: Vec<Uuid> = vector_results.iter().map(|n| n.id).collect();
 
         let bm25_results = match query_text {
@@ -504,22 +524,67 @@ impl MemoryStore {
         };
 
         if bm25_results.is_empty() {
-            return vector_results.into_iter()
+            #[cfg(feature = "postgres-storage")]
+            let total_candidates = vector_results.len();
+            let results: Vec<_> = vector_results.into_iter()
                 .take(top_k)
                 .filter_map(|n| {
                     let sim = crate::memory::cosine_similarity(&n.vector, query_vector);
                     Some((sim, n))
                 })
                 .collect();
+            #[cfg(feature = "postgres-storage")]
+            {
+                let execution_time_ms = start.elapsed().as_millis() as u64;
+                for (i, (score, node)) in results.iter().enumerate() {
+                    if let Some(ref mut traj) = trajectory {
+                        traj.log_result(node.id, i + 1, *score, "final result (vector only)");
+                    }
+                }
+                if let (Some(ref mut traj), Some(ts)) = (trajectory, trajectory_store) {
+                    traj.execution_time_ms = execution_time_ms;
+                    traj.total_candidates = total_candidates;
+                    traj.retrieved_count = results.len();
+                    traj.max_depth_used = max_depth;
+                    if let Err(e) = ts.log_retrieval(traj).await {
+                        tracing::warn!("failed to log retrieval trajectory: {e}");
+                    }
+                }
+            }
+            return results;
         }
+
+        #[cfg(feature = "postgres-storage")]
+        let total_candidates = vector_ids.len() + bm25_results.len();
 
         let fused = Self::rrf_fuse(&vector_ids, &bm25_results, 60.0);
 
         let nodes = self.nodes.read().await;
-        fused.into_iter()
+        let results: Vec<_> = fused.into_iter()
             .take(top_k)
             .filter_map(|(id, score)| nodes.get(&id).cloned().map(|n| (score, n)))
-            .collect()
+            .collect();
+
+        #[cfg(feature = "postgres-storage")]
+        {
+            let execution_time_ms = start.elapsed().as_millis() as u64;
+            for (i, (score, node)) in results.iter().enumerate() {
+                if let Some(ref mut traj) = trajectory {
+                    traj.log_result(node.id, i + 1, *score, "final result (fused)");
+                }
+            }
+            if let (Some(ref mut traj), Some(ts)) = (trajectory, trajectory_store) {
+                traj.execution_time_ms = execution_time_ms;
+                traj.total_candidates = total_candidates;
+                traj.retrieved_count = results.len();
+                traj.max_depth_used = max_depth;
+                if let Err(e) = ts.log_retrieval(traj).await {
+                    tracing::warn!("failed to log retrieval trajectory: {e}");
+                }
+            }
+        }
+
+        results
     }
 
     pub async fn retrieve_fractal(
