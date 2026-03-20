@@ -177,6 +177,13 @@ async fn run() -> anyhow::Result<()> {
         .route("/deduplication/run", post(routes::run_deduplication))
         #[cfg(feature = "postgres-storage")]
         .route("/deduplication/runs", get(routes::list_deduplication_runs))
+        // Self-healing routes (content hashing for external nodes)
+        #[cfg(feature = "postgres-storage")]
+        .route("/memories/{id}/reindex", post(routes::reindex_external_node))
+        #[cfg(feature = "postgres-storage")]
+        .route("/memories/{id}/health", get(routes::memory_health_check))
+        #[cfg(feature = "postgres-storage")]
+        .route("/self-healing/stats", get(routes::self_healing_stats))
         .route_layer(middleware::from_fn(auth::auth_middleware))
         .layer(axum::Extension(api_key.clone()));
 

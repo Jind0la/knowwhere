@@ -5,6 +5,9 @@ pub mod governance;
 pub mod tiered;
 pub mod types;
 
+#[cfg(feature = "postgres-storage")]
+pub mod self_healing;
+
 #[cfg(test)]
 mod tests;
 
