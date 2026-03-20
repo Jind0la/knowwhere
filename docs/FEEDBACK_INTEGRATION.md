@@ -61,20 +61,19 @@ ALTER TABLE memories ADD COLUMN last_energy_update TIMESTAMPTZ DEFAULT NOW();
 
 ---
 
-### 🟢 P2 — Später
+### 🟢 P2 — ✅ IMPLEMENTIERT (Commit 205e957)
 
-#### 5. Content Hashing + Self-Healing (Dangling Pointer Prevention)
+#### 5. Content Hashing + Self-Healing (Dangling Pointer Prevention) ✅
 **Quelle:** Feedback Punkt 1
 - Bei External Nodes: `content_hash` speichern (BLAKE3/SHA-256)
 - "Sentinel" Background-Service sucht bei totem Pointer nach Datei mit gleichem Hash
 - Automatische Pointer-Aktualisierung bei Datei-Verschiebung
 - **Impact:** External References bleiben valide auch bei Datei-Umzügen
 
-**Schema:**
-```sql
-ALTER TABLE memories ADD COLUMN content_hash TEXT;  -- BLAKE3 hash
-ALTER TABLE memories ADD COLUMN semantic_thumbnail TEXT;  -- 100-Wörter Fallback
-```
+**Status:** ✅ Implementiert
+- `migrations/009_add_content_hash.sql`
+- `src/memory/self_healing.rs` mit SelfHealingService
+- Endpoints: `POST /memories/{id}/reindex`, `GET /memories/{id}/health`, `GET /self-healing/stats`
 
 #### 6. Cluster-Zentroiden-Cache
 **Quelle:** Feedback Punkt 2
