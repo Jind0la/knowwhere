@@ -493,17 +493,17 @@ pub async fn retrieve_with_namespace(
 1. **Retrieval Trajectory Logging** ✅
 2. **Tiered Context (L0/L1/L2)** ✅
 
-### Phase 2: 🔄 EXTERNES FEEDBACK — P0 PRIORITÄT
+### Phase 2: ✅ P0 FEEDBACK IMPLEMENTIERT
 Basierend auf externem Review (Feedback 2026-03-20):
 
-1. **Hierarchical Pruning (Threshold 0.7)** — Performance Critical
-2. **Conflict Resolution im Dream Mode** — Governance Critical
+1. **Hierarchical Pruning (Threshold 0.7)** ✅ — Commit d373991
+2. **Conflict Resolution im Dream Mode** ✅ — Commit d373991
 
-### Phase 3: Feedback P1
+### Phase 3: Feedback P1 (TODO)
 3. **Energy / Memory Decay** (Ebbinghaus)
 4. **Deduplikations-Worker**
 
-### Phase 4: Feedback P2
+### Phase 4: Feedback P2 (TODO)
 5. **Content Hashing + Self-Healing**
 6. **Cluster-Zentroiden-Cache**
 7. **SIMD-Optimierung**

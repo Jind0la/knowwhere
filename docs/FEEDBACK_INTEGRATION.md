@@ -1,37 +1,40 @@
 # KnowWhere — Feedback Integration & Prioritized Roadmap
 
-**Letztes Update:** 2026-03-20 11:00
+**Letztes Update:** 2026-03-20 11:15
 **Branch:** `feature/openviking-inspired-upgrades`
 
 ---
 
 ## Externes Feedback (Priorisiert)
 
-### 🔴 P0 — Jetzt umsetzen
+### 🔴 P0 — ✅ IMPLEMENTIERT
 
-#### 1. Hierarchical Pruning (Threshold 0.7)
+#### 1. Hierarchical Pruning (Threshold 0.7) ✅
 **Quelle:** Feedback Punkt 2
-- Fractal Zoom soll nicht blind in alle Äste absteigen
-- Nur wenn Eltern-Knoten Similarity > 0.7 → Kinder werden durchsucht
-- **Impact:** Massive Performance-Verbesserung bei tiefen Graphen
 
-**Implementation:**
-- Neuer Parameter `pruning_threshold: f32 = 0.7` in `zoom_retrieve`
-- Nur Kinder werden rekursiv durchsucht wenn Parent-Score > Threshold
-- Trajectory-Log zeigt "pruned_child" Steps
+- **Status:** ✅ Implementiert (Commit: d373991)
+- `zoom_retrieve()` mit `pruning_threshold` Parameter (default: 0.7)
+- Nur Kinder werden rekursiv durchsucht wenn Parent-Score >= Threshold
+- "Pruned" Steps werden im Retrieval Trajectory geloggt
+- Massive Performance-Verbesserung bei tiefen Graphen
 
-#### 2. Conflict Resolution im Dream Mode
+**Files:**
+- `src/memory/fractal_node.rs` — zoom_retrieve mit pruning
+- `src/storage/in_memory.rs` — threshold Parameter
+
+#### 2. Conflict Resolution im Dream Mode ✅
 **Quelle:** Feedback Punkt 4
-- Wenn 2 widersprüchliche Memories (z.B. alte vs neue Adresse) → markieren
-- "Auditor-Task" im Dream Mode soll Konflikte erkennen
-- Optional: LLM um Klärung bitten bei nächster Abfrage
-- **Impact:** Governance wird vollständig
 
-**Implementation:**
-- Neuer Dream Mode Task: `detect_conflicts()`
-- Prüft auf Memories mit gleicher Entity aber unterschiedlichen Facts
-- Markiert mit `conflict_state = 'pending'`
+- **Status:** ✅ Implementiert (Commit: d373991)
+- `ConflictDetector` für Finding + Resolving von Memory-Konflikten
+- Konflikt-Typen: Entity, Temporal, Confidence
+- `detect_conflicts()` — findet alle Konflikte im Memory-Graph
+- `resolve_conflict()` — markiert Verlierer als `superseded_by`
 - API: `GET /conflicts` + `POST /conflicts/{id}/resolve`
+
+**Files:**
+- `src/memory/dream/conflict_detection.rs` — NEW
+- `migrations/007_add_conflict_detection.sql` — NEW
 
 ---
 
