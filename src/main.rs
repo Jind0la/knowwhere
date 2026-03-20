@@ -157,6 +157,10 @@ async fn run() -> anyhow::Result<()> {
         .route("/memories/{id}/compact", post(routes::compact_memory))
         #[cfg(feature = "postgres-storage")]
         .route("/memories/{id}", get(routes::get_memory))
+        #[cfg(feature = "postgres-storage")]
+        .route("/conflicts", get(routes::list_conflicts))
+        #[cfg(feature = "postgres-storage")]
+        .route("/conflicts/{id}/resolve", post(routes::resolve_conflict))
         .route_layer(middleware::from_fn(auth::auth_middleware))
         .layer(axum::Extension(api_key.clone()));
 

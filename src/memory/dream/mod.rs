@@ -11,11 +11,18 @@
 //! 2. **Audit** (`audit.rs`): Prüft auf Drift, Konflikte, Sensitivität.
 //!    Flags issues in existing memory structures. Is about checking.
 //!
+//! 3. **Conflict Detection** (`conflict_detection.rs`): Findet und löst
+//!    widersprüchliche Memories. Neue Facts überschreiben alte.
+//!
 //! Calling this `DreamMode` is a legacy name. Prefer importing the specific
-//! engines you need: `consolidation::ConsolidationEngine` or `audit::AuditEngine`.
+//! engines you need: `consolidation::ConsolidationEngine`, `audit::AuditEngine`,
+//! or `conflict_detection::ConflictDetector`.
 
 pub mod audit;
 pub mod consolidation;
+
+#[cfg(feature = "postgres-storage")]
+pub mod conflict_detection;
 
 pub use audit::{AuditConfig, AuditEngine, AuditFinding, AuditReport, AuditFindingType};
 pub use consolidation::{ConsolidationConfig, ConsolidationEngine, ConsolidationReport, MemoryCluster};

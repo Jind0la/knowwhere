@@ -592,7 +592,11 @@ impl MemoryStore {
         query_vector: &[f32],
         top_k: usize,
         max_depth: usize,
+        #[cfg(feature = "postgres-storage")] pruning_threshold: f32,
     ) -> Vec<FractalNode> {
+        #[cfg(not(feature = "postgres-storage"))]
+        let pruning_threshold = crate::memory::fractal_node::FractalNode::ZOOM_PRUNING_THRESHOLD;
+        
         let node_count = self.nodes.read().await.len();
         let has_index = self
             .usearch_index
@@ -624,7 +628,7 @@ impl MemoryStore {
                 let mut scored: Vec<(f32, FractalNode)> = candidate_uuids
                     .iter()
                     .filter_map(|uid| nodes.get(uid))
-                    .flat_map(|node| node.zoom_retrieve(query_vector, max_depth))
+                    .flat_map(|node| node.zoom_retrieve(query_vector, max_depth, pruning_threshold))
                     .collect();
                 scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(Ordering::Equal));
                 return scored
@@ -638,7 +642,7 @@ impl MemoryStore {
         let nodes = self.nodes.read().await;
         let mut scored: Vec<(f32, FractalNode)> = nodes
             .values()
-            .flat_map(|node| node.zoom_retrieve(query_vector, max_depth))
+            .flat_map(|node| node.zoom_retrieve(query_vector, max_depth, pruning_threshold))
             .collect();
         scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(Ordering::Equal));
         scored

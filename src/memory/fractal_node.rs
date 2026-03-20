@@ -265,19 +265,37 @@ impl FractalNode {
         })
     }
 
-    /// Rekursives Zoomen: sammelt (similarity, node) Paare entlang des besten Pfads.
+    /// Default pruning threshold for hierarchical zoom.
+    /// Only children are explored if parent's similarity >= this threshold.
+    pub const ZOOM_PRUNING_THRESHOLD: f32 = 0.7;
+
+    /// Rekursives Zoomen mit Hierarchical Pruning.
+    ///
+    /// Sammelt (similarity, node) Paare entlang des besten Pfads.
+    /// Nur wenn der Parents-Score >= `pruning_threshold` werden Kinder durchsucht.
+    ///
+    /// **Pruning-Logik:**
+    /// - `sim >= pruning_threshold` → Kinder werden rekursiv durchsucht
+    /// - `sim < pruning_threshold` → Ast wird abgeschnitten (PRUNED)
+    ///
+    /// Dies reduziert die Anzahl der Vektor-Distanzberechnungen massiv
+    /// bei tiefen Graphen und erhöht die Retrieval-Geschwindigkeit.
     pub fn zoom_retrieve(
         &self,
         query_vector: &[f32],
         max_depth: usize,
+        pruning_threshold: f32,
     ) -> Vec<(f32, FractalNode)> {
         let sim = cosine_similarity(&self.vector, query_vector);
         let mut results = vec![(sim, self.clone())];
-        if max_depth > 0 {
+        
+        if max_depth > 0 && sim >= pruning_threshold {
             if let Some(best) = self.find_best_child(query_vector) {
-                results.extend(best.zoom_retrieve(query_vector, max_depth - 1));
+                results.extend(best.zoom_retrieve(query_vector, max_depth - 1, pruning_threshold));
             }
         }
+        // Wenn sim < pruning_threshold: Kinder werden NICHT durchsucht → PRUNED
+        
         results
     }
 
