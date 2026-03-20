@@ -7,7 +7,7 @@ use serde_json::Value;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::memory::types::{ConflictState, MemorySource, MemoryStatus, MemoryType, Sensitivity};
+use crate::memory::types::{ConflictState, ContextTier, MemorySource, MemoryStatus, MemoryType, Sensitivity};
 use crate::multimodal::MultimodalData;
 
 pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
@@ -80,6 +80,24 @@ pub struct FractalNode {
     /// How many times this memory has been accessed.
     #[serde(default)]
     pub access_count: i32,
+
+    // -- Tiered Context fields (L0/L1/L2) --
+    /// Context tier for tiered loading (default: Raw/L2 for existing memories).
+    #[serde(default = "default_context_tier")]
+    pub context_tier: ContextTier,
+    /// ID of the parent tier memory (e.g., summary → overview → raw chain).
+    #[serde(default)]
+    pub parent_tier_id: Option<Uuid>,
+    /// L0 summary content (one-sentence).
+    #[serde(default)]
+    pub summary_content: Option<String>,
+    /// L1 overview content (paragraph).
+    #[serde(default)]
+    pub overview_content: Option<String>,
+}
+
+fn default_context_tier() -> ContextTier {
+    ContextTier::Raw
 }
 
 fn default_memory_type() -> MemoryType {
@@ -120,6 +138,10 @@ impl FractalNode {
             importance: MemoryType::Episodic.default_importance(),
             status: MemoryStatus::Active,
             access_count: 0,
+            context_tier: ContextTier::Raw,
+            parent_tier_id: None,
+            summary_content: None,
+            overview_content: None,
         }
     }
 
@@ -152,6 +174,10 @@ impl FractalNode {
             importance: MemoryType::Semantic.default_importance(),
             status: MemoryStatus::Active,
             access_count: 0,
+            context_tier: ContextTier::Raw,
+            parent_tier_id: None,
+            summary_content: None,
+            overview_content: None,
         }
     }
 
@@ -185,6 +211,10 @@ impl FractalNode {
             importance: MemoryType::Semantic.default_importance(),
             status: MemoryStatus::Active,
             access_count: 0,
+            context_tier: ContextTier::Raw,
+            parent_tier_id: None,
+            summary_content: None,
+            overview_content: None,
         }
     }
 
@@ -220,6 +250,10 @@ impl FractalNode {
             importance: memory_type.default_importance(),
             status: MemoryStatus::Active,
             access_count: 0,
+            context_tier: ContextTier::Raw,
+            parent_tier_id: None,
+            summary_content: None,
+            overview_content: None,
         }
     }
 
