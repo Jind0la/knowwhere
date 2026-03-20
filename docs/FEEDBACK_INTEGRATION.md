@@ -36,15 +36,15 @@ Inspiriert durch OpenViking Recherche — alle umgesetzt.
 
 ---
 
-### 🔄 Phase 3: Feedback-Integration (Offene Punkte)
+### ✅ Phase 3: Feedback-Integration + Namespace/Skills
 
-Aus dem externen Feedback — noch nicht umgesetzt.
+Aus dem externen Feedback + Ergänzungen.
 
-| Feature | Status | Aufwand | Impact |
-|---------|--------|---------|--------|
-| **SIMD-Optimierung (USearch)** | ⏸️ Offen | Niedrig | USearch nutzt AVX-512 bereits by-design |
-| **Directory Namespace** | ⏸️ On Hold | Mittel | Strukturierte Adressierung |
-| **Skills Management** | ⏸️ On Hold | Mittel | Agent-Capabilities |
+| Feature | Status | Commit | Notes |
+|---------|--------|--------|-------|
+| **SIMD-Optimierung (USearch)** | ✅ Already done | — | USearch nutzt AVX-512 by-design |
+| **Directory Namespace** | ✅ | 0f6eae8 | viking://-ähnliche Pfad-Hierarchie |
+| **Skills Management** | ✅ | 0f6eae8 | Agent-Capabilities mit proficiency tracking |
 
 **Kein Bottleneck — Zentroiden-Cache gestrichen** (siehe unten)
 
@@ -128,21 +128,30 @@ USearch (C99/C++ mit Rust-Bindings) nutzt native AVX-512/NEON Intrinsics für Ve
 
 ## Nächste Schritte — Empfehlung
 
-1. **Jetzt:** health_check Bug fixen (geringfügig, schneller Win)
-2. **Wenn gebraucht:** Directory Namespace + Skills (zusammenhängend)
-3. **Nie:** Zentroiden-Cache (kein Bottleneck), SIMD-Optimierung (already done)
+1. ✅ **health_check Bug** — gefixt
+2. ✅ **Directory Namespace + Skills** — implementiert
+3. ⏸️ **VLM-Integration** — später, wenn LLM-Provider feststeht
+4. ⏸️ **Dream Mode Scheduler** — cron/job system integration nötig
+5. ✅ **SIMD** — already done
+6. ✅ **Zentroiden-Cache** — kein Bottleneck
 
 ---
 
 ## Commit History (main)
 
 ```
+0f6eae8 Merge feature/namespace-skills: directory namespaces and skills
+dc432b7 fix: gate MemoryNamespace struct with postgres-storage
+dcc3f25 feat: add directory namespaces
+189aa95 feat: add skills management
+aa44070 feat: add namespace and skills API routes
+4d67beb fix: health_check repair status accurate
 428d35b docs: note health_check repair status bug for later fix
 205e957 Merge feature/p2-content-hashing: content hashing and self-healing
 470f2f8 Merge feature/openviking-inspired-upgrades: OpenViking-inspired upgrades + feedback
-af56bbf fix: integrate energy boost into retrieval (Ebbinghaus access boost)
-8901e15 fix: ANN-based deduplication to avoid O(n²) cross-join
+af56bbf fix: integrate energy boost into retrieval
+8901e15 fix: ANN-based deduplication to avoid O(n²)
 656e974 feat: add deduplication worker
-b278c28 feat: add energy decay (Ebbinghaus forgetting curve)
-4b5301c merge: adopt founding-engineer's cleaner RetrievalStep API
+b278c28 feat: add energy decay (Ebbinghaus)
+4b5301c merge: adopt founding-engineer's RetrievalStep API
 ```
