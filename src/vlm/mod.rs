@@ -733,13 +733,6 @@ mod worker {
                 source,
             );
             summary_node.context_tier = tier;
-                Some(summary_text.clone()),
-                None,
-                summary_vector,
-                metadata,
-                memory_type,
-                source,
-            );
 
             // Step 6: Store the summary node
             let summary_id = self.store.insert(summary_node).await?;

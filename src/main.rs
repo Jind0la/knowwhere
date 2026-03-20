@@ -148,7 +148,7 @@ async fn run() -> anyhow::Result<()> {
 
     let api_key = ApiKey(std::env::var("KNOWWHERE_API_KEY").ok());
 
-    let protected = Router::new()
+    let mut protected = Router::new()
         .route("/embed", post(routes::embed_text))
         .route("/store_session", post(routes::store_session))
         .route("/store_external", post(routes::store_external))
@@ -161,71 +161,49 @@ async fn run() -> anyhow::Result<()> {
         .route("/dream/status", get(routes::dream_status))
         // -- VLM Summarization Worker (3-stage fallback) --
         .route("/vlm/status", get(routes::vlm_status))
-        .route("/vlm/summarize", post(routes::vlm_enqueue))
-        // -- postgres-storage features (trajectory + tiered context) --
-        #[cfg(feature = "postgres-storage")]
-        .route("/retrieval/runs", get(routes::list_retrieval_runs))
-        #[cfg(feature = "postgres-storage")]
-        .route("/retrieval/runs/{id}", get(routes::get_retrieval_run))
-        #[cfg(feature = "postgres-storage")]
-        .route("/retrieval/runs/{id}/trajectory", get(routes::get_retrieval_trajectory))
-        #[cfg(feature = "postgres-storage")]
-        .route("/memories/{id}/compact", post(routes::compact_memory))
-        #[cfg(feature = "postgres-storage")]
-        .route("/memories/{id}", get(routes::get_memory))
-        #[cfg(feature = "postgres-storage")]
-        .route("/conflicts", get(routes::list_conflicts))
-        #[cfg(feature = "postgres-storage")]
-        .route("/conflicts/{id}/resolve", post(routes::resolve_conflict))
-        // Energy decay routes (Ebbinghaus forgetting curve)
-        #[cfg(feature = "postgres-storage")]
-        .route("/memories/{id}/energy/boost", post(routes::boost_memory_energy))
-        #[cfg(feature = "postgres-storage")]
-        .route("/energy/low", get(routes::list_low_energy_memories))
-        #[cfg(feature = "postgres-storage")]
-        .route("/energy/decay/apply", post(routes::apply_energy_decay))
-        #[cfg(feature = "postgres-storage")]
-        .route("/energy/compress", post(routes::compress_memory_cluster))
-        // Deduplication routes
-        #[cfg(feature = "postgres-storage")]
-        .route("/deduplication/candidates", get(routes::list_deduplication_candidates))
-        #[cfg(feature = "postgres-storage")]
-        .route("/deduplication/run", post(routes::run_deduplication))
-        #[cfg(feature = "postgres-storage")]
-        .route("/deduplication/runs", get(routes::list_deduplication_runs))
-        // Self-healing routes (content hashing for external nodes)
-        #[cfg(feature = "postgres-storage")]
-        .route("/memories/{id}/reindex", post(routes::reindex_external_node))
-        #[cfg(feature = "postgres-storage")]
-        .route("/memories/{id}/health", get(routes::memory_health_check))
-        #[cfg(feature = "postgres-storage")]
-        .route("/self-healing/stats", get(routes::self_healing_stats))
-        // Namespace routes
-        #[cfg(feature = "postgres-storage")]
-        .route("/namespaces", get(routes::list_namespaces))
-        #[cfg(feature = "postgres-storage")]
-        .route("/namespaces", post(routes::create_namespace))
-        #[cfg(feature = "postgres-storage")]
-        .route("/namespaces/{path}", get(routes::get_namespace))
-        #[cfg(feature = "postgres-storage")]
-        .route("/namespaces/{path}/memories", get(routes::namespace_memories))
-        #[cfg(feature = "postgres-storage")]
-        .route("/namespaces/{path}/search", get(routes::namespace_search))
-        // Skills routes
-        #[cfg(feature = "postgres-storage")]
-        .route("/skills", post(routes::create_skill))
-        #[cfg(feature = "postgres-storage")]
-        .route("/skills", get(routes::list_skills))
-        #[cfg(feature = "postgres-storage")]
-        .route("/skills/{id}", get(routes::get_skill))
-        #[cfg(feature = "postgres-storage")]
-        .route("/skills/{id}", put(routes::update_skill))
-        #[cfg(feature = "postgres-storage")]
-        .route("/skills/{id}", delete(routes::delete_skill))
-        #[cfg(feature = "postgres-storage")]
-        .route("/skills/{id}/use", post(routes::use_skill))
-        #[cfg(feature = "postgres-storage")]
-        .route("/skills/match", get(routes::match_skills))
+        .route("/vlm/summarize", post(routes::vlm_enqueue));
+
+    #[cfg(feature = "postgres-storage")]
+    {
+        protected = protected
+            // -- postgres-storage features (trajectory + tiered context) --
+            .route("/retrieval/runs", get(routes::list_retrieval_runs))
+            .route("/retrieval/runs/{id}", get(routes::get_retrieval_run))
+            .route("/retrieval/runs/{id}/trajectory", get(routes::get_retrieval_trajectory))
+            .route("/memories/{id}/compact", post(routes::compact_memory))
+            .route("/memories/{id}", get(routes::get_memory))
+            .route("/conflicts", get(routes::list_conflicts))
+            .route("/conflicts/{id}/resolve", post(routes::resolve_conflict))
+            // Energy decay routes (Ebbinghaus forgetting curve)
+            .route("/memories/{id}/energy/boost", post(routes::boost_memory_energy))
+            .route("/energy/low", get(routes::list_low_energy_memories))
+            .route("/energy/decay/apply", post(routes::apply_energy_decay))
+            .route("/energy/compress", post(routes::compress_memory_cluster))
+            // Deduplication routes
+            .route("/deduplication/candidates", get(routes::list_deduplication_candidates))
+            .route("/deduplication/run", post(routes::run_deduplication))
+            .route("/deduplication/runs", get(routes::list_deduplication_runs))
+            // Self-healing routes (content hashing for external nodes)
+            .route("/memories/{id}/reindex", post(routes::reindex_external_node))
+            .route("/memories/{id}/health", get(routes::memory_health_check))
+            .route("/self-healing/stats", get(routes::self_healing_stats))
+            // Namespace routes
+            .route("/namespaces", get(routes::list_namespaces))
+            .route("/namespaces", post(routes::create_namespace))
+            .route("/namespaces/{path}", get(routes::get_namespace))
+            .route("/namespaces/{path}/memories", get(routes::namespace_memories))
+            .route("/namespaces/{path}/search", get(routes::namespace_search))
+            // Skills routes
+            .route("/skills", post(routes::create_skill))
+            .route("/skills", get(routes::list_skills))
+            .route("/skills/{id}", get(routes::get_skill))
+            .route("/skills/{id}", put(routes::update_skill))
+            .route("/skills/{id}", delete(routes::delete_skill))
+            .route("/skills/{id}/use", post(routes::use_skill))
+            .route("/skills/match", get(routes::match_skills));
+    }
+
+    let protected = protected
         .route_layer(middleware::from_fn(auth::auth_middleware))
         .layer(axum::Extension(api_key.clone()));
 

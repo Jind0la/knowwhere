@@ -121,7 +121,12 @@ fn clean_for_embedding(text: &str) -> String {
     }
     if out.len() > 1024 {
         let original_len = out.len();
-        out.truncate(out.floor_char_boundary(1024));
+        // Stable replacement for nightly-only floor_char_boundary
+        let mut end = 1024;
+        while !out.is_char_boundary(end) {
+            end -= 1;
+        }
+        out.truncate(end);
         tracing::debug!(
             original_len,
             truncated_to = out.len(),
@@ -491,16 +496,6 @@ fn default_max_tier() -> Option<String> {
     Some("overview".to_string())
 }
 
-fn default_top_k() -> usize {
-    5
-}
-fn default_max_depth() -> usize {
-    3
-}
-fn default_governance_enabled() -> bool {
-    true
-}
-
 #[utoipa::path(
     post,
     path = "/retrieve_fractal",
@@ -534,9 +529,8 @@ pub async fn retrieve_fractal(
     });
     #[cfg(feature = "postgres-storage")]
     let trajectory_store_ref: Option<&crate::storage::TrajectoryStore> = trajectory_store.as_ref();
-    #[cfg(not(feature = "postgres-storage"))]
-    let trajectory_store_ref: Option<&crate::storage::TrajectoryStore> = None;
 
+    #[cfg(feature = "postgres-storage")]
     let results = state
         .store
         .hybrid_retrieve(
@@ -545,6 +539,17 @@ pub async fn retrieve_fractal(
             req.top_k,
             req.max_depth,
             trajectory_store_ref,
+        )
+        .await;
+
+    #[cfg(not(feature = "postgres-storage"))]
+    let results = state
+        .store
+        .hybrid_retrieve(
+            req.query_text.as_deref(),
+            &req.query_vector,
+            req.top_k,
+            req.max_depth,
         )
         .await;
 
@@ -1225,8 +1230,11 @@ pub async fn get_memory(
 // Conflict Detection Endpoints
 // =============================================================================
 
+#[cfg(feature = "postgres-storage")]
 use crate::memory::dream::conflict_detection::{ConflictDetector, ConflictGroup};
+#[cfg(feature = "postgres-storage")]
 use crate::memory::dream::energy_decay::{EnergyDecayWorker, MemoryEnergyInfo, DecayResult, CompressionResult};
+#[cfg(feature = "postgres-storage")]
 use crate::memory::dream::deduplication::{DeduplicationWorker, DuplicatePair, DeduplicationRunRow, DeduplicationResult};
 
 /// GET /conflicts — list all pending (unresolved) conflicts.
