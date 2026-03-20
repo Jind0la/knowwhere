@@ -199,7 +199,7 @@ impl VlmModel {
         match self {
             VlmModel::Gpt5Nano => "gpt-5-nano-2025-08-07",
             VlmModel::Gpt4oMini => "gpt-4o-mini-2024-07-18",
-            VlmModel::Grok4Fast => "g4o-1-fast",
+            VlmModel::Grok4Fast => "grok-4-1-fast",
         }
     }
 
@@ -724,7 +724,15 @@ mod worker {
                 serde_json::json!(job.node_ids.iter().map(|u| u.to_string()).collect::<Vec<_>>()));
             metadata.insert("context_level".to_string(), serde_json::json!(job.context.to_string()));
 
-            let summary_node = FractalNode::new_typed(
+            let mut summary_node = FractalNode::new_typed(
+                Some(summary_text.clone()),
+                None,
+                summary_vector,
+                metadata,
+                memory_type,
+                source,
+            );
+            summary_node.context_tier = tier;
                 Some(summary_text.clone()),
                 None,
                 summary_vector,
