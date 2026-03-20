@@ -7,7 +7,7 @@ use serde_json::Value;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::memory::types::{ConflictState, MemorySource, MemoryStatus, MemoryType, Sensitivity};
+use crate::memory::types::{ConflictState, ContextTier, MemorySource, MemoryStatus, MemoryType, Sensitivity};
 use crate::multimodal::MultimodalData;
 
 pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
@@ -80,6 +80,24 @@ pub struct FractalNode {
     /// How many times this memory has been accessed.
     #[serde(default)]
     pub access_count: i32,
+
+    // -- Tiered Context fields (L0/L1/L2) --
+    /// Context tier for tiered loading (default: Raw/L2 for existing memories).
+    #[serde(default = "default_context_tier")]
+    pub context_tier: ContextTier,
+    /// ID of the parent tier memory (e.g., summary → overview → raw chain).
+    #[serde(default)]
+    pub parent_tier_id: Option<Uuid>,
+    /// L0 summary content (one-sentence).
+    #[serde(default)]
+    pub summary_content: Option<String>,
+    /// L1 overview content (paragraph).
+    #[serde(default)]
+    pub overview_content: Option<String>,
+}
+
+fn default_context_tier() -> ContextTier {
+    ContextTier::Raw
 }
 
 fn default_memory_type() -> MemoryType {
@@ -120,6 +138,10 @@ impl FractalNode {
             importance: MemoryType::Episodic.default_importance(),
             status: MemoryStatus::Active,
             access_count: 0,
+            context_tier: ContextTier::Raw,
+            parent_tier_id: None,
+            summary_content: None,
+            overview_content: None,
         }
     }
 
@@ -152,6 +174,10 @@ impl FractalNode {
             importance: MemoryType::Semantic.default_importance(),
             status: MemoryStatus::Active,
             access_count: 0,
+            context_tier: ContextTier::Raw,
+            parent_tier_id: None,
+            summary_content: None,
+            overview_content: None,
         }
     }
 
@@ -185,6 +211,10 @@ impl FractalNode {
             importance: MemoryType::Semantic.default_importance(),
             status: MemoryStatus::Active,
             access_count: 0,
+            context_tier: ContextTier::Raw,
+            parent_tier_id: None,
+            summary_content: None,
+            overview_content: None,
         }
     }
 
@@ -220,6 +250,10 @@ impl FractalNode {
             importance: memory_type.default_importance(),
             status: MemoryStatus::Active,
             access_count: 0,
+            context_tier: ContextTier::Raw,
+            parent_tier_id: None,
+            summary_content: None,
+            overview_content: None,
         }
     }
 
@@ -231,19 +265,37 @@ impl FractalNode {
         })
     }
 
-    /// Rekursives Zoomen: sammelt (similarity, node) Paare entlang des besten Pfads.
+    /// Default pruning threshold for hierarchical zoom.
+    /// Only children are explored if parent's similarity >= this threshold.
+    pub const ZOOM_PRUNING_THRESHOLD: f32 = 0.7;
+
+    /// Rekursives Zoomen mit Hierarchical Pruning.
+    ///
+    /// Sammelt (similarity, node) Paare entlang des besten Pfads.
+    /// Nur wenn der Parents-Score >= `pruning_threshold` werden Kinder durchsucht.
+    ///
+    /// **Pruning-Logik:**
+    /// - `sim >= pruning_threshold` → Kinder werden rekursiv durchsucht
+    /// - `sim < pruning_threshold` → Ast wird abgeschnitten (PRUNED)
+    ///
+    /// Dies reduziert die Anzahl der Vektor-Distanzberechnungen massiv
+    /// bei tiefen Graphen und erhöht die Retrieval-Geschwindigkeit.
     pub fn zoom_retrieve(
         &self,
         query_vector: &[f32],
         max_depth: usize,
+        pruning_threshold: f32,
     ) -> Vec<(f32, FractalNode)> {
         let sim = cosine_similarity(&self.vector, query_vector);
         let mut results = vec![(sim, self.clone())];
-        if max_depth > 0 {
+        
+        if max_depth > 0 && sim >= pruning_threshold {
             if let Some(best) = self.find_best_child(query_vector) {
-                results.extend(best.zoom_retrieve(query_vector, max_depth - 1));
+                results.extend(best.zoom_retrieve(query_vector, max_depth - 1, pruning_threshold));
             }
         }
+        // Wenn sim < pruning_threshold: Kinder werden NICHT durchsucht → PRUNED
+        
         results
     }
 

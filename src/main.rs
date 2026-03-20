@@ -10,6 +10,9 @@ use tracing_subscriber::EnvFilter;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
+#[cfg(feature = "postgres-storage")]
+use sqlx::PgPoolOptions;
+
 use knowwhere_server::api::{auth, auth::ApiKey, docs::ApiDoc, routes};
 use knowwhere_server::connectors::frigate::FrigateConnector;
 use knowwhere_server::connectors::store_external_event;
@@ -98,12 +101,36 @@ async fn run() -> anyhow::Result<()> {
 
     let shutdown_store = store.clone();
 
+    #[cfg(feature = "postgres-storage")]
+    let trajectory_pool: Option<std::sync::Arc<sqlx::PgPool>> =
+        if let Ok(database_url) = std::env::var("DATABASE_URL") {
+            match sqlx::PgPoolOptions::new()
+                .max_connections(5)
+                .connect(&database_url)
+                .await
+            {
+                Ok(pool) => {
+                    tracing::info!("postgres storage enabled (trajectory logging + tiered context)");
+                    Some(std::sync::Arc::new(pool))
+                }
+                Err(e) => {
+                    tracing::warn!("DATABASE_URL set but connection failed ({e}), running without postgres-storage features");
+                    None
+                }
+            }
+        } else {
+            tracing::info!("DATABASE_URL not set — postgres-storage features disabled");
+            None
+        };
+
     let state = routes::AppState {
         store,
         dream,
         embedding,
         governance_policy: GovernancePolicy::default_policy(),
         events: InMemoryEventStore::new(),
+        #[cfg(feature = "postgres-storage")]
+        trajectory_pool,
     };
 
     let api_key = ApiKey(std::env::var("KNOWWHERE_API_KEY").ok());
@@ -119,6 +146,37 @@ async fn run() -> anyhow::Result<()> {
         .route("/nodes/reembed_all", post(routes::reembed_all))
         .route("/nodes/{id}", delete(routes::delete_node))
         .route("/dream/status", get(routes::dream_status))
+        // -- postgres-storage features (trajectory + tiered context) --
+        #[cfg(feature = "postgres-storage")]
+        .route("/retrieval/runs", get(routes::list_retrieval_runs))
+        #[cfg(feature = "postgres-storage")]
+        .route("/retrieval/runs/{id}", get(routes::get_retrieval_run))
+        #[cfg(feature = "postgres-storage")]
+        .route("/retrieval/runs/{id}/trajectory", get(routes::get_retrieval_trajectory))
+        #[cfg(feature = "postgres-storage")]
+        .route("/memories/{id}/compact", post(routes::compact_memory))
+        #[cfg(feature = "postgres-storage")]
+        .route("/memories/{id}", get(routes::get_memory))
+        #[cfg(feature = "postgres-storage")]
+        .route("/conflicts", get(routes::list_conflicts))
+        #[cfg(feature = "postgres-storage")]
+        .route("/conflicts/{id}/resolve", post(routes::resolve_conflict))
+        // Energy decay routes (Ebbinghaus forgetting curve)
+        #[cfg(feature = "postgres-storage")]
+        .route("/memories/{id}/energy/boost", post(routes::boost_memory_energy))
+        #[cfg(feature = "postgres-storage")]
+        .route("/energy/low", get(routes::list_low_energy_memories))
+        #[cfg(feature = "postgres-storage")]
+        .route("/energy/decay/apply", post(routes::apply_energy_decay))
+        #[cfg(feature = "postgres-storage")]
+        .route("/energy/compress", post(routes::compress_memory_cluster))
+        // Deduplication routes
+        #[cfg(feature = "postgres-storage")]
+        .route("/deduplication/candidates", get(routes::list_deduplication_candidates))
+        #[cfg(feature = "postgres-storage")]
+        .route("/deduplication/run", post(routes::run_deduplication))
+        #[cfg(feature = "postgres-storage")]
+        .route("/deduplication/runs", get(routes::list_deduplication_runs))
         .route_layer(middleware::from_fn(auth::auth_middleware))
         .layer(axum::Extension(api_key.clone()));
 

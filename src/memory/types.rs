@@ -316,3 +316,70 @@ impl MemorySource {
         }
     }
 }
+
+// -----------------------------------------------------------------------------
+// Context Tier (L0/L1/L2) — Tiered Context Loading
+// -----------------------------------------------------------------------------
+
+/// Context tier for tiered context loading.
+///
+/// Enables hierarchical context loading with 3 levels:
+/// - **L0 (Summary)**: One-sentence summary, minimal tokens
+/// - **L1 (Overview)**: Paragraph-level summary
+/// - **L2 (Raw)**: Full original content (default for existing memories)
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ContextTier {
+    /// L0: one-sentence summary (minimal tokens, ~20-50)
+    Summary,
+    /// L1: paragraph overview (~100-300 tokens)
+    Overview,
+    /// L2: full raw content (default for backward compatibility)
+    #[default]
+    Raw,
+}
+
+impl ContextTier {
+    /// Human-readable label.
+    pub fn label(&self) -> &'static str {
+        match self {
+            ContextTier::Summary => "summary",
+            ContextTier::Overview => "overview",
+            ContextTier::Raw => "raw",
+        }
+    }
+
+    /// Parse from string.
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "summary" => Some(ContextTier::Summary),
+            "overview" => Some(ContextTier::Overview),
+            "raw" => Some(ContextTier::Raw),
+            _ => None,
+        }
+    }
+
+    /// The tier below this one (for compaction chain: Raw → Overview → Summary).
+    pub fn parent_tier(&self) -> Option<Self> {
+        match self {
+            ContextTier::Raw => Some(ContextTier::Overview),
+            ContextTier::Overview => Some(ContextTier::Summary),
+            ContextTier::Summary => None,
+        }
+    }
+
+    /// Which SQL column holds the content for this tier.
+    pub fn content_column(&self) -> &'static str {
+        match self {
+            ContextTier::Summary => "summary_content",
+            ContextTier::Overview => "overview_content",
+            ContextTier::Raw => "content",
+        }
+    }
+}
+
+impl std::fmt::Display for ContextTier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.label())
+    }
+}

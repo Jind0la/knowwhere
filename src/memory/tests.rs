@@ -113,7 +113,7 @@ mod tests {
         parent.children = vec![close_child, far_child];
 
         let query = vec![1.0, 0.0, 0.0];
-        let results = parent.zoom_retrieve(&query, 1);
+        let results = parent.zoom_retrieve(&query, 1, 0.7);
 
         assert_eq!(results.len(), 2, "parent + best child");
         assert_eq!(results[0].1.content.as_deref(), Some("parent"));

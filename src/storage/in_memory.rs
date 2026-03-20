@@ -488,14 +488,56 @@ impl MemoryStore {
         fused
     }
 
+    /// Boost energy for memories that made it into the final top-k retrieval results.
+    ///
+    /// This is the "access boost" part of the Ebbinghaus energy model — memories
+    /// that appear in retrieval results are considered recently used and get their
+    /// energy increased so they don't decay away prematurely.
+    #[cfg(feature = "postgres-storage")]
+    async fn boost_energy_for_retrieval(
+        pool: &sqlx::PgPool,
+        result_ids: &[Uuid],
+        boost: i32,
+    ) {
+        use crate::memory::dream::energy_decay::EnergyDecayWorker;
+        let worker = EnergyDecayWorker::with_defaults(pool);
+        for id in result_ids {
+            if let Err(e) = worker.boost_energy(*id, boost).await {
+                tracing::warn!(memory_id = %id, "failed to boost energy: {}", e);
+            }
+        }
+    }
+
     pub async fn hybrid_retrieve(
         &self,
         query_text: Option<&str>,
         query_vector: &[f32],
         top_k: usize,
         max_depth: usize,
+        #[cfg(feature = "postgres-storage")] trajectory_store: Option<&crate::storage::TrajectoryStore>,
     ) -> Vec<(f32, FractalNode)> {
-        let vector_results = self.retrieve_fractal(query_vector, top_k * 2, max_depth).await;
+        let start = Instant::now();
+
+        #[cfg(feature = "postgres-storage")]
+        let mut trajectory = trajectory_store.map(|ts| {
+            crate::storage::RetrievalTrajectory::new(
+                query_text.unwrap_or("").to_string(),
+                query_vector.to_vec(),
+            )
+        });
+
+        let vector_results = self.retrieve_fractal(
+            query_vector, 
+            top_k * 2, 
+            max_depth,
+            #[cfg(feature = "postgres-storage")]
+            crate::memory::fractal_node::FractalNode::ZOOM_PRUNING_THRESHOLD,
+            #[cfg(feature = "postgres-storage")]
+            trajectory.as_mut().map(|t| t as &mut crate::storage::trajectory::RetrievalTrajectory),
+        ).await;
+
+        // Note: trajectory logging is now done inside retrieve_fractal
+
         let vector_ids: Vec<Uuid> = vector_results.iter().map(|n| n.id).collect();
 
         let bm25_results = match query_text {
@@ -504,22 +546,79 @@ impl MemoryStore {
         };
 
         if bm25_results.is_empty() {
-            return vector_results.into_iter()
+            #[cfg(feature = "postgres-storage")]
+            let total_candidates = vector_results.len();
+            let results: Vec<_> = vector_results.into_iter()
                 .take(top_k)
                 .filter_map(|n| {
                     let sim = crate::memory::cosine_similarity(&n.vector, query_vector);
                     Some((sim, n))
                 })
                 .collect();
+            #[cfg(feature = "postgres-storage")]
+            {
+                let execution_time_ms = start.elapsed().as_millis() as u64;
+                for (i, (score, node)) in results.iter().enumerate() {
+                    if let Some(ref mut traj) = trajectory {
+                        traj.log_result(node.id, i + 1, *score, "final result (vector only)");
+                    }
+                }
+                if let (Some(ref mut traj), Some(ts)) = (trajectory, trajectory_store) {
+                    traj.execution_time_ms = execution_time_ms;
+                    traj.total_candidates = total_candidates;
+                    traj.retrieved_count = results.len();
+                    traj.max_depth_used = max_depth;
+                    if let Err(e) = ts.log_retrieval(traj).await {
+                        tracing::warn!("failed to log retrieval trajectory: {e}");
+                    }
+                }
+                // Boost energy for memories that made it into top-k (Ebbinghaus access boost)
+                if let Some(ts) = trajectory_store {
+                    let top_k_ids: Vec<Uuid> = results.iter().map(|(_, n)| n.id).collect();
+                    Self::boost_energy_for_retrieval(ts.pool(), &top_k_ids, 20).await;
+                }
+            }
+            return results;
         }
+
+        #[cfg(feature = "postgres-storage")]
+        let total_candidates = vector_ids.len() + bm25_results.len();
 
         let fused = Self::rrf_fuse(&vector_ids, &bm25_results, 60.0);
 
         let nodes = self.nodes.read().await;
-        fused.into_iter()
+        let results: Vec<_> = fused.into_iter()
             .take(top_k)
             .filter_map(|(id, score)| nodes.get(&id).cloned().map(|n| (score, n)))
-            .collect()
+            .collect();
+
+        #[cfg(feature = "postgres-storage")]
+        {
+            let execution_time_ms = start.elapsed().as_millis() as u64;
+            for (i, (score, node)) in results.iter().enumerate() {
+                if let Some(ref mut traj) = trajectory {
+                    traj.log_result(node.id, i + 1, *score, "final result (fused)");
+                }
+            }
+            if let (Some(ref mut traj), Some(ts)) = (trajectory, trajectory_store) {
+                traj.execution_time_ms = execution_time_ms;
+                traj.total_candidates = total_candidates;
+                traj.retrieved_count = results.len();
+                traj.max_depth_used = max_depth;
+                if let Err(e) = ts.log_retrieval(traj).await {
+                    tracing::warn!("failed to log retrieval trajectory: {e}");
+                }
+            }
+        }
+
+        // Boost energy for memories in top-k (Ebbinghaus access boost)
+        #[cfg(feature = "postgres-storage")]
+        if let Some(ts) = trajectory_store {
+            let top_k_ids: Vec<Uuid> = results.iter().map(|(_, n)| n.id).collect();
+            Self::boost_energy_for_retrieval(ts.pool(), &top_k_ids, 20).await;
+        }
+
+        results
     }
 
     pub async fn retrieve_fractal(
@@ -527,7 +626,12 @@ impl MemoryStore {
         query_vector: &[f32],
         top_k: usize,
         max_depth: usize,
+        #[cfg(feature = "postgres-storage")] pruning_threshold: f32,
+        #[cfg(feature = "postgres-storage")] trajectory: Option<&mut crate::storage::trajectory::RetrievalTrajectory>,
     ) -> Vec<FractalNode> {
+        #[cfg(not(feature = "postgres-storage"))]
+        let pruning_threshold = crate::memory::fractal_node::FractalNode::ZOOM_PRUNING_THRESHOLD;
+        
         let node_count = self.nodes.read().await.len();
         let has_index = self
             .usearch_index
@@ -559,9 +663,18 @@ impl MemoryStore {
                 let mut scored: Vec<(f32, FractalNode)> = candidate_uuids
                     .iter()
                     .filter_map(|uid| nodes.get(uid))
-                    .flat_map(|node| node.zoom_retrieve(query_vector, max_depth))
+                    .flat_map(|node| node.zoom_retrieve(query_vector, max_depth, pruning_threshold))
                     .collect();
                 scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(Ordering::Equal));
+                
+                // Log initial search steps if trajectory is provided
+                #[cfg(feature = "postgres-storage")]
+                if let Some(traj) = trajectory {
+                    for (score, node) in &scored {
+                        traj.log_search(node.id, *score, "usearch_candidate");
+                    }
+                }
+                
                 return scored
                     .into_iter()
                     .take(top_k)
@@ -570,10 +683,16 @@ impl MemoryStore {
             }
         }
 
+        // Fallback: linear scan
+        #[cfg(feature = "postgres-storage")]
+        if let Some(traj) = trajectory {
+            traj.log_info("fallback: linear scan");
+        }
+        
         let nodes = self.nodes.read().await;
         let mut scored: Vec<(f32, FractalNode)> = nodes
             .values()
-            .flat_map(|node| node.zoom_retrieve(query_vector, max_depth))
+            .flat_map(|node| node.zoom_retrieve(query_vector, max_depth, pruning_threshold))
             .collect();
         scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(Ordering::Equal));
         scored
