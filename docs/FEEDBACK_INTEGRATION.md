@@ -143,6 +143,18 @@ Alle neuen Features sind hinter `#[cfg(feature = "postgres-storage")]`:
 
 ---
 
+## Offene Bugs
+
+### health_check() repair status inaccurate
+**Gefunden:** 2026-03-20 (P2 Review)
+**Datei:** `src/memory/self_healing.rs`
+
+`health_check()` zeigt immer `RepairStatus::RepairedHash` wenn eine repair passiert — auch wenn semantic repair verwendet wurde. `check_and_repair()` gibt den actual status nicht zurück.
+
+**Fix:** `check_and_repair()` sollte `RepairStatus` als `Result<Option<(String, RepairStatus)>>` zurückgeben statt `Result<Option<String>>`.
+
+---
+
 ## Commit History (bisher)
 
 ```
