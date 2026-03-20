@@ -2,6 +2,7 @@ use utoipa::OpenApi;
 
 use crate::api::routes;
 use crate::memory::dream::DreamStatus;
+use crate::memory::self_healing::{HealthCheckResult, HealingStats};
 use crate::memory::{FractalNode, NodeType, Relation};
 use crate::multimodal::MultimodalData;
 
@@ -36,11 +37,14 @@ use crate::multimodal::MultimodalData;
         routes::ReembedResponse,
         routes::RetrieveFractalRequest,
         routes::ScoredNode,
+        routes::ReindexResponse,
         FractalNode,
         NodeType,
         Relation,
         MultimodalData,
         DreamStatus,
+        HealthCheckResult,
+        HealingStats,
     ))
 )]
 pub struct ApiDoc;
