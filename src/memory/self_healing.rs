@@ -121,7 +121,7 @@ impl SelfHealingService {
         &self,
         memory_id: Uuid,
         uri: &str,
-    ) -> Result<Option<String>> {
+    ) -> Result<Option<(String, RepairStatus)>> {
         let path = self.uri_to_path(uri);
 
         if path.exists() {
@@ -154,7 +154,7 @@ impl SelfHealingService {
                 let new_uri = self.path_to_uri(&new_path);
                 self.update_pointer(memory_id, uri, &new_uri, RepairStatus::RepairedHash)
                     .await?;
-                return Ok(Some(new_uri));
+                return Ok(Some((new_uri, RepairStatus::RepairedHash)));
             }
         }
 
@@ -164,7 +164,7 @@ impl SelfHealingService {
                 let new_uri = self.path_to_uri(&new_path);
                 self.update_pointer(memory_id, uri, &new_uri, RepairStatus::RepairedSemantic)
                     .await?;
-                return Ok(Some(new_uri));
+                return Ok(Some((new_uri, RepairStatus::RepairedSemantic)));
             }
         }
 
@@ -199,10 +199,7 @@ impl SelfHealingService {
             (None, None)
         } else {
             match self.check_and_repair(memory_id, &uri).await? {
-                Some(new_uri) => (
-                    Some(RepairStatus::RepairedHash), // check_and_repair uses the best available method
-                    Some(new_uri),
-                ),
+                Some((new_uri, method)) => (Some(method), Some(new_uri)),
                 None => (Some(RepairStatus::Unrepaired), None),
             }
         };
