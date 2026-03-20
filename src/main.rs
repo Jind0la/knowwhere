@@ -184,6 +184,32 @@ async fn run() -> anyhow::Result<()> {
         .route("/memories/{id}/health", get(routes::memory_health_check))
         #[cfg(feature = "postgres-storage")]
         .route("/self-healing/stats", get(routes::self_healing_stats))
+        // Namespace routes
+        #[cfg(feature = "postgres-storage")]
+        .route("/namespaces", get(routes::list_namespaces))
+        #[cfg(feature = "postgres-storage")]
+        .route("/namespaces", post(routes::create_namespace))
+        #[cfg(feature = "postgres-storage")]
+        .route("/namespaces/{path}", get(routes::get_namespace))
+        #[cfg(feature = "postgres-storage")]
+        .route("/namespaces/{path}/memories", get(routes::namespace_memories))
+        #[cfg(feature = "postgres-storage")]
+        .route("/namespaces/{path}/search", get(routes::namespace_search))
+        // Skills routes
+        #[cfg(feature = "postgres-storage")]
+        .route("/skills", post(routes::create_skill))
+        #[cfg(feature = "postgres-storage")]
+        .route("/skills", get(routes::list_skills))
+        #[cfg(feature = "postgres-storage")]
+        .route("/skills/{id}", get(routes::get_skill))
+        #[cfg(feature = "postgres-storage")]
+        .route("/skills/{id}", put(routes::update_skill))
+        #[cfg(feature = "postgres-storage")]
+        .route("/skills/{id}", delete(routes::delete_skill))
+        #[cfg(feature = "postgres-storage")]
+        .route("/skills/{id}/use", post(routes::use_skill))
+        #[cfg(feature = "postgres-storage")]
+        .route("/skills/match", get(routes::match_skills))
         .route_layer(middleware::from_fn(auth::auth_middleware))
         .layer(axum::Extension(api_key.clone()));
 
