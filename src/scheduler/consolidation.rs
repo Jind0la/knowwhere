@@ -20,7 +20,6 @@ use crate::storage::MemoryStore;
 use crate::vlm::{SummaryContext, VlmJob, VlmWorkerHandle};
 
 /// Consolidation Scheduler state.
-#[derive(Debug)]
 pub struct ConsolidationScheduler {
     store: MemoryStore,
     vlm_worker: Option<VlmWorkerHandle>,

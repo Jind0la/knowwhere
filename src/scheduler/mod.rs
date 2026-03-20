@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 
 /// Configuration for both Dream Mode schedulers.
 /// Loaded from environment variables with sensible defaults.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct SchedulerConfig {
     // Consolidation
     /// How often to run consolidation (milliseconds). Default: 1 hour (3_600_000).

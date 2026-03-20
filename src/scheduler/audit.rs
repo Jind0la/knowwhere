@@ -27,7 +27,6 @@ use crate::storage::MemoryStore;
 ///
 /// For in-memory store: applies basic weight decay (no external calls).
 /// For postgres store: delegates to the full Dream audit workers.
-#[derive(Debug)]
 pub struct AuditScheduler {
     store: MemoryStore,
     config: SchedulerConfig,
