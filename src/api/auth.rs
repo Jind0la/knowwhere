@@ -6,6 +6,15 @@ use axum::response::Response;
 #[derive(Clone)]
 pub struct ApiKey(pub Option<String>);
 
+/// Constant-time string comparison to prevent timing attacks.
+/// Length is not secret (it's in the header), so comparing lengths first is safe.
+fn secure_compare(a: &str, b: &str) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    subtle::ConstantTimeEq::ct_eq(a.as_bytes(), b.as_bytes()).into()
+}
+
 pub async fn auth_middleware(
     request: Request,
     next: Next,
@@ -27,7 +36,7 @@ pub async fn auth_middleware(
         .and_then(|h| h.strip_prefix("Bearer "));
 
     match token {
-        Some(t) if t == expected => Ok(next.run(request).await),
+        Some(t) if secure_compare(t, expected) => Ok(next.run(request).await),
         _ => Err(StatusCode::UNAUTHORIZED),
     }
 }
