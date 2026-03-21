@@ -10,7 +10,8 @@ use tower::ServiceExt;
 
 use knowwhere_server::api::{auth, auth::ApiKey, routes};
 use knowwhere_server::embedding::{create_provider, ProviderKind};
-use knowwhere_server::memory::DreamMode;
+use knowwhere_server::memory::{DreamMode, events::InMemoryEventStore};
+use knowwhere_server::memory::governance::GovernancePolicy;
 use knowwhere_server::storage::MemoryStore;
 
 fn test_state() -> routes::AppState {
@@ -18,7 +19,16 @@ fn test_state() -> routes::AppState {
     let dream = DreamMode::new(store.clone());
     let embedding: Arc<dyn knowwhere_server::embedding::EmbeddingProvider> =
         create_provider(ProviderKind::LocalOllama, None);
-    routes::AppState { store, dream, embedding }
+    routes::AppState {
+        store,
+        dream,
+        embedding,
+        governance_policy: GovernancePolicy::default_policy(),
+        events: InMemoryEventStore::new(),
+        #[cfg(feature = "postgres-storage")]
+        trajectory_pool: None,
+        vlm_worker: None,
+    }
 }
 
 fn app_without_auth() -> Router {

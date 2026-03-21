@@ -413,24 +413,24 @@ mod tests {
 
     #[test]
     fn test_session_node_type() {
-        use crate::memory::NodeType;
+        use crate::memory::types::MemoryType;
         let node = FractalNode::new_session("test".into(), vec![0.1], HashMap::new());
-        assert_eq!(node.node_type, NodeType::Session);
+        assert_eq!(node.memory_type, MemoryType::Episodic);
     }
 
     #[test]
     fn test_external_node_type() {
-        use crate::memory::NodeType;
+        use crate::memory::types::MemoryType;
         let node = FractalNode::new_external("s3://x".into(), vec![0.1], HashMap::new());
-        assert_eq!(node.node_type, NodeType::External);
+        assert_eq!(node.memory_type, MemoryType::Semantic);
     }
 
     #[test]
     fn test_node_type_serde_default() {
-        use crate::memory::NodeType;
+        use crate::memory::types::MemoryType;
         let json = r#"{"id":"00000000-0000-0000-0000-000000000000","vector":[],"content":null,"original_pointer":null,"metadata":{},"weight":1.0,"multimodal":null,"children":[],"relations":[],"created_at":"2026-01-01T00:00:00Z","last_accessed":"2026-01-01T00:00:00Z"}"#;
         let node: FractalNode = serde_json::from_str(json).expect("deserialize without node_type");
-        assert_eq!(node.node_type, NodeType::Session, "default should be Session");
+        assert_eq!(node.memory_type, MemoryType::Episodic, "default should be Episodic");
     }
 
     // -- Phase 1: Task-Prefix Tests --
