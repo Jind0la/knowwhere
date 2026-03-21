@@ -4,16 +4,16 @@
 //! curve. Every memory has an `energy` level (0–100):
 //!
 //! - **Access boosts energy**: each retrieval adds a configurable boost (+20 default)
-//! - **Time decays energy**: energy decreases based on hours since last update
-//!   (1.0 energy/hour by default, configurable via `decay_rate_per_hour`)
+//! - **Time decays energy**: energy decays exponentially based on hours since last update
+//!   (half-life of 168 hours / 7 days by default, configurable via `halflife_hours`)
 //! - **Low-energy candidates**: memories below `min_energy_threshold` (default 10)
 //!   are flagged for compression in Dream Mode
 //!
-//! ## Ebbinghaus Curve Approximation
+//! ## Ebbinghaus Curve — Exponential Decay
 //!
-//! The decay is linear per hour (simplified model). In production, a better
-//! approximation would be exponential: `energy = energy * exp(-k * hours)`.
-//! We use linear decay for predictability and easier tuning.
+//! ✅ Exponential decay implemented: `energy = energy * exp(-λ * hours)`
+//! where `λ = ln(2) / halflife_hours`. This models the real Ebbinghaus forgetting
+//! curve more accurately than linear decay.
 //!
 //! ## Workflow
 //!
@@ -26,7 +26,7 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! let worker = EnergyDecayWorker::new(&pool, 1.0, 10);
+//! let worker = EnergyDecayWorker::new(&pool, EnergyDecayConfig::default()); // halflife=7d, threshold=10
 //!
 //! // After retrieving a memory:
 //! worker.boost_energy(memory_id, 20).await?;
@@ -51,8 +51,9 @@ use anyhow::Result;
 /// Configuration for the energy decay worker.
 #[derive(Debug, Clone, Copy)]
 pub struct EnergyDecayConfig {
-    /// How many energy units are lost per hour (default: 1.0).
-    pub decay_rate_per_hour: f32,
+    /// Half-life in hours — how long until energy drops to 50% of its current value.
+    /// Standard: 168 hours (7 days).
+    pub halflife_hours: f32,
     /// Memories below this threshold are candidates for compression (default: 10).
     pub min_energy_threshold: i32,
 }
@@ -60,7 +61,7 @@ pub struct EnergyDecayConfig {
 impl Default for EnergyDecayConfig {
     fn default() -> Self {
         Self {
-            decay_rate_per_hour: 1.0,
+            halflife_hours: 168.0, // 7 days
             min_energy_threshold: 10,
         }
     }
@@ -101,7 +102,7 @@ pub struct CompressionResult {
 /// Energy decay worker implementing the Ebbinghaus forgetting curve model.
 pub struct EnergyDecayWorker<'a> {
     pool: &'a PgPool,
-    decay_rate_per_hour: f32,
+    halflife_hours: f32,
     min_energy_threshold: i32,
 }
 
@@ -110,12 +111,12 @@ impl<'a> EnergyDecayWorker<'a> {
     pub fn new(pool: &'a PgPool, config: EnergyDecayConfig) -> Self {
         Self {
             pool,
-            decay_rate_per_hour: config.decay_rate_per_hour,
+            halflife_hours: config.halflife_hours,
             min_energy_threshold: config.min_energy_threshold,
         }
     }
 
-    /// Create a new worker with default config (decay_rate=1.0, threshold=10).
+    /// Create a new worker with default config (halflife=7 days, threshold=10).
     pub fn with_defaults(pool: &'a PgPool) -> Self {
         Self::new(pool, EnergyDecayConfig::default())
     }
@@ -123,6 +124,9 @@ impl<'a> EnergyDecayWorker<'a> {
     /// Boost the energy of a memory after access.
     ///
     /// Caps energy at 100 (LEAST logic). Resets `last_energy_update` to NOW().
+    ///
+    /// With exponential decay, resetting `last_energy_update` means the memory
+    /// decays from the boosted level with the configured half-life.
     ///
     /// # Arguments
     /// * `memory_id` — the memory to boost
@@ -145,22 +149,22 @@ impl<'a> EnergyDecayWorker<'a> {
         Ok(())
     }
 
-    /// Apply decay to all active memories based on time since last update.
+    /// Apply exponential decay to all active memories based on time since last update.
     ///
-    /// For each memory, computes `hours_since_update` and subtracts
-    /// `hours_since_update * decay_rate_per_hour` from energy.
-    /// Energy is floored at 0.
+    /// Computes `hours_since_update` and applies `energy * exp(-λ * hours_since_update)`
+    /// where `λ = ln(2) / halflife_hours`. Energy is floored at 0.
     ///
     /// Returns the number of memories updated and how many hit zero.
     pub async fn apply_decay(&self) -> Result<DecayResult> {
-        let rate = self.decay_rate_per_hour;
+        // λ = ln(2) / halflife_hours  →  half-life decay constant
+        let lambda = 2.0_f32.ln() / self.halflife_hours;
 
-        // Update all active memories: decay energy based on time elapsed
+        // Update all active memories: exponential decay based on time elapsed
         let result = sqlx::query!(
             r#"
             UPDATE memories
             SET energy = GREATEST(0, CAST(
-                energy - (EXTRACT(EPOCH FROM (NOW() - last_energy_update)) / 3600.0 * $1)
+                energy * EXP(-$1 * EXTRACT(EPOCH FROM (NOW() - last_energy_update)) / 3600.0)
                 AS INT
             )),
             last_energy_update = NOW()
@@ -168,7 +172,7 @@ impl<'a> EnergyDecayWorker<'a> {
               AND energy > 0
               AND last_energy_update < NOW()
             "#,
-            rate,
+            lambda,
         )
         .execute(self.pool)
         .await?;
@@ -188,8 +192,8 @@ impl<'a> EnergyDecayWorker<'a> {
         tracing::info!(
             updated = result.rows_affected(),
             at_zero = at_zero.0,
-            decay_rate = rate,
-            "energy decay applied"
+            halflife_hours = self.halflife_hours,
+            "energy decay applied (exponential)"
         );
 
         Ok(DecayResult {
