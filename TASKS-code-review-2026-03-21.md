@@ -283,6 +283,74 @@ impl GovernanceCandidate {
 
 ---
 
+### [MED-007] Tests mit OpenAI Embeddings (statt Ollama)
+
+**Problem:** Tests nutzen `ProviderKind::LocalOllama` — Ollama nicht in Docker/CI → 9 Tests failen mit `Connection refused`.
+
+**Lösung:** `OpenAIProvider` ist bereits vorhanden + API Key liegt in `.env`.
+
+**Konkrete Änderungen:**
+
+1. **`tests/integration.rs`** — `test_state()`:
+```rust
+// VORHER:
+create_provider(ProviderKind::LocalOllama, None)
+
+// NACHHER:
+create_provider(
+    ProviderKind::OpenAI, 
+    Some(std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY must be set"))
+)
+```
+
+2. **`src/memory/tests.rs`** — Gleiche Änderung für lib-tests die Embeddings brauchen.
+
+3. **`DummyEmbeddingProvider`** für pure Unit-Tests die keine echten Embeddings brauchen (optional).
+
+4. **GitHub Secrets** — `OPENAI_API_KEY` als CI-Secret setzen (existiert noch nicht).
+
+**Bestehende Assets:**
+- ✅ `OPENAI_API_KEY` in `.env` (bereits gesetzt)
+- ✅ `OpenAIProvider` in `src/embedding/provider.rs`
+- ✅ `create_provider(ProviderKind::OpenAI, Some(key))` funktioniert bereits
+
+**Aufwand:** ~30 Minuten
+**Dateien:** `tests/integration.rs`, `src/memory/tests.rs`, GitHub Secrets
+
+---
+
+### [BUG-001] `dream_status_returns_ok` — Cycle Count Bug
+
+**Problem:** Integration Test `dream_status_returns_ok` erwartet `"\"cycle_count\":0"`, bekommt was anderes.
+
+**Test:** `tests/integration.rs:329`
+```rust
+assert!(body.contains("\"cycle_count\":0"));
+```
+
+**Vermutliche Ursache:** `DreamMode::cycle_count` startet nicht bei 0 oder wird nicht korrekt serialisiert.
+
+**Aufwand:** Unbekannt — muss erst untersucht werden
+**Dateien:** `src/memory/dream/mod.rs`, `src/api/routes.rs`
+
+---
+
+### [BUG-002] `fractal_retrieve_returns_results` — Leere Ergebnisse
+
+**Problem:** `fractal_retrieve` gibt leere Ergebnisse zurück obwohl 2 Nodes gespeichert wurden.
+
+**Test:** `tests/integration.rs:309`
+```rust
+assert!(!results.is_empty());  // ← scheitert
+```
+
+**Vermutliche Ursache:** Embedding-Vektoren (Random `[0.1,0.2,0.3,0.4,0.5]`) matchen nicht mit den echten OpenAI-Embeddings der gespeicherten Nodes. Fractal-Retrieve nutzt Vektor-Suche — wenn Query-Vektor und Stored-Vektoren nicht im selben Embedding-Raum liegen, findet er nichts.
+
+**Aufwand:** ~1-2 Stunden
+**Dateien:** `src/storage/in_memory.rs`, `src/memory/fractal_node.rs`
+
+---
+
 ## 🟢 Niedrig — Später
 
 ### [LOW-001] FractalNode.children: Arena-Allocation
@@ -375,6 +443,11 @@ trait EmbeddingProvider {
 | MED-003: BM25-Corpus | Niedrig (2h) | Mittel |
 | MED-004: Vektor Conflict | Mittel (4h) | Mittel |
 | MED-005: Gov. Dedupe | Niedrig (1h) | Niedrig |
+| MED-006: Test-Fehler | Mittel (2-3h) | Mittel |
+| MED-007: Test Embed (OpenAI) | Niedrig (30min) | Hoch | ✅ Erledigt |
+| **Bugs (neu entdeckt)** | | |
+| BUG-001: dream_status cycle_count | Unbekannt | Mittel |
+| BUG-002: fractal_retrieve empty results | Mittel (1-2h) | Hoch |
 | **Niedrig** | | |
 | LOW-001: Arena Alloc. | Hoch (3 Tage) | Mittel |
 | LOW-002: Batch Embed. | Mittel (4h) | Mittel |
@@ -385,10 +458,15 @@ trait EmbeddingProvider {
 
 ## 📅 Nächste Schritte
 
-1. **CRIT-001 + CRIT-002** sofort machen (30min + 2h = überschaubar)
-2. **MED-001** als Quick-Win (1h)
-3. **MED-002** Mittelfristig planen (braucht LLM-Integration)
-4. **CRIT-003** PostgreSQL fertigbauen (~1 Tag, 80% vorhanden)
+1. ✅ **CRIT-001** Timing-Angriff — erledigt
+2. ✅ **CRIT-002** Rate-Limiting — erledigt (2x iteriert)
+3. ✅ **MED-001** Exponential Decay — erledigt
+4. ✅ **MED-006** Test-Fixture Fix — erledigt (Compiler-Fehler behoben)
+5. ✅ **MED-007** OpenAI Embeddings in Tests — erledigt (2 Integration-Bugs gefunden)
+6. **BUG-001** dream_status cycle_count — untersuchen (~?)
+7. **BUG-002** fractal_retrieve empty results — fixen (~1-2h)
+8. **CRIT-003** PostgreSQL — ~1 Tag, 80% fertig
+9. **MED-002** LLM Compaction — größere Änderung, später
 
 ---
 
