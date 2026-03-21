@@ -14,6 +14,7 @@ use utoipa_swagger_ui::SwaggerUi;
 use sqlx::PgPoolOptions;
 
 use knowwhere_server::api::{auth, auth::ApiKey, docs::ApiDoc, routes};
+use lazy_limit::{init_rate_limiter, Duration, RuleConfig};
 use knowwhere_server::connectors::frigate::FrigateConnector;
 use knowwhere_server::connectors::store_external_event;
 use knowwhere_server::embedding::{create_provider, EmbeddingProvider, ProviderKind};
@@ -44,6 +45,16 @@ async fn run() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
         .init();
+
+    // -- Rate Limiter (lazy-limit) — global, initialized once at startup --
+    init_rate_limiter!(
+        default: RuleConfig::new(Duration::seconds(1), 5),
+        routes: [
+            ("/auth/login",    RuleConfig::new(Duration::seconds(1), 3)),
+            ("/auth/refresh",  RuleConfig::new(Duration::seconds(1), 3)),
+            ("/auth/register", RuleConfig::new(Duration::seconds(60), 10)),
+        ]
+    ).await;
 
     let data_dir = std::env::var("KNOWWHERE_DATA_DIR").unwrap_or_else(|_| "./data".into());
     let store = MemoryStore::with_persistence(&data_dir)
@@ -234,6 +245,7 @@ async fn run() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/health", get(routes::health))
         .merge(protected)
+        .merge(auth::auth_router_with_state(state.clone()))
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
         .fallback_service(ServeDir::new("frontend"))
         .layer(CorsLayer::new().allow_origin(Any).allow_methods(Any).allow_headers(Any))
