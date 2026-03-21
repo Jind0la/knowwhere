@@ -56,6 +56,13 @@ pub fn auth_governor_config() -> GovernorConfig {
         .override_mode(false) // enforce both global and route-specific rules
 }
 
+/// GovernorConfig for protected API endpoints: 5 req/s per IP.
+/// More permissive than auth endpoints since these require a valid Bearer token first.
+pub fn protected_governor_config() -> GovernorConfig {
+    GovernorConfig::default()
+        .override_mode(false)
+}
+
 // ---------------------------------------------------------------------------
 // Auth request/response types
 // ---------------------------------------------------------------------------

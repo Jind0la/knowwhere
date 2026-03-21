@@ -3,6 +3,9 @@ use std::sync::Arc;
 use axum::middleware;
 use axum::routing::{delete, get, post};
 use axum::Router;
+use axum_governor::GovernorLayer;
+use real::RealIpLayer;
+use tower::ServiceBuilder;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
@@ -239,6 +242,12 @@ async fn run() -> anyhow::Result<()> {
     }
 
     let protected = protected
+        // Rate-limit BEFORE auth — fail-fast on abuse, even with invalid tokens
+        .layer(
+            ServiceBuilder::new()
+                .layer(RealIpLayer::default()) // Extract real client IP first
+                .layer(GovernorLayer::new(auth::protected_governor_config())) // 5 req/s per IP
+        )
         .route_layer(middleware::from_fn(auth::auth_middleware))
         .layer(axum::Extension(api_key.clone()));
 
