@@ -5,7 +5,7 @@ mod tests {
     use uuid::Uuid;
 
     use crate::embedding::provider::EmbeddingProvider;
-    use crate::embedding::LocalOllamaProvider;
+    use crate::embedding::{LocalOllamaProvider, create_provider, ProviderKind};
     use crate::memory::fractal_node::cosine_similarity;
     use crate::memory::FractalNode;
     use crate::multimodal::MultimodalData;
@@ -144,7 +144,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_local_ollama_embedding() {
-        let provider = LocalOllamaProvider::new();
+        let provider = create_provider(
+            ProviderKind::OpenAI,
+            Some(std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY must be set")),
+        );
         let vector = provider.embed("hello world").await.expect("embed failed");
 
         assert_eq!(vector.len(), provider.dimension());
@@ -161,7 +164,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_store_session_auto_embed() {
-        let provider = LocalOllamaProvider::new();
+        let provider = create_provider(
+            ProviderKind::OpenAI,
+            Some(std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY must be set")),
+        );
         let store = MemoryStore::new();
 
         let text = "This is a test session for auto-embedding";
@@ -216,7 +222,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_sdk_store_session_retrieve_roundtrip() {
-        let provider = LocalOllamaProvider::new();
+        let provider = create_provider(
+            ProviderKind::OpenAI,
+            Some(std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY must be set")),
+        );
         let store = MemoryStore::new();
 
         let content = "Die App soll anonym sein, kein Login nötig";
@@ -437,13 +446,19 @@ mod tests {
 
     #[test]
     fn test_document_prefix_applied() {
-        let provider = LocalOllamaProvider::new();
+        let provider = create_provider(
+            ProviderKind::OpenAI,
+            Some(std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY must be set")),
+        );
         assert_eq!(provider.document_prefix(), "search_document: ");
     }
 
     #[test]
     fn test_query_prefix_applied() {
-        let provider = LocalOllamaProvider::new();
+        let provider = create_provider(
+            ProviderKind::OpenAI,
+            Some(std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY must be set")),
+        );
         assert_eq!(provider.query_prefix(), "search_query: ");
     }
 

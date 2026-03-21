@@ -18,7 +18,11 @@ fn test_state() -> routes::AppState {
     let store = MemoryStore::new();
     let dream = DreamMode::new(store.clone());
     let embedding: Arc<dyn knowwhere_server::embedding::EmbeddingProvider> =
-        create_provider(ProviderKind::LocalOllama, None);
+        create_provider(
+            ProviderKind::OpenAI,
+            Some(std::env::var("OPENAI_API_KEY")
+                .expect("OPENAI_API_KEY must be set in environment")),
+        );
     routes::AppState {
         store,
         dream,
@@ -120,7 +124,7 @@ async fn auth_accepts_correct_token() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     let body = body_string(resp.into_body()).await;
-    assert!(body.contains("\"provider\":\"local-ollama\""));
+    assert!(body.contains("\"provider\":\"openai\""));
 }
 
 #[tokio::test]
