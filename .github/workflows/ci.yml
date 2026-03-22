@@ -54,11 +54,13 @@ jobs:
         run: cargo test --all-targets
 
       - name: cargo audit
-        uses: rustsec/audit-check@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          args: --fetch-index
-        # Uses its own Rust binary — not constrained by CI's Rust 1.85
+        run: |
+          # Install cargo-binstall (fast binary installer)
+          curl -LsSf https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-x86_64-unknown-linux-gnu.tgz | tar xz
+          # Install cargo-audit via binary (no Rust compilation)
+          ./cargo-binstall -y cargo-audit
+          cargo audit
+        # binstall fetches pre-built binaries — bypasses Rust version constraint
 
   docker:
     name: Docker Build
