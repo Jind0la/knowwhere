@@ -17,7 +17,7 @@ use knowwhere_server::storage::MemoryStore;
 fn test_state() -> routes::AppState {
     let store = MemoryStore::new();
     let dream_store = store.clone();
-    let dream = DreamMode::new(dream_store);
+    let dream = DreamMode::new(dream_store.clone());
     let embedding: Arc<dyn knowwhere_server::embedding::EmbeddingProvider> =
         create_provider(
             ProviderKind::OpenAI,

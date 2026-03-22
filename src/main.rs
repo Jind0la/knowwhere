@@ -69,7 +69,7 @@ async fn run() -> anyhow::Result<()> {
     // Concrete store for VLM worker, schedulers, and DreamMode.
     let dream_store = store.clone();
     let store_for_api: Arc<dyn StorageBackend> = Arc::new(store);
-    let dream = DreamMode::new(dream_store);
+    let dream = DreamMode::new(dream_store.clone());
 
     let embedding: Arc<dyn EmbeddingProvider> =
         if let Ok(key) = std::env::var("GROK_API_KEY") {
