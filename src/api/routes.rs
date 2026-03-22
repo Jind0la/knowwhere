@@ -464,7 +464,8 @@ pub async fn retrieve(
 
 #[derive(Deserialize, ToSchema)]
 pub struct RetrieveFractalRequest {
-    pub query_vector: Vec<f32>,
+    /// Dense query vector (optional — if omitted, query_text is embedded on-the-fly).
+    pub query_vector: Option<Vec<f32>>,
     #[serde(default)]
     pub query_text: Option<String>,
     #[serde(default = "default_top_k")]
@@ -508,15 +509,35 @@ fn default_max_tier() -> Option<String> {
 pub async fn retrieve_fractal(
     State(state): State<AppState>,
     Json(req): Json<RetrieveFractalRequest>,
-) -> Json<Vec<ScoredNode>> {
+) -> Result<Json<Vec<ScoredNode>>, StatusCode> {
     tracing::info!(
         top_k = req.top_k,
         max_depth = req.max_depth,
         has_query_text = req.query_text.is_some(),
+        has_query_vector = req.query_vector.is_some(),
         governance = req.governance_enabled,
         max_tier = ?req.max_tier,
         "fractal retrieve"
     );
+
+    // Resolve query vector: use provided vector, or embed query_text on-the-fly
+    let query_vector = match &req.query_vector {
+        Some(v) => v.clone(),
+        None => {
+            if let Some(text) = &req.query_text {
+                state
+                    .embedding
+                    .embed(text)
+                    .await
+                    .map_err(|e| {
+                        tracing::error!("embedding failed: {}", e);
+                        StatusCode::INTERNAL_SERVER_ERROR
+                    })?
+            } else {
+                return Err(StatusCode::BAD_REQUEST);
+            }
+        }
+    };
 
     // Parse max_tier filter (default: overview)
     let max_tier = req.max_tier.as_ref()
@@ -535,7 +556,7 @@ pub async fn retrieve_fractal(
         .store
         .hybrid_retrieve(
             req.query_text.as_deref(),
-            &req.query_vector,
+            &query_vector,
             req.top_k,
             req.max_depth,
             trajectory_store_ref,
@@ -547,7 +568,7 @@ pub async fn retrieve_fractal(
         .store
         .hybrid_retrieve(
             req.query_text.as_deref(),
-            &req.query_vector,
+            &query_vector,
             req.top_k,
             req.max_depth,
         )
@@ -623,7 +644,7 @@ pub async fn retrieve_fractal(
         effective_b.partial_cmp(&effective_a).unwrap_or(std::cmp::Ordering::Equal)
     });
 
-    Json(scored)
+    Ok(Json(scored))
 }
 
 // -- Delete Node --

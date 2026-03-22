@@ -296,7 +296,7 @@ async fn fractal_retrieve_returns_results() {
             Request::post("/retrieve_fractal")
                 .header("content-type", "application/json")
                 .body(Body::from(
-                    r#"{"query_vector":[0.1,0.2,0.3,0.4,0.5],"top_k":5,"max_depth":2}"#,
+                    r#"{"query_text":"fractal test node","top_k":5,"max_depth":2}"#,
                 ))
                 .unwrap(),
         )

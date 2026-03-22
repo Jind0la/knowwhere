@@ -11,6 +11,13 @@ use crate::memory::types::{ConflictState, ContextTier, MemorySource, MemoryStatu
 use crate::multimodal::MultimodalData;
 
 pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
+    debug_assert_eq!(
+        a.len(),
+        b.len(),
+        "cosine_similarity: dimension mismatch (a={}, b={})",
+        a.len(),
+        b.len()
+    );
     let dot: f32 = a.iter().zip(b).map(|(x, y)| x * y).sum();
     let mag_a = a.iter().map(|x| x * x).sum::<f32>().sqrt();
     let mag_b = b.iter().map(|x| x * x).sum::<f32>().sqrt();
