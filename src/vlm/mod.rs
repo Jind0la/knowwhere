@@ -697,8 +697,9 @@ mod worker {
                     s.text
                 }
                 Err(e) => {
-                    tracing::error!(job_id = %job.id, "VLM summarization failed: {}", e);
-                    return Err(anyhow::anyhow!("VLM call failed: {}", e));
+                    // All models failed — use truncation fallback
+                    tracing::warn!(job_id = %job.id, "VLM unavailable, using truncation fallback: {}", e);
+                    Self::truncation_fallback_text(&combined, &job.context)
                 }
             };
 
@@ -755,6 +756,34 @@ mod worker {
             );
 
             Ok(())
+        }
+
+        /// Fallback text compression when VLM is unavailable.
+        /// Uses token-count limits from SummaryContext::target_tokens().
+        pub(crate) fn truncation_fallback_text(combined_content: &str, context: &SummaryContext) -> String {
+            let limit = context.target_tokens();
+            // Rough: ~4 chars per token
+            let char_limit = limit * 4;
+
+            if combined_content.len() <= char_limit {
+                return combined_content.to_string();
+            }
+
+            // Find a good break point (sentence or clause boundary)
+            let truncated = &combined_content[..char_limit];
+
+            // Try to break at sentence end, clause, or comma
+            if let Some(pos) = truncated.rfind(['.', '!', '?', ';', ',', '\n']) {
+                let pos = if truncated.chars().nth(pos) == Some(',') && pos > char_limit / 2 {
+                    // Prefer sentence end over mid-clause comma
+                    truncated[..pos].rfind(['.', '!', '?']).map(|p| p).unwrap_or(pos)
+                } else {
+                    pos
+                };
+                format!("{}...", truncated[..pos].trim())
+            } else {
+                format!("{}...", truncated.trim())
+            }
         }
     }
 
