@@ -34,6 +34,7 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-
 
       - name: cargo fmt check
+        if: github.event_name == 'pull_request'
         run: cargo fmt --all -- --check
 
       - name: cargo clippy
