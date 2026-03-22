@@ -22,8 +22,6 @@ use knowwhere_server::connectors::frigate::FrigateConnector;
 use knowwhere_server::connectors::store_external_event;
 use knowwhere_server::embedding::{create_provider, EmbeddingProvider, ProviderKind};
 use knowwhere_server::memory::events::InMemoryEventStore;
-use std::sync::Arc;
-
 use knowwhere_server::storage::StorageBackend;
 use knowwhere_server::memory::{DreamMode, GovernancePolicy};
 use knowwhere_server::scheduler::{AuditScheduler, ConsolidationScheduler, SchedulerConfig};
