@@ -51,12 +51,32 @@ impl HybridQuery {
     }
 }
 
-/// A scored retrieval result.
+/// A scored retrieval result from a storage backend.
 #[derive(Debug, Clone)]
 pub struct ScoredNode {
     pub id: Uuid,
     pub score: f32,
     pub node: FractalNode,
+}
+
+impl ScoredNode {
+    /// Convert from a (score, node) tuple.
+    pub fn from_tuple((score, node): (f32, FractalNode)) -> Self {
+        Self {
+            id: node.id,
+            score,
+            node,
+        }
+    }
+
+    /// Convert from a raw FractalNode (score defaults to 1.0).
+    pub fn from_node(node: FractalNode) -> Self {
+        Self {
+            id: node.id,
+            score: 1.0,
+            node,
+        }
+    }
 }
 
 /// Core storage operations every backend must implement.

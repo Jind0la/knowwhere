@@ -135,7 +135,7 @@ fn clean_for_embedding(text: &str) -> String {
     }
     out
 }
-use crate::storage::{MemoryStore, StorageBackend};
+use crate::storage::{MemoryStore, StorageBackend, HybridQuery};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -548,45 +548,31 @@ pub async fn retrieve_fractal(
     let max_tier = req.max_tier.as_ref()
         .and_then(|s| ContextTier::from_str(s));
 
-    // Stage 1: Hybrid retrieval
-    #[cfg(feature = "postgres-storage")]
-    let trajectory_store = state.trajectory_pool.as_ref().map(|p| {
-        crate::storage::TrajectoryStore::new(p.as_ref())
-    });
-    #[cfg(feature = "postgres-storage")]
-    let trajectory_store_ref: Option<&crate::storage::TrajectoryStore> = trajectory_store.as_ref();
-
-    #[cfg(feature = "postgres-storage")]
+    // Stage 1: Hybrid retrieval via StorageBackend trait
+    let query = HybridQuery {
+        query_text: req.query_text.clone(),
+        query_vector: Some(query_vector),
+        top_k: req.top_k,
+        max_depth: req.max_depth,
+    };
     let results = state
         .store
-        .hybrid_retrieve(
-            req.query_text.as_deref(),
-            &query_vector,
-            req.top_k,
-            req.max_depth,
-            trajectory_store_ref,
-        )
-        .await;
-
-    #[cfg(not(feature = "postgres-storage"))]
-    let results = state
-        .store
-        .hybrid_retrieve(
-            req.query_text.as_deref(),
-            &query_vector,
-            req.top_k,
-            req.max_depth,
-        )
-        .await;
+        .hybrid_retrieve(&query)
+        .await
+        .map_err(|e| {
+            tracing::error!("hybrid_retrieve failed: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
 
     // Apply max_tier filter: only include nodes at or below max_tier
     let max_tier_filter = max_tier;
-    let results = if let Some(max_t) = max_tier_filter {
-        results.into_iter()
-            .filter(|(_, node)| {
+    let results: Vec<crate::storage::ScoredNode> = if let Some(max_t) = max_tier_filter {
+        results
+            .into_iter()
+            .filter(|s| {
                 // Higher ordinal = lower tier (Raw=2, Overview=1, Summary=0)
                 // Keep node if its tier ordinal <= max_tier ordinal
-                node.context_tier as usize <= max_t as usize
+                s.node.context_tier as usize <= max_t as usize
             })
             .collect()
     } else {
@@ -596,7 +582,7 @@ pub async fn retrieve_fractal(
     if !req.governance_enabled {
         let scored: Vec<ScoredNode> = results
             .into_iter()
-            .map(|(score, node)| ScoredNode::from_node(score, node))
+            .map(|s| ScoredNode::from_node(s.score, s.node))
             .collect();
         return Ok(Json(scored));
     }
@@ -611,25 +597,25 @@ pub async fn retrieve_fractal(
     let validator = GovernanceValidator::new(state.governance_policy.clone());
     let mut scored: Vec<ScoredNode> = results
         .into_iter()
-        .filter_map(|(score, node)| {
+        .filter_map(|s| {
             // Apply optional memory type filter
             if let Some(ref filter) = type_filter {
-                if node.memory_type != *filter {
+                if s.node.memory_type != *filter {
                     return None;
                 }
             }
 
-            let candidate = node.to_governance_candidate();
+            let candidate = s.node.to_governance_candidate();
             let validation = validator.validate(&candidate);
 
             // Hard-blocked nodes (superseded, restricted, invalid status, irrelevant)
             // are excluded from results entirely.
             if validation.has_hard_block() {
-                tracing::debug!(node_id = %node.id, "excluded by governance: hard block");
+                tracing::debug!(node_id = %s.node.id, "excluded by governance: hard block");
                 return None;
             }
 
-            Some(ScoredNode::from_governed(score, node, validation.passed, validation.issues))
+            Some(ScoredNode::from_governed(s.score, s.node, validation.passed, validation.issues))
         })
         .collect();
 
@@ -2021,16 +2007,23 @@ pub async fn namespace_search(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("embed failed: {e}")))?;
 
     // Hybrid retrieve with the namespace constraint
+    let query = HybridQuery {
+        query_text: Some(query_text),
+        query_vector: Some(query_vector),
+        top_k: q.top_k,
+        max_depth: 3,
+    };
     let all_results = state
         .store
-        .hybrid_retrieve(Some(&query_text), &query_vector, q.top_k, 3, None)
-        .await;
+        .hybrid_retrieve(&query)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("hybrid_retrieve failed: {e}")))?;
 
     // Filter to only memories in this namespace
     let filtered: Vec<ScoredNode> = all_results
         .into_iter()
-        .filter(|(_, node)| memory_ids.contains(&node.id))
-        .map(|(score, node)| ScoredNode::from_node(score, node))
+        .filter(|s| memory_ids.contains(&s.node.id))
+        .map(|s| ScoredNode::from_node(s.score, s.node))
         .collect();
 
     Ok(Json(filtered))
