@@ -131,13 +131,10 @@ impl SummaryContext {
     pub fn system_directive(&self) -> &'static str {
         match self {
             SummaryContext::Summary => {
-                "You are a precise summarizer. Output exactly one concise sentence (max 25 words) \
-                that captures the core essence of the input. No preamble, no commentary."
+                "Compress memory for later retrieval. Output one sentence (≤20 words) capturing the single most retrievable fact. Preserve: key facts, entities, decisions, timestamps. No preamble. No filler."
             }
             SummaryContext::Overview => {
-                "You are a technical summarizer. Write 1–2 paragraphs (100–200 words) that \
-                provide a coherent overview of the input. Preserve key facts and relationships. \
-                No preamble, no commentary."
+                "Compress memory for later retrieval. Preserve: key facts, named entities, decisions, timestamps. Output: 2–3 dense sentences. No preamble. No filler. No commentary."
             }
             SummaryContext::Detailed => {
                 "You are a detailed summarizer. Write a thorough but concise summary (300–600 words) \
@@ -151,10 +148,10 @@ impl SummaryContext {
     pub fn prompt_template(&self) -> &'static str {
         match self {
             SummaryContext::Summary => {
-                "Summarize the following in one sentence:\n\n{content}"
+                "Core fact:\n\n{content}"
             }
             SummaryContext::Overview => {
-                "Provide a concise overview of the following:\n\n{content}"
+                "Compress for retrieval:\n\n{content}"
             }
             SummaryContext::Detailed => {
                 "Create a detailed summary of the following, preserving all key facts and decisions:\n\n{content}"

@@ -28,7 +28,8 @@ pub struct SchedulerConfig {
     /// Whether Dream Mode schedulers are enabled. Default: true.
     pub enabled: bool,
 
-    // Audit
+    /// Max VLM jobs to enqueue per consolidation cycle. Default: 100.
+    pub vlm_max_jobs_per_cycle: usize,
     /// How often to run audit (milliseconds). Default: 24 hours (86_400_000).
     pub audit_interval_ms: u64,
     /// Whether energy decay is enabled. Default: true.
@@ -49,6 +50,7 @@ impl Default for SchedulerConfig {
             decay_enabled: true,
             dedup_enabled: true,
             conflict_auto_resolve_threshold: 0.8,
+            vlm_max_jobs_per_cycle: 100,
         }
     }
 }
@@ -64,6 +66,7 @@ impl SchedulerConfig {
     /// - `DREAM_DECAY_ENABLED` — "true" or "false" (default: true)
     /// - `DREAM_DEDUP_ENABLED` — "true" or "false" (default: true)
     /// - `DREAM_CONFLICT_AUTO_RESOLVE_THRESHOLD` — float 0.0–1.0 (default: 0.8)
+    /// - `DREAM_VLM_MAX_JOBS_PER_CYCLE` — max VLM jobs per consolidation cycle (default: 100)
     pub fn from_env() -> Self {
         Self {
             consolidation_interval_ms: std::env::var("DREAM_CONSOLIDATION_INTERVAL_MS")
@@ -97,6 +100,11 @@ impl SchedulerConfig {
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(0.8),
+
+            vlm_max_jobs_per_cycle: std::env::var("DREAM_VLM_MAX_JOBS_PER_CYCLE")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(100),
         }
     }
 

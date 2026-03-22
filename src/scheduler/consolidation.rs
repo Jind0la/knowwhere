@@ -98,7 +98,7 @@ impl ConsolidationScheduler {
             let node_ids: Vec<Uuid> = batch.iter().map(|(id, _)| *id).collect();
 
             if let Some(ref handle) = self.vlm_worker {
-                let job = VlmJob::new(node_ids.clone(), SummaryContext::Detailed);
+                let job = VlmJob::new(node_ids.clone(), SummaryContext::Overview);
                 match handle.enqueue(job).await {
                     Ok(()) => {
                         tracing::debug!(ids = node_ids.len(), "enqueued consolidation batch");
@@ -180,12 +180,26 @@ impl ConsolidationScheduler {
                 continue;
             }
 
+            // Only compact important memories (importance >= 3)
+            if node.importance < 3 {
+                continue;
+            }
+
+            // Only compact nodes with substantial content (> 500 chars)
+            let content_len = node.content.as_ref().map(|c| c.len()).unwrap_or(0);
+            if content_len <= 500 {
+                continue;
+            }
+
             candidates.push((node.id, node.created_at));
         }
 
         // Sort by age (oldest first)
         candidates.sort_by(|a, b| a.1.cmp(&b.1));
-        candidates.truncate(limit);
+
+        // Budget cap: limit VLM jobs per cycle
+        let max_jobs = self.config.vlm_max_jobs_per_cycle;
+        candidates.truncate(max_jobs);
 
         candidates
     }

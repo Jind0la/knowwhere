@@ -1151,7 +1151,7 @@ pub async fn compact_memory(
 
     let target_tier = q.tier.as_ref().and_then(|s| ContextTier::from_str(s));
 
-    let worker = TieredCompactionWorker::new((*pool).clone(), state.embedding.clone());
+    let worker = TieredCompactionWorker::new((*pool).clone(), state.embedding.clone(), state.vlm_worker.clone());
     match worker.compact_memory(id, target_tier).await {
         Ok(new_id) => {
             let tier_str = if new_id == id {

@@ -17,8 +17,8 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::embedding::EmbeddingProvider;
-use crate::memory::fractal_node::FractalNode;
 use crate::memory::types::ContextTier;
+use crate::vlm::{SummaryContext, VlmJob, VlmWorkerHandle};
 
 /// Maximum token counts per tier (rough guidelines, not enforced)
 const L0_MAX_TOKENS: usize = 50;   // ~one sentence
@@ -38,11 +38,13 @@ const L1_MAX_TOKENS: usize = 300;  // ~one paragraph
 pub struct TieredCompactionWorker {
     pool: PgPool,
     embedding: Arc<dyn EmbeddingProvider>,
+    /// VLM worker for async compaction. If None, compaction is disabled.
+    vlm_handle: Option<VlmWorkerHandle>,
 }
 
 impl TieredCompactionWorker {
-    pub fn new(pool: PgPool, embedding: Arc<dyn EmbeddingProvider>) -> Self {
-        Self { pool, embedding }
+    pub fn new(pool: PgPool, embedding: Arc<dyn EmbeddingProvider>, vlm_handle: Option<VlmWorkerHandle>) -> Self {
+        Self { pool, embedding, vlm_handle }
     }
 
     /// Compact a memory to the specified target tier (or next tier down if not specified).
@@ -50,13 +52,15 @@ impl TieredCompactionWorker {
     /// If the memory is already at the target tier, this is a no-op.
     /// If no target tier is specified, compaction proceeds one step: L2→L1 or L1→L0.
     ///
-    /// Returns the ID of the newly created tier memory (or existing if already at target).
+    /// This is a thin dispatcher — it enqueues a VLM job and returns immediately.
+    /// The VLM worker processes it asynchronously and writes the result back via
+    /// `store.insert()` + `store.update(SetParentTierId)`.
     pub async fn compact_memory(
         &self,
         memory_id: Uuid,
         target_tier: Option<ContextTier>,
     ) -> Result<Uuid> {
-        // Fetch the current memory
+        // Fetch the current memory to determine its tier
         let row = sqlx::query_as!(
             MemoryRowTiered,
             r#"
@@ -69,7 +73,8 @@ impl TieredCompactionWorker {
                    entities, tags,
                    context_tier::text AS context_tier,
                    parent_tier_id,
-                   summary_content, overview_content
+                   summary_content, overview_content,
+                   embedding
             FROM memories
             WHERE id = $1 AND status = 'active'
             "#,
@@ -96,244 +101,70 @@ impl TieredCompactionWorker {
             return Ok(memory_id);
         }
 
-        match target {
-            ContextTier::Overview => self.generate_overview_memory(&row).await,
-            ContextTier::Summary => self.generate_summary_memory(&row).await,
-            ContextTier::Raw => Ok(memory_id), // Nothing above raw
-        }
-    }
-
-    /// Generate L1 Overview memory from L2 Raw content.
-    async fn generate_overview_memory(&self, row: &MemoryRowTiered) -> Result<Uuid> {
-        let raw_content = row.content.as_deref().unwrap_or("");
-
-        let overview = self.generate_overview(raw_content).await?;
-
-        // Insert the L1 overview memory
-        let overview_id = Uuid::new_v4();
-
-        sqlx::query!(
-            r#"
-            INSERT INTO memories (
-                id, memory_type, content, context_tier, parent_tier_id,
-                overview_content, embedding, provenance, source, source_id,
-                importance, confidence, sensitivity, status,
-                created_at, updated_at, metadata
-            )
-            VALUES ($1, $2, $3, 'overview', $4, $5, $6, $7, $8, $9, $10, $11, $12, 'active', NOW(), NOW(), $13)
-            "#,
-            overview_id,
-            &row.memory_type,
-            overview, // content = overview text
-            row.id,   // parent_tier_id = L2 memory
-            overview.clone(), // overview_content
-            row.embedding.clone() as _, // same embedding
-            &row.provenance,
-            &row.source,
-            row.source_id,
-            row.importance,
-            row.confidence,
-            &row.sensitivity,
-            &row.metadata,
-        )
-        .execute(&self.pool)
-        .await?;
-
-        // Update the L2 raw memory with parent_tier_id
-        sqlx::query!(
-            r#"
-            UPDATE memories
-            SET parent_tier_id = $2, overview_content = $3, updated_at = NOW()
-            WHERE id = $1
-            "#,
-            row.id,
-            overview_id,
-            overview,
-        )
-        .execute(&self.pool)
-        .await?;
-
-        tracing::info!(
-            memory_id = %row.id,
-            overview_id = %overview_id,
-            "generated L1 overview memory"
-        );
-
-        Ok(overview_id)
-    }
-
-    /// Generate L0 Summary memory from L1 Overview content.
-    async fn generate_summary_memory(&self, row: &MemoryRowTiered) -> Result<Uuid> {
-        // Find the L1 overview memory
-        let l1_row = sqlx::query_as!(
-            MemoryRowTiered,
-            r#"
-            SELECT id, memory_type, content, content_preview,
-                   importance, confidence, sensitivity, status,
-                   superseded_by, conflict_state, source, source_id,
-                   provenance, parent_id, depth,
-                   access_count, last_accessed,
-                   created_at, updated_at, deleted_at, metadata,
-                   entities, tags,
-                   context_tier::text AS context_tier,
-                   parent_tier_id,
-                   summary_content, overview_content
-            FROM memories
-            WHERE parent_tier_id = $1 AND context_tier = 'overview'
-            "#,
-            row.id
-        )
-        .fetch_optional(&self.pool)
-        .await?;
-
-        let l1_row = match l1_row {
-            Some(r) => r,
-            None => {
-                // Need to create L1 first
-                let l1_id = self.generate_overview_memory(row).await?;
-                return self.generate_summary_for_l1(l1_id).await;
-            }
+        // Determine SummaryContext from target tier
+        let context = match target {
+            ContextTier::Overview => SummaryContext::Overview,
+            ContextTier::Summary => SummaryContext::Summary,
+            ContextTier::Raw => return Ok(memory_id), // Nothing above raw
         };
 
-        self.generate_summary_for_l1(l1_row.id).await
-    }
-
-    /// Generate L0 summary for an existing L1 memory.
-    async fn generate_summary_for_l1(&self, l1_id: Uuid) -> Result<Uuid> {
-        let l1_row = sqlx::query_as!(
-            MemoryRowTiered,
-            r#"
-            SELECT id, memory_type, content, content_preview,
-                   importance, confidence, sensitivity, status,
-                   superseded_by, conflict_state, source, source_id,
-                   provenance, parent_id, depth,
-                   access_count, last_accessed,
-                   created_at, updated_at, deleted_at, metadata,
-                   entities, tags,
-                   context_tier::text AS context_tier,
-                   parent_tier_id,
-                   summary_content, overview_content
-            FROM memories
-            WHERE id = $1
-            "#,
-            l1_id
-        )
-        .fetch_optional(&self.pool)
-        .await?
-        .ok_or_else(|| anyhow::anyhow!("L1 memory {} not found", l1_id))?;
-
-        let overview_content = l1_row.content.as_deref().unwrap_or("");
-        let summary = self.generate_summary(overview_content).await?;
-
-        let summary_id = Uuid::new_v4();
-
-        sqlx::query!(
-            r#"
-            INSERT INTO memories (
-                id, memory_type, content, context_tier, parent_tier_id,
-                summary_content, embedding, provenance, source, source_id,
-                importance, confidence, sensitivity, status,
-                created_at, updated_at, metadata
-            )
-            VALUES ($1, $2, $3, 'summary', $4, $5, $6, $7, $8, $9, $10, $11, $12, 'active', NOW(), NOW(), $13)
-            "#,
-            summary_id,
-            &l1_row.memory_type,
-            summary.clone(), // content = summary
-            l1_row.id,       // parent_tier_id = L1
-            summary,         // summary_content
-            l1_row.embedding.clone() as _,
-            &l1_row.provenance,
-            &l1_row.source,
-            l1_row.source_id,
-            l1_row.importance,
-            l1_row.confidence,
-            &l1_row.sensitivity,
-            &l1_row.metadata,
-        )
-        .execute(&self.pool)
-        .await?;
-
-        // Update L1 with parent_tier_id
-        sqlx::query!(
-            r#"
-            UPDATE memories
-            SET parent_tier_id = $2, summary_content = $3, updated_at = NOW()
-            WHERE id = $1
-            "#,
-            l1_row.id,
-            summary_id,
-            summary,
-        )
-        .execute(&self.pool)
-        .await?;
-
-        tracing::info!(
-            l1_id = %l1_row.id,
-            summary_id = %summary_id,
-            "generated L0 summary memory"
-        );
-
-        Ok(summary_id)
-    }
-
-    /// Generate an L1 overview from raw content.
-    ///
-    /// In a full implementation this would call a VLM. For now, this is a
-    /// placeholder that creates a simple truncation-based overview.
-    ///
-    /// TODO: Integrate with actual VLM API for production use.
-    pub async fn generate_overview(&self, raw_content: &str) -> Result<String> {
-        // Simple placeholder: truncate to ~300 chars with ellipsis
-        // In production, this would call a VLM like GPT-4o-mini or Claude Haiku
-        if raw_content.len() <= L1_MAX_TOKENS {
-            return Ok(raw_content.to_string());
+        // Enqueue VLM job if available
+        if let Some(ref handle) = self.vlm_handle {
+            let job = VlmJob::new(vec![memory_id], context);
+            handle.enqueue(job);
+            tracing::debug!(memory_id = %memory_id, ?context, "compaction job enqueued");
+            Ok(memory_id)
+        } else {
+            // Fallback: no VLM available — cannot compact without VLM
+            tracing::warn!(memory_id = %memory_id, "VLM worker not available, skipping compaction");
+            Ok(memory_id)
         }
+    }
 
+    /// Truncation fallback for L1 overview generation.
+    ///
+    /// Used when VLM is unavailable. For production, use VLM-based compaction
+    /// via `compact_memory()`.
+    pub(crate) fn truncation_fallback_overview(&self, raw_content: &str) -> String {
+        if raw_content.len() <= L1_MAX_TOKENS {
+            return raw_content.to_string();
+        }
         let truncated = &raw_content[..raw_content.char_indices()
             .nth(L1_MAX_TOKENS)
             .map(|(i, _)| i)
             .unwrap_or(raw_content.len())];
-
-        Ok(format!("{}...", truncated.trim()))
+        format!("{}...", truncated.trim())
     }
 
-    /// Generate an L0 summary from L1 overview content.
+    /// Truncation fallback for L0 summary generation.
     ///
-    /// In a full implementation this would call a VLM. For now, this is a
-    /// placeholder that creates a simple first-sentence summary.
-    ///
-    /// TODO: Integrate with actual VLM API for production use.
-    pub async fn generate_summary(&self, overview_content: &str) -> Result<String> {
-        // Simple placeholder: take first sentence
-        // In production, this would call a VLM
+    /// Used when VLM is unavailable. For production, use VLM-based compaction
+    /// via `compact_memory()`.
+    pub(crate) fn truncation_fallback_summary(&self, overview_content: &str) -> String {
         if let Some(first_sentence) = overview_content.split(&['.', '!', '?'][..])
             .next()
         {
             let summary = first_sentence.trim();
             if summary.len() <= L0_MAX_TOKENS {
-                return Ok(summary.to_string());
+                return summary.to_string();
             }
-            // If first sentence is too long, truncate
             let truncated = &summary[..summary.char_indices()
                 .nth(L0_MAX_TOKENS)
                 .map(|(i, _)| i)
                 .unwrap_or(summary.len())];
-            return Ok(format!("{}...", truncated.trim()));
+            return format!("{}...", truncated.trim());
         }
-
-        // Fallback: just truncate
         let truncated = &overview_content[..overview_content.char_indices()
             .nth(L0_MAX_TOKENS)
             .map(|(i, _)| i)
             .unwrap_or(overview_content.len())];
-
-        Ok(format!("{}...", truncated.trim()))
+        format!("{}...", truncated.trim())
     }
 
     /// Compact all memories in a session that have grown too large.
     ///
-    /// This would typically be called by a background job or after session storage.
+    /// Enqueues VLM jobs for all eligible L2 memories. The VLM worker processes
+    /// them asynchronously.
     pub async fn compact_session(&self, session_id: &str) -> Result<usize> {
         // Find all L2 (raw) memories for this session
         let rows = sqlx::query!(
@@ -398,4 +229,5 @@ struct MemoryRowTiered {
     parent_tier_id: Option<Uuid>,
     summary_content: Option<String>,
     overview_content: Option<String>,
+    embedding: Option<Vec<f32>>,
 }
