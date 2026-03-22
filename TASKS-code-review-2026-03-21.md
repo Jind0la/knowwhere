@@ -349,6 +349,15 @@ assert!(!results.is_empty());  // ← scheitert
 **Aufwand:** ~1-2 Stunden
 **Dateien:** `src/storage/in_memory.rs`, `src/memory/fractal_node.rs`
 
+**Status:** ✅ Erledigt (Commit 865dff1)
+
+**Fix:**
+- `query_vector` ist jetzt optional (`Option<Vec<f32>>`)
+- Wenn `query_text` aber kein `query_vector`: on-the-fly Embedding via `state.embedding.embed()`
+- Wenn beide `None`: 400 BAD_REQUEST
+- `cosine_similarity`: `debug_assert_eq!` auf Dimensionen zur frühen Fehlererkennung
+- Test nutzt jetzt `query_text` statt Dummy-Vektor
+
 ---
 
 ## 🟢 Niedrig — Später
@@ -447,7 +456,7 @@ trait EmbeddingProvider {
 | MED-007: Test Embed (OpenAI) | Niedrig (30min) | Hoch | ✅ Erledigt |
 | **Bugs (neu entdeckt)** | | |
 | BUG-001: dream_status cycle_count | Unbekannt | Mittel |
-| BUG-002: fractal_retrieve empty results | Mittel (1-2h) | Hoch |
+| BUG-002: fractal_retrieve empty results | Mittel (1-2h) | Hoch | ✅ Erledigt |
 | **Niedrig** | | |
 | LOW-001: Arena Alloc. | Hoch (3 Tage) | Mittel |
 | LOW-002: Batch Embed. | Mittel (4h) | Mittel |
@@ -464,7 +473,7 @@ trait EmbeddingProvider {
 4. ✅ **MED-006** Test-Fixture Fix — erledigt (Compiler-Fehler behoben)
 5. ✅ **MED-007** OpenAI Embeddings in Tests — erledigt (2 Integration-Bugs gefunden)
 6. **BUG-001** dream_status cycle_count — untersuchen (~?)
-7. **BUG-002** fractal_retrieve empty results — fixen (~1-2h)
+7. **BUG-002** fractal_retrieve empty results — ✅ erledigt (865dff1)
 8. **CRIT-003** PostgreSQL — ~1 Tag, 80% fertig
 9. **MED-002** LLM Compaction — größere Änderung, später
 
