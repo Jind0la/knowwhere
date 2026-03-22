@@ -48,14 +48,19 @@
 
 ---
 
-### [MED-002] Tiered Compaction — LLM-Summarization statt Truncation
+### [MED-002] Tiered Compaction — LLM-Summarization statt Truncation ✅
 
-**Status:** 🟡 Offen
+**Erledigt.** 
 
-**Problem:** `generate_overview()` und `generate_summary()` sind Truncation (erste 50 Zeichen) — macht Tiered Context wirkungslos.
+**Was implementiert:**
+- Retrieval-optimierte Prompts: L1 Overview + L0 Summary mit System-Directive + User-Template
+- `TieredCompactionWorker::compact_memory()` → thin dispatcher, enqueued VlmJob, VlmWorker async
+- VLM-Fehler → truncation fallback (statt silent drop), compaction chain completes
+- `SummaryContext::Detailed` → `Overview` Bug in consolidation.rs gefixt
+- Filter: importance >= 3, content_length > 500
+- Budget-Cap: `DREAM_VLM_MAX_JOBS_PER_CYCLE` (default 100)
 
-**Aufwand:** ~1 Tag  
-**Dateien:** `src/memory/tiered.rs`
+**Commits:** `279265c`, `7bf6f01`
 
 ---
 
@@ -177,7 +182,7 @@
 | CRIT-002 Rate-Limiting | ✅ | 2h | 2a0d58e, 32d5023 |
 | CRIT-003 PostgreSQL | ✅ | ~1 Tag | 6f9cfc6, 4cfa5b7 |
 | MED-001 Exp. Decay | ✅ | 1h | 4bd5c98 |
-| MED-002 LLM Compaction | 🟡 Offen | ~1 Tag | — |
+| MED-002 LLM Compaction | ✅ | ~1 Tag | 279265c, 7bf6f01 |
 | MED-003 BM25 Persistenz | 🟡 Offen | ~2h | — |
 | MED-004 Vektor Conflict | ✅ | ~4h | 352505d |
 | MED-005 Gov. Dedup | ✅ | ~1h | dab48dc |
