@@ -13,6 +13,7 @@ use usearch::{new_index, Index, IndexOptions, MetricKind, ScalarKind};
 use uuid::Uuid;
 
 use crate::memory::FractalNode;
+use crate::storage::{HybridQuery, ScoredNode, StorageBackend};
 
 const USEARCH_THRESHOLD: usize = 50;
 const SAVE_DEBOUNCE_SECS: u64 = 5;
@@ -87,6 +88,90 @@ pub struct MemoryStore {
     bm25_corpus: Arc<RwLock<Vec<(Uuid, String)>>>,
     bm25_cache: Arc<Mutex<Option<CachedBm25>>>,
     bm25_dirty: Arc<Mutex<bool>>,
+}
+
+#[async_trait::async_trait]
+impl StorageBackend for MemoryStore {
+    async fn insert(&self, node: FractalNode) -> anyhow::Result<Uuid> {
+        self.insert(node).await
+    }
+
+    async fn get(&self, id: &Uuid) -> anyhow::Result<Option<FractalNode>> {
+        self.get(id).await
+    }
+
+    async fn delete(&self, id: &Uuid) -> anyhow::Result<bool> {
+        self.delete(id).await
+    }
+
+    async fn update_vector(&self, id: &Uuid, new_vector: Vec<f32>) -> anyhow::Result<bool> {
+        self.update_vector(id, new_vector).await
+    }
+
+    async fn hybrid_retrieve(&self, query: &HybridQuery) -> anyhow::Result<Vec<ScoredNode>> {
+        let vector = query
+            .query_vector
+            .as_deref()
+            .unwrap_or(&[]);
+        let results = self
+            .hybrid_retrieve(
+                query.query_text.as_deref(),
+                vector,
+                query.top_k,
+                query.max_depth,
+                #[cfg(feature = "postgres-storage")]
+                None,
+            )
+            .await;
+        Ok(results
+            .into_iter()
+            .map(|(score, node)| ScoredNode {
+                id: node.id,
+                score,
+                node,
+            })
+            .collect())
+    }
+
+    async fn retrieve_fractal(&self, query: &HybridQuery) -> anyhow::Result<Vec<ScoredNode>> {
+        let vector = query.query_vector.as_deref().unwrap_or(&[]);
+        let nodes = self
+            .retrieve_fractal(
+                vector,
+                query.top_k,
+                query.max_depth,
+                #[cfg(feature = "postgres-storage")]
+                FractalNode::ZOOM_PRUNING_THRESHOLD,
+                #[cfg(feature = "postgres-storage")]
+                None,
+            )
+            .await;
+        // fractal retrieve returns raw nodes (no score) — use 1.0 as default
+        Ok(nodes
+            .into_iter()
+            .map(|node| ScoredNode {
+                id: node.id,
+                score: 1.0,
+                node,
+            })
+            .collect())
+    }
+
+    async fn search_bm25(&self, query_text: &str, top_k: usize) -> anyhow::Result<Vec<(Uuid, f32)>> {
+        Ok(self.search_bm25(query_text, top_k).await)
+    }
+
+    async fn list_all(&self) -> anyhow::Result<Vec<FractalNode>> {
+        Ok(self.list_all().await.unwrap_or_default())
+    }
+
+    async fn recent(&self, limit: usize) -> anyhow::Result<Vec<FractalNode>> {
+        Ok(self.recent(limit).await)
+    }
+
+    async fn count(&self) -> usize {
+        self.count().await
+    }
 }
 
 impl std::fmt::Debug for MemoryStore {
