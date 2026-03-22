@@ -1,208 +1,140 @@
 # CRIT-003: PostgreSQL Integration — Architecture Decision
 
-> Status: Research Phase  
+> Status: Review Phase  
 > Erstellt: 2026-03-22  
-> Ziel: Klären wie PostgreSQL als Primary Storage integriert wird
+> Review: Externes Feedback eingearbeitet
 
 ---
 
-## Ausgangslage
+## Phase 1: StorageBackend Trait (HEUTE)
 
-**Aktuell:**
-- `MemoryStore` — JSON-Datei + USearch (in-memory HNSW)
-- Concurrent writes: ❌ nicht sicher (ein Writer zur Zeit)
-- Crash recovery: nur so gut wie letzter JSON-Dump
-- Fractal retrieval: USearch + rekursive in-memory traversal
+> Der wichtigste Schritt — alle anderen folgen davon.
 
-**Bestehendes Asset:**
-`src/storage/postgres_store.rs` — bereits ~80% fertig (738 Zeilen)
-- Event Sourcing (append-only events)
-- Session CRUD
-- Vector search via pgvector
-- Knowledge Edges + Trajectory Logging
+**Warum zuerst das Trait:**
+
+Das Trait definiert die Architektur für die gesamte Lebensdauer des Projekts. Wenn es sauber ist, ist ein Backend-Wechsel später eine Zeile Code:
+
+```rust
+// Heute:
+let store: Arc<dyn StorageBackend> = Arc::new(MemoryStore::new());
+
+// In 6 Monaten:
+let store: Arc<dyn StorageBackend> = Arc::new(BillionScaleUSearch::new());
+```
+
+**Die einzige Bedingung:** Das Trait muss wirklich backend-agnostic sein. Wenn `hybrid_retrieve` einen `PgPool` als Parameter hat → kaputt. Wenn es `HybridQuery` als eigenen Typ hat → funktioniert für immer.
+
+**Richtige Reihenfolge:**
+1. StorageBackend Trait definieren
+2. MemoryStore ans Trait refaktorieren
+3. CI muss grün werden
+4. Erster externer Nutzer
+5. pgvectorscale bei 1M+ Nodes
+6. Billion-Scale nur wenn Problem wirklich da ist
 
 ---
 
-## Die Kernfrage
+## Die Storage-Optionen
 
-**pgvector oder USearch für fractal retrieval?**
-
-pgvector bietet HNSW-Index in Postgres. USearch ist ein separates In-Memory System. Beides kann fractal Zoom nicht nativ.
-
----
-
-## Option A: PostgreSQL + pgvector (Single DB)
+### Option A: PostgreSQL + pgvector (Single DB)
 
 ```
 ┌─────────────────────────────────┐
 │         PostgreSQL               │
-│  ┌───────────────────────────┐  │
-│  │  memories (JSONB)         │  │
-│  │  edges                    │  │
-│  │  pgvector (HNSW)          │  │
-│  │  events (append-only)     │  │
-│  └───────────────────────────┘  │
+│  memories (JSONB)               │
+│  edges                          │
+│  pgvector (HNSW)               │
+│  events (append-only)           │
 └─────────────────────────────────┘
 ```
 
-**Pro:**
-- Nur ein System zu betreiben
-- ACID-Transaktionen, WAL, Crash Recovery
-- Multi-instance mit connection pooling
-- pgvector HNSW ist production-ready
-
-**Contra:**
-- USearch ist performanter für high-dim vectors (1536+)
-- Fractal traversal muss als separate Logik gebaut werden (rekursive CTE oder Applikationslogik)
-- DB wird grösser (Events + Vektoren + JSONB)
+**Pro:** Ein System, ACID, WAL, Multi-Instance  
+**Contra:** Fractal traversal muss als rekursive CTE gebaut werden, 10-20ms p99 latency
 
 ---
 
-## Option B: PostgreSQL + USearch (Dual Maintain)
+### Option B: PostgreSQL + USearch (Dual Maintain) ← HEUTE AM BESTEN
 
 ```
 ┌──────────────┐    ┌──────────────┐
-│  PostgreSQL  │    │   USearch    │
-│  (primary)   │    │  (vectors)   │
-│              │───▶│              │
-│  memories    │    │  fractal     │
-│  edges       │    │  index       │
-│  events      │    │              │
+│  PostgreSQL  │    │   USearch     │
+│  (primary)   │───▶│  (vectors)    │
 └──────────────┘    └──────────────┘
 ```
 
+**Pro:** USearch performanter (2-5ms p99), fractal zoom existiert bereits  
+**Contra:** ⚠️ **USearch ist RAM-only** — nach Neustart muss Index aus Postgres rebuilt werden. Availability-Problem bis rebuild fertig.
+
+**Versteckter Killer:** Bei 10M+ Nodes dauert der Index-Rebuild Minuten. In dieser Zeit: kein fractal zoom möglich.
+
+---
+
+### Option C: PostgreSQL nur für Events
+
+Events nach Postgres, fractal retrieval bleibt auf JSON + USearch.
+
+**Pro:** Minimaler Eingriff  
+**Contra:** Kein echtes Production-Backend für Memories
+
+---
+
+### Option D: PostgreSQL + pgvectorscale (RECOMMENDED FÜR v1.0)
+
+```
+┌─────────────────────────────────────┐
+│ PostgreSQL                          │
+│  memories (JSONB)                   │
+│  edges                              │
+│  pgvectorscale (DiskANN)           │  ← statt pgvector HNSW
+│  events (append-only)               │
+└─────────────────────────────────────┘
+```
+
 **Pro:**
-- USearch bleibt für fractal retrieval (existierende Logik)
-- PostgreSQL für CRUD + ACID + Events
-- Beste Vector-Performance (USearch ist in Benchmarks schneller)
-- Bestehend implementiert
+- Ein System (kein Dual-Maintain wie Option B)
+- 28x besser als Pinecone bei 50M Vectors
+- Persistent Disk Index — kein Rebuild-Problem nach Neustart
+- WAL, ACID, Multi-Instance
+- Recursive CTE für fractal zoom
 
-**Contra:**
-- Zwei Systeme synchron halten
-- Mehr Operational Overhead
-- Initiales Setup komplexer
+**Contra:** Fractal CTE anspruchsvoller als in-memory Rust-Code
 
 ---
 
-## Option C: PostgreSQL als Event Store + JSON (Keep Both)
+## Skalierungspfad (Phasenmodell)
 
-```
-┌──────────────┐    ┌──────────────┐
-│  PostgreSQL  │    │   JSON File  │
-│  (events     │───▶│  + USearch   │
-│   only)      │    │              │
-└──────────────┘    └──────────────┘
-```
+| Phase | Zeitpunkt | Option | Storage |
+|-------|-----------|--------|---------|
+| v0.2 (Beta) | Jetzt | B | PostgreSQL + USearch |
+| v1.0 (Erste externe Nutzer) | später | D | PostgreSQL + pgvectorscale |
+| v2.0 (Multi-Tenant SaaS) | bei Bedarf | B oder D + Sharding | StorageBackend Trait |
 
-Events werden nach Postgres geschrieben. Fractal Retrieval bleibt auf JSON + USearch.
-
-**Pro:**
-- Minimaler Eingriff
-- Events sind das Wichtige (Audit Trail)
-- Retention + Consistency
-
-**Contra:**
-- Kein echtes Production-Backend für Memories
-- JSON bleibt Single-Writer
+**Entscheidend:** Option B → D ist eine StorageBackend-Implementierung tauschen. Kein anderer Code ändert sich.
 
 ---
 
-## Entscheidende Faktoren
+## Offene Frage für externen Reviewer
 
-### 1. Multi-Instance Betrachtung
+**Bei welchem Node-Count kippt pgvector (HNSW) und was ist der konkrete Migrationspfad zu pgvectorscale?**
 
-Wenn KnowWhere auf mehr als einer Instanz laufen soll:
-- Option A oder B nötig (Postgres als shared state)
-- Option C reicht nicht
-
-### 2. Fractal Retrieval Komplexität
-
-`retrieve_fractal` ist rekursiv:
-```
-Node → Children (> threshold) → Grandchildren (> threshold) → ...
-```
-
-pgvector kann keine rekursive traversal. Das muss in SQL oder Applikationslogik gebaut werden:
-
-```sql
--- Rekursive CTE Beispiel
-WITH RECURSIVE fractal_zoom AS (
-    -- Base: Start nodes via vector similarity
-    SELECT id, parent_id, memory_type, 0 as depth
-    FROM memories
-    WHERE vector <-> $query_vector < $threshold
-    
-    UNION ALL
-    
-    -- Recursive: children above threshold
-    SELECT m.id, m.parent_id, m.memory_type, f.depth + 1
-    FROM memories m
-    JOIN fractal_zoom f ON m.parent_id = f.id
-    WHERE m.vector <-> $query_vector < $threshold
-    AND f.depth < $max_depth
-)
-SELECT DISTINCT * FROM fractal_zoom;
-```
-
-**Das ist möglich**, aber额外的 Komplexität.
-
-### 3. Performance
-
-USearch Benchmarks (散):  
-- 1536-dim vectors, 1M dataset
-- USearch: ~2-5ms p99 latency
-- pgvector HNSW: ~10-20ms p99 latency
-
-USearch ist ~5x schneller für diesen Use Case.
-
-### 4. Operationelle Einfachheit
-
-| | A (nur Postgres) | B (Dual) | C (Events only) |
-|---|---|---|---|
-| Systeme | 1 | 2 | 2 |
-| Backup | pg_dump | pg_dump + USearch backup | pg_dump + JSON copy |
-| Monitoring | 1 dashboard | 2 dashboards | 2 dashboards |
-| Migrations | SQL | SQL + USearch config | SQL |
-
----
-
-## Empfehlung
-
-**Option B (PostgreSQL + USearch dual-maintain)** — weil:
-
-1. USearch ist deutlich performanter für fractal retrieval
-2. `PostgresStore` existiert bereits zu 80%
-3. Events in Postgres = echtes Audit Trail
-4. Fractal traversal bleibt in bewährter USearch-Logik
-
-**Der Hauptaufwand liegt nicht in pgvector vs USearch**, sondern darin:
-- `PostgresStore` ans `Storage` Trait anzubinden
-- `hybrid_retrieve` + `retrieve_fractal` in Postgres zu implementieren
-- USearch als secondary vector index weiter zu nutzen
-
----
-
-## Offene Fragen für External Review
-
-1. **pgvector vs USearch für 1536-dim** — ist der Performanceunterschied im Practice relevant für einen SMB-Chat-Assistenten?
-2. **Rekursive CTE in Postgres** — hat jemand Erfahrung mit fractal traversal in Postgres/pgvector?
-3. **Event Sourcing** — ist das append-only Event Log das Primary, oder die memories-Tabelle?
+Nicht: "ist Performance relevant?"  
+Sondern: "Wo ist die Grenze und wie sieht der Wechsel aus?"
 
 ---
 
 ## Nächste Schritte
 
-1. [ ] Architecture Decision finalisieren (mit externem Feedback)
-2. [ ] Storage Trait definieren
-3. [ ] PostgresStore einklinken
-4. [ ] Migrations schreiben
-5. [ ] Integration Tests
+1. [ ] **StorageBackend Trait definieren** — backend-agnostic, kein PgPool durchsickern
+2. [ ] MemoryStore ans Trait refaktorieren
+3. [ ] CI muss grün werden
+4. [ ] Externen Reviewer fragen: Recursive CTE für fractal zoom — Erfahrungen?
+5. [ ] Entscheiden: Option B jetzt oder direkt Option D?
 
 ---
 
 ## Referenzen
 
-- pgvector HNSW: https://github.com/pgvector/pgvector
+- pgvector: https://github.com/pgvector/pgvector
+- pgvectorscale: https://github.com/pgvector/pgvectorscale
 - USearch: https://github.com/unum-cloud/usearch
 - PostgreSQL recursive CTE: https://www.postgresql.org/docs/current/queries-with.html
-- Fractal Memory: KnowWhere docs / fractal_node.rs
