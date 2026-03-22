@@ -64,14 +64,17 @@
 
 ---
 
-### [MED-003] BM25-Corpus nach Neustart für External-Nodes
+### [MED-003] BM25-Corpus Persistenz ✅
 
-**Status:** 🟡 Offen
+**Erledigt.** `bm25_corpus` ist jetzt Teil von `PersistedState` in state.json.
 
-**Problem:** `bm25_corpus` fehlt in `PersistedState`. External-Nodes verlieren BM25-Eintrag nach Neustart.
+**Was geändert:**
+- `PersistedState` um `bm25_corpus: Vec<(Uuid, String)>` erweitert
+- `save_to_disk()` speichert bm25_corpus mit
+- `load_state()` lädt bm25_corpus direkt — kein Rebuild aus nodes mehr
+- Backward compat: alte state.json (ohne bm25_corpus) rebuilt aus nodes
 
-**Aufwand:** ~2 Stunden  
-**Dateien:** `src/storage/in_memory.rs`
+**Commit:** `fcee458`
 
 ---
 
@@ -183,7 +186,7 @@
 | CRIT-003 PostgreSQL | ✅ | ~1 Tag | 6f9cfc6, 4cfa5b7 |
 | MED-001 Exp. Decay | ✅ | 1h | 4bd5c98 |
 | MED-002 LLM Compaction | ✅ | ~1 Tag | 279265c, 7bf6f01 |
-| MED-003 BM25 Persistenz | 🟡 Offen | ~2h | — |
+| MED-003 BM25 Persistenz | ✅ | ~2h | fcee458 |
 | MED-004 Vektor Conflict | ✅ | ~4h | 352505d |
 | MED-005 Gov. Dedup | ✅ | ~1h | dab48dc |
 | MED-006 Test-Fixture | ✅ | 1h | da43722 |
