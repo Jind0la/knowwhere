@@ -21,7 +21,7 @@ use sqlx::PgPool;
 
 use crate::memory::types::MemoryStatus;
 use crate::scheduler::SchedulerConfig;
-use crate::storage::{MemoryStore, UpdateOperation};
+use crate::storage::{MemoryStore, StorageBackend, UpdateOperation};
 
 /// Audit Scheduler state.
 ///

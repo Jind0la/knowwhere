@@ -16,7 +16,7 @@ use uuid::Uuid;
 
 use crate::memory::types::{ContextTier, MemoryStatus};
 use crate::scheduler::SchedulerConfig;
-use crate::storage::{MemoryStore, UpdateOperation};
+use crate::storage::{MemoryStore, StorageBackend, UpdateOperation};
 use crate::vlm::{SummaryContext, VlmJob, VlmWorkerHandle};
 
 /// Consolidation Scheduler state.

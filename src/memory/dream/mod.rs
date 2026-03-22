@@ -49,7 +49,7 @@ use uuid::Uuid;
 
 use crate::memory::fractal_node::cosine_similarity;
 use crate::memory::FractalNode;
-use crate::storage::{MemoryStore, UpdateOperation};
+use crate::storage::{MemoryStore, StorageBackend, UpdateOperation};
 
 const SIMILARITY_THRESHOLD: f32 = 0.85;
 const BOOST_FACTOR: f64 = 1.1;
