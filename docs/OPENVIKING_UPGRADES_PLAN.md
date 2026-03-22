@@ -501,14 +501,14 @@ Basierend auf externem Review (Feedback 2026-03-20):
 1. **Hierarchical Pruning (Threshold 0.7)** ✅ — Commit d373991
 2. **Conflict Resolution im Dream Mode** ✅ — Commit d373991
 
-### Phase 3: Feedback P1 (TODO)
-3. **Energy / Memory Decay** (Ebbinghaus)
-4. **Deduplikations-Worker**
+### Phase 3: Feedback P1 ✅
+3. **Energy / Memory Decay** (Ebbinghaus) ✅ — MED-001, Commit 4bd5c98
+4. **Deduplikations-Worker** ✅ — MED-005, Commit dab48dc
 
 ### Phase 4: Feedback P2 (TODO)
-5. **Content Hashing + Self-Healing**
-6. **Cluster-Zentroiden-Cache**
-7. **SIMD-Optimierung**
+5. **Content Hashing + Self-Healing** — verschiebt Duplikate erkennung auf Content-Hash-Ebene
+6. **Cluster-Zentroiden-Cache** — beschleunigt k-NN bei großen Datasets
+7. **SIMD-Optimierung** — usearch SIMD, LOW-priority
 
 ### On Hold (war Phase 2-3):
 - Directory Namespace
