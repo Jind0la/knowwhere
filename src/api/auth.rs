@@ -20,10 +20,7 @@ fn secure_compare(a: &str, b: &str) -> bool {
     subtle::ConstantTimeEq::ct_eq(a.as_bytes(), b.as_bytes()).into()
 }
 
-pub async fn auth_middleware(
-    request: Request,
-    next: Next,
-) -> Result<Response, StatusCode> {
+pub async fn auth_middleware(request: Request, next: Next) -> Result<Response, StatusCode> {
     let api_key = request.extensions().get::<ApiKey>().cloned();
 
     let Some(ApiKey(Some(ref expected))) = api_key else {
@@ -52,15 +49,13 @@ pub async fn auth_middleware(
 
 /// Strict GovernorConfig for auth endpoints: 3 req/s per IP.
 pub fn auth_governor_config() -> GovernorConfig {
-    GovernorConfig::default()
-        .override_mode(false) // enforce both global and route-specific rules
+    GovernorConfig::default().override_mode(false) // enforce both global and route-specific rules
 }
 
 /// GovernorConfig for protected API endpoints: 5 req/s per IP.
 /// More permissive than auth endpoints since these require a valid Bearer token first.
 pub fn protected_governor_config() -> GovernorConfig {
-    GovernorConfig::default()
-        .override_mode(false)
+    GovernorConfig::default().override_mode(false)
 }
 
 // ---------------------------------------------------------------------------
