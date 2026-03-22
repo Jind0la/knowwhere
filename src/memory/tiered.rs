@@ -111,7 +111,7 @@ impl TieredCompactionWorker {
         // Enqueue VLM job if available
         if let Some(ref handle) = self.vlm_handle {
             let job = VlmJob::new(vec![memory_id], context);
-            handle.enqueue(job);
+            handle.enqueue(job).await?;
             tracing::debug!(memory_id = %memory_id, ?context, "compaction job enqueued");
             Ok(memory_id)
         } else {
