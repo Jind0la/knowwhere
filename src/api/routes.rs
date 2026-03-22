@@ -593,7 +593,7 @@ pub async fn retrieve_fractal(
             .into_iter()
             .map(|(score, node)| ScoredNode::from_node(score, node))
             .collect();
-        return Json(scored);
+        return Ok(Json(scored));
     }
 
     // Optional memory type filter
