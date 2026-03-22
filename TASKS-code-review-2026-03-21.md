@@ -179,6 +179,21 @@
 
 ---
 
+### [LOW-005] DreamStatus mit cycle_count
+
+**Status:** 🟢 Offen | **Aufwand:** ~30min
+
+**Problem:** `GET /dream/status` soll Scheduler-State zurückgeben (laut DREAM-MODE-SCHEDULER.md), aber es gibt keine `DreamStatus`-Struct und kein `cycle_count`. `memories_processed` + `last_run` existieren, sind aber nicht aggregiert über den Scheduler abrufbar.
+
+**Was zu tun ist:**
+- `cycle_count: u64` zu `ConsolidationScheduler` hinzufügen
+- Nach jedem `run()` inkrementieren
+- Im `/dream/status`-Endpoint exponieren
+
+**Dateien:** `src/scheduler/consolidation.rs`, `src/api/routes.rs`
+
+---
+
 ## 📋 Aktuelle Übersicht
 
 | Task | Status | Aufwand | Commit |
@@ -198,6 +213,7 @@
 | LOW-002 Batch Embed | 🟢 Offen | ~4h | — |
 | LOW-003 CI erweitern | ✅ | ~1h | 06be859 |
 | LOW-004 RRF | ✅ | — | rrf_fuse() |
+| LOW-005 DreamStatus + cycle_count | 🟢 Offen | ~30min | — |
 
 ---
 
