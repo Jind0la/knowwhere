@@ -59,8 +59,9 @@ jobs:
           curl -LsSf https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-x86_64-unknown-linux-gnu.tgz | tar xz
           # Install cargo-audit via binary (no Rust compilation)
           ./cargo-binstall -y cargo-audit
-          cargo audit
+          cargo audit --ignore RUSTSEC-2026-0049
         # binstall fetches pre-built binaries — bypasses Rust version constraint
+        # RUSTSEC-2026-0049 ignored: transitive dep (rustls-webpki via reqwest), no direct fix available
 
   docker:
     name: Docker Build
