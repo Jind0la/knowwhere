@@ -65,8 +65,6 @@ pub enum UpdateOperation {
     SetParentTierId(Uuid),
     /// Set the node status (used by AuditScheduler).
     SetStatus(MemoryStatus),
-    /// Set the energy value directly (used by AuditScheduler).
-    SetEnergy(f64),
     /// Composite operation: set weight + optionally status (used by AuditScheduler).
     /// This must be atomic — both changes happen together.
     ApplyAudit { weight: f64, status: Option<MemoryStatus> },
@@ -89,9 +87,6 @@ impl UpdateOperation {
             }
             UpdateOperation::SetStatus(status) => {
                 node.status = status.clone();
-            }
-            UpdateOperation::SetEnergy(e) => {
-                node.energy = *e;
             }
             UpdateOperation::ApplyAudit { weight, status } => {
                 node.weight = *weight;

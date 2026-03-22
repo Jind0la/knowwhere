@@ -24,7 +24,7 @@ use crate::embedding::{embed_document, EmbeddingProvider};
 use crate::memory::types::{ContextTier, MemorySource, MemoryStatus, MemoryType};
 use std::collections::HashMap;
 use crate::memory::FractalNode;
-use crate::storage::{MemoryStore, StorageBackend};
+use crate::storage::{MemoryStore, StorageBackend, UpdateOperation};
 
 // ---------------------------------------------------------------------------
 // Public API — Enqueue a summarization job
@@ -741,9 +741,7 @@ mod worker {
             let mut updates = 0;
             for node_id in &job.node_ids {
                 if let Err(e) = self.store
-                    .update_node(node_id, |n| {
-                        n.parent_tier_id = Some(summary_id);
-                    })
+                    .update(node_id, UpdateOperation::SetParentTierId(summary_id))
                     .await
                 {
                     tracing::warn!(node_id = %node_id, "failed to set parent_tier_id: {}", e);
