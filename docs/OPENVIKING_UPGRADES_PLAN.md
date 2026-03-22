@@ -1,8 +1,8 @@
 # OpenViking-Inspired Upgrades für KnowWhere
 
-**Branch:** `feature/openviking-inspired-upgrades`
-**Status:** Planning
-**Datum:** 2026-03-20
+**Branch:** `main`
+**Status:** ✅ Features implemented (see Implementation Status below)
+**Datum:** 2026-03-20 | Letztes Update: 2026-03-22
 
 ---
 

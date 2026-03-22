@@ -1,8 +1,9 @@
 # CRIT-003: PostgreSQL Integration — Architecture Decision
 
-> Status: Review Phase  
+> Status: ✅ Done  
 > Erstellt: 2026-03-22  
-> Review: Externes Feedback eingearbeitet
+> Letztes Update: 2026-03-22  
+> Commits: `6f9cfc6`, `eceb6e2`, `b4244db`, `4cfa5b7`
 
 ---
 
@@ -124,9 +125,9 @@ Sondern: "Wo ist die Grenze und wie sieht der Wechsel aus?"
 
 ## Nächste Schritte
 
-1. [ ] **StorageBackend Trait definieren** — backend-agnostic, kein PgPool durchsickern
-2. [ ] MemoryStore ans Trait refaktorieren
-3. [ ] CI muss grün werden
+1. [x] **StorageBackend Trait definieren** — backend-agnostic, kein PgPool durchsickern ✅
+2. [x] MemoryStore ans Trait refaktorieren ✅
+3. [x] CI muss grün werden ✅
 4. [ ] Externen Reviewer fragen: Recursive CTE für fractal zoom — Erfahrungen?
 5. [ ] Entscheiden: Option B jetzt oder direkt Option D?
 

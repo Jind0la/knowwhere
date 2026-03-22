@@ -66,7 +66,9 @@ knowwhere/
 │   │   └── provider.rs       # Grok, OpenAI, LocalOllama + task prefixes
 │   ├── storage/
 │   │   ├── mod.rs
-│   │   └── in_memory.rs      # MemoryStore, USearch, BM25, RRF, persistence
+│   │   ├── backend.rs        # StorageBackend trait (backend-agnostic interface)
+│   │   ├── in_memory.rs     # MemoryStore (impl StorageBackend, USearch, BM25, RRF)
+│   │   └── postgres_store.rs # PostgresStore (impl StorageBackend, SQL, RRF, ts_rank)
 │   ├── connectors/
 │   │   ├── mod.rs
 │   │   └── frigate.rs        # Frigate NVR poller (pointer-first)
@@ -76,7 +78,11 @@ knowwhere/
 ├── docs/
 │   ├── PRD.md
 │   ├── ARCHITECTURE.md       # This file
-│   └── IMPORT_GUIDE.md       # Host-system memory import playbook
+│   ├── IMPORT_GUIDE.md       # Host-system memory import playbook
+│   ├── DREAM-MODE-SCHEDULER.md
+│   ├── CRIT-003-postgresql-architecture.md
+│   ├── FEEDBACK_INTEGRATION.md
+│   └── OPENVIKING_UPGRADES_PLAN.md
 ├── sdk/python/
 │   └── knowwhere/
 │       ├── client.py

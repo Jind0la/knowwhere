@@ -1,7 +1,7 @@
 # KnowWhere — Task-Liste
 
 > Erstellt: 2026-03-21 | Letztes Update: 2026-03-22  
-> Status: 🟡 In Bearbeitung
+> Status: 🟢 Gute Fortschritte
 
 ---
 
@@ -23,22 +23,18 @@
 
 ---
 
-### [CRIT-003] JSON-Persistenz → PostgreSQL
+### [CRIT-003] JSON-Persistenz → PostgreSQL ✅
 
-**Status:** 🟡 Gute Fortschritte — StorageBackend Trait definiert, MemoryStore implementiert
+**Erledigt.**
 
-**Was bisher (diese Woche):**
-- ✅ StorageBackend Trait definiert (backend-agnostic, kein PgPool-Leak)
-- ✅ MemoryStore implementiert StorageBackend
-- ✅ AppState nutzt `Arc<dyn StorageBackend>` für API-Layer
+**Was implementiert wurde:**
+- `StorageBackend` Trait in `src/storage/backend.rs` — backend-agnostic, kein PgPool-Leak
+- `PostgresStore` implementiert alle 11 Trait-Methoden (insert, get, delete, update_vector, update, hybrid_retrieve, retrieve_fractal, search_bm25, list_all, recent, count, purge_dummy_vectors)
+- RRF-Fusion für hybrid_retrieve (Vektor + BM25 via Reciprocal Rank Fusion)
+- `search_bm25` via PostgreSQL `ts_rank` als BM25-Approximation
+- `update_vector` und `purge_dummy_vectors` als neue Methoden
 
-**Was noch fehlt:**
-- `PostgresStore` ans Trait implementieren
-- Schema-Migration auf PostgreSQL
-- USearch + PostgreSQL dual maintain (oder pgvectorscale als Option D)
-
-**Aufwand:** ~1 Tag  
-**Dateien:** `src/storage/postgres_store.rs`, `src/storage/backend.rs`
+**Commits:** `6f9cfc6`, `4cfa5b7`
 
 ---
 
@@ -112,16 +108,18 @@
 
 ---
 
-### [MED-008] StorageBackend Trait für interne Komponenten
+### [MED-008] StorageBackend Trait für interne Komponenten ✅
 
-**Status:** 🟡 Offen
+**Erledigt.**
 
-**Problem:** VLM Worker, ConsolidationScheduler, AuditScheduler und FrigateConnector nutzen konkretes `MemoryStore` statt `Arc<dyn StorageBackend>`. Das verhindert volle Backend-Flexibilität.
+**Was implementiert wurde:**
+- `UpdateOperation` Enum: `MultiplyWeight`, `SetWeight`, `SetParentTierId`, `SetStatus`, `ApplyAudit` (dyn Trait-kompatibel)
+- `StorageBackend::update(id, UpdateOperation)` — ersetzt closure-basiertes `update_node`
+- `MemoryStore::update()` delegiert an bestehendes `update_node()`
+- `PostgresStore::update()` mit SQL UPDATE pro Operation
+- Alle internen Komponenten migriert: DreamMode, ConsolidationScheduler, AuditScheduler, VlmWorker
 
-**Aufwand:** ~3 Stunden  
-**Dateien:** `src/main.rs`, `src/vlm/mod.rs`, `src/memory/dream/`
-
-**Hinweis:** Niedrig priorisiert — aktueller Stand (konkretes MemoryStore intern, Trait für API) ist funktional ausreichend. Erst relevant wenn echte Multi-Backend-Unterstützung gebraucht wird.
+**Commits:** `eceb6e2`, `b4244db`, `4cfa5b7`
 
 ---
 
@@ -170,21 +168,21 @@
 
 | Task | Status | Aufwand | Commit |
 |------|--------|---------|--------|
-| CRIT-001 Timing-Angriff | ✅ Erledigt | 30min | e2182f2 |
-| CRIT-002 Rate-Limiting | ✅ Erledigt | 2h | 2a0d58e, 32d5023 |
-| CRIT-003 PostgreSQL | 🟡 In Progress | ~1 Tag | StorageBackend ✅ |
-| MED-001 Exp. Decay | ✅ Erledigt | 1h | 4bd5c98 |
+| CRIT-001 Timing-Angriff | ✅ | 30min | e2182f2 |
+| CRIT-002 Rate-Limiting | ✅ | 2h | 2a0d58e, 32d5023 |
+| CRIT-003 PostgreSQL | ✅ | ~1 Tag | 6f9cfc6, 4cfa5b7 |
+| MED-001 Exp. Decay | ✅ | 1h | 4bd5c98 |
 | MED-002 LLM Compaction | 🟡 Offen | ~1 Tag | — |
 | MED-003 BM25 Persistenz | 🟡 Offen | ~2h | — |
 | MED-004 Vektor Conflict | 🟡 Offen | ~4h | — |
 | MED-005 Gov. Dedup | 🟡 Offen | ~1h | — |
-| MED-006 Test-Fixture | ✅ Erledigt | 1h | da43722 |
-| MED-007 OpenAI Tests | ✅ Erledigt | 30min | 8d38b55 |
-| MED-008 StorageBackend Intern | 🟡 Offen | ~3h | — |
+| MED-006 Test-Fixture | ✅ | 1h | da43722 |
+| MED-007 OpenAI Tests | ✅ | 30min | 8d38b55 |
+| MED-008 StorageBackend Intern | ✅ | ~4h | eceb6e2, b4244db, 4cfa5b7 |
 | LOW-001 Arena | 🟢 Offen | ~3 Tage | — |
 | LOW-002 Batch Embed | 🟢 Offen | ~4h | — |
 | LOW-003 CI erweitern | 🟢 Offen | ~1h | — |
-| LOW-004 RRF | ✅ Erledigt | — | rrf_fuse() |
+| LOW-004 RRF | ✅ | — | rrf_fuse() |
 
 ---
 
