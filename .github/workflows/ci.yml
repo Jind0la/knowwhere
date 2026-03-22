@@ -37,6 +37,7 @@ jobs:
       - name: cargo test
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          RUST_LOG: info
         run: cargo test --all-targets
 
   docker:
