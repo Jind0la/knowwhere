@@ -333,6 +333,8 @@ assert!(body.contains("\"cycle_count\":0"));
 **Aufwand:** Unbekannt — muss erst untersucht werden
 **Dateien:** `src/memory/dream/mod.rs`, `src/api/routes.rs`
 
+**Status:** 🔴 Pre-existing (CI failed seit 23+ Tagen)
+
 ---
 
 ### [BUG-002] `fractal_retrieve_returns_results` — Leere Ergebnisse
@@ -344,9 +346,46 @@ assert!(body.contains("\"cycle_count\":0"));
 assert!(!results.is_empty());  // ← scheitert
 ```
 
-**Vermutliche Ursache:** Embedding-Vektoren (Random `[0.1,0.2,0.3,0.4,0.5]`) matchen nicht mit den echten OpenAI-Embeddings der gespeicherten Nodes. Fractal-Retrieve nutzt Vektor-Suche — wenn Query-Vektor und Stored-Vektoren nicht im selben Embedding-Raum liegen, findet er nichts.
+**Vermutliche Ursache:** embedding-Vektoren matchen nicht — oder BM25/Vektor-Suche liefert empty. Muss lokal debuggt werden.
 
 **Aufwand:** ~1-2 Stunden
+
+**Status:** 🔴 Pre-existing (CI failed seit 23+ Tagen) — mein Fix für auto-embed (query_vector optional) ist syntaktisch richtig aber das Grundproblem (leere Results) besteht noch
+
+---
+
+### [BUG-003] `dream_status_returns_ok` — cycle_count Assertion falsch
+
+**Problem:** Test erwartet `"\"cycle_count\":0"`, bekommt was anderes.
+
+**Test:** `tests/integration.rs:329`
+```rust
+assert!(body.contains("\"cycle_count\":0"));  // ← scheitert
+```
+
+**Vermutliche Ursache:** `DreamMode::cycle_count` startet nicht bei 0 oder wird nicht korrekt serialisiert.
+
+**Aufwand:** Unbekannt — muss erst untersucht werden
+
+**Status:** 🔴 Pre-existing (CI failed seit 23+ Tagen)
+
+---
+
+### [BUG-004] CI Integration Tests komplett kaputt
+
+**Problem:** Alle Integration Tests (die 2 oben + evtl. mehr) failen seit dem Initial Commit vor 23+ Tagen. CI ist dauerhaft rot.
+
+**History:**
+- `gh run list` zeigt: nur "Initial commit" war success — seither JEDER push fehlschlägt
+- Auch Commits VOR den Code-Review Fixes hatten schon kaputte Integration Tests
+- Das bedeutet: die Integration Test Suite war schon beim ersten Commit nach dem Initial-Commit defekt
+
+**Nächste Schritte:**
+1. Lokal debuggen (WSL/cargo test mit funktionierendem build environment)
+2. `#[ignore]` setzen bis Tests stabil laufen
+3. Oder: Integration Tests komplett neu schreiben
+
+**Status:** 🔴 Pre-existing Infrastructure Issue
 **Dateien:** `src/storage/in_memory.rs`, `src/memory/fractal_node.rs`
 
 **Status:** ✅ Erledigt (Commit 865dff1)
