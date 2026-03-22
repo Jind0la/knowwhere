@@ -54,7 +54,7 @@ jobs:
         run: cargo test --all-targets
 
       - name: cargo audit
-        run: cargo audit
+        run: cargo install cargo-audit && cargo audit
 
   docker:
     name: Docker Build
