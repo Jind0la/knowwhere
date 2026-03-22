@@ -70,25 +70,30 @@
 
 ---
 
-### [MED-004] O(n²) Conflict Detection → Vektor-Ähnlichkeit
+### [MED-004] O(n²) Conflict Detection → Vektor-Ähnlichkeit ✅
 
-**Status:** 🟡 Offen
+**Erledigt.** Vektor-basierte Conflict Detection mit Cosine Similarity.
 
-**Problem:** `detect_confidence_conflicts()` macht exakten String-Match. Skaliert nicht bei 100k+ Erinnerungen.
+**Was implementiert:**
+- `ConflictDetector` unterstützt jetzt `PgPool` und `Arc<dyn StorageBackend>`
+- `detect_confidence_conflicts_vector()` — cosine similarity > 0.85 threshold
+- Semantischer Check via `content_contradicts()` (Negations-Patterns)
+- Fallback auf String-Match wenn kein Vektor-Backend verfügbar
+- Batch-Verarbeitung (50er chunks)
 
-**Aufwand:** ~4 Stunden  
-**Dateien:** `src/memory/governance.rs`
+**Commit:** `352505d`
 
 ---
 
-### [MED-005] Doppelte Governance-Logik konsolidieren
+### [MED-005] Doppelte Governance-Logik konsolidieren ✅
 
-**Status:** 🟡 Offen
+**Erledigt.** `GovernancePolicy::governance_check()` als shared core.
 
-**Problem:** `GovernanceValidator::validate()` und `GovernanceCandidate::apply_governance()` implementieren ähnliche Logik.
+**Was geändert:**
+- `GovernanceValidator::validate()` und `GovernanceCandidate::apply_governance()` nutzen jetzt beide `policy.governance_check()` als shared logic
+- Duplizierte Checks (confidence, superseded, sensitivity, status) sind konsolidiert
 
-**Aufwand:** ~1 Stunde  
-**Dateien:** `src/memory/governance.rs`
+**Commit:** `dab48dc`
 
 ---
 
@@ -174,8 +179,8 @@
 | MED-001 Exp. Decay | ✅ | 1h | 4bd5c98 |
 | MED-002 LLM Compaction | 🟡 Offen | ~1 Tag | — |
 | MED-003 BM25 Persistenz | 🟡 Offen | ~2h | — |
-| MED-004 Vektor Conflict | 🟡 Offen | ~4h | — |
-| MED-005 Gov. Dedup | 🟡 Offen | ~1h | — |
+| MED-004 Vektor Conflict | ✅ | ~4h | 352505d |
+| MED-005 Gov. Dedup | ✅ | ~1h | dab48dc |
 | MED-006 Test-Fixture | ✅ | 1h | da43722 |
 | MED-007 OpenAI Tests | ✅ | 30min | 8d38b55 |
 | MED-008 StorageBackend Intern | ✅ | ~4h | eceb6e2, b4244db, 4cfa5b7 |
