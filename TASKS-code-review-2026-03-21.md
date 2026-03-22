@@ -25,12 +25,17 @@
 
 ### [CRIT-003] JSON-Persistenz → PostgreSQL
 
-**Status:** 🔴 Offen — ~80% fertig (PostgresStore existiert bereits)
+**Status:** 🟡 Gute Fortschritte — StorageBackend Trait definiert, MemoryStore implementiert
 
-**Was fehlt:**
-- `PostgresStore` in Storage-Interface einklinken (statt JSON-Store)
-- Schema-Migration auf PostgreSQL laufen lassen
-- USearch + PostgreSQL dual maintain (Vektoren in beiden)
+**Was bisher:**
+- ✅ StorageBackend Trait definiert (backend-agnostic, kein PgPool-Leak)
+- ✅ MemoryStore implementiert StorageBackend
+- ✅ AppState nutzt `Arc<dyn StorageBackend>` für API-Layer
+
+**Was noch fehlt:**
+- `PostgresStore` ans Trait implementieren
+- Schema-Migration auf PostgreSQL
+- USearch + PostgreSQL dual maintain (oder pgvectorscale als Option D)
 
 **Aufwand:** ~1 Tag
 **Dateien:** `src/storage/postgres_store.rs`, Schema in `migrations/`
