@@ -85,6 +85,63 @@ impl GovernancePolicy {
             recency_penalty_after_days: 365,
         }
     }
+
+    /// Core governance check — shared logic used by both GovernanceValidator and
+    /// GovernanceCandidate to avoid duplication.
+    ///
+    /// Returns (multiplier, issues).
+    pub(crate) fn governance_check(&self, candidate: &GovernanceCandidate) -> (f64, Vec<ValidationIssue>) {
+        let mut multiplier = 1.0;
+        let mut issues = Vec::new();
+
+        // Confidence check
+        if candidate.confidence < self.min_confidence {
+            multiplier *= 0.5;
+            issues.push(ValidationIssue {
+                issue_type: IssueType::LowConfidence,
+                description: IssueType::LowConfidence.description(&format!(
+                    "{:.2} < {:.2}", candidate.confidence, self.min_confidence
+                )),
+                score_impact: IssueType::LowConfidence.score_impact(),
+            });
+        }
+
+        // Supersession check
+        if candidate.superseded_by.is_some() && self.supersession_enabled {
+            let superseded_by_str = candidate
+                .superseded_by
+                .map(|id| id.to_string())
+                .unwrap_or_default();
+            issues.push(ValidationIssue {
+                issue_type: IssueType::Superseded,
+                description: IssueType::Superseded.description(&superseded_by_str),
+                score_impact: IssueType::Superseded.score_impact(),
+            });
+            multiplier = 0.0; // hard block
+        }
+
+        // Sensitivity check
+        if self.blocked_sensitivities.contains(&candidate.sensitivity) {
+            issues.push(ValidationIssue {
+                issue_type: IssueType::SensitivityBlocked,
+                description: IssueType::SensitivityBlocked.description(&format!("{:?}", candidate.sensitivity)),
+                score_impact: IssueType::SensitivityBlocked.score_impact(),
+            });
+            multiplier = 0.0; // hard block
+        }
+
+        // Status check — must be retrievable
+        if !candidate.status.is_retrievable() {
+            issues.push(ValidationIssue {
+                issue_type: IssueType::InvalidStatus,
+                description: IssueType::InvalidStatus.description(&format!("{:?}", candidate.status)),
+                score_impact: IssueType::InvalidStatus.score_impact(),
+            });
+            multiplier = 0.0; // hard block
+        }
+
+        (multiplier, issues)
+    }
 }
 
 impl Default for GovernancePolicy {
@@ -207,54 +264,10 @@ impl GovernanceValidator {
 
     /// Validate a single memory candidate.
     pub fn validate(&self, candidate: &GovernanceCandidate) -> ValidationResult {
-        let mut issues = Vec::new();
+        // Core checks (shared with GovernanceCandidate::apply_governance)
+        let (mut multiplier, mut issues) = self.policy.governance_check(candidate);
 
-        // 1. Status check — must be retrievable
-        if !candidate.status.is_retrievable() {
-            issues.push(ValidationIssue {
-                issue_type: IssueType::InvalidStatus,
-                description: IssueType::InvalidStatus.description(&format!("{:?}", candidate.status)),
-                score_impact: IssueType::InvalidStatus.score_impact(),
-            });
-        }
-
-        // 2. Confidence check
-        if candidate.confidence < self.policy.min_confidence {
-            issues.push(ValidationIssue {
-                issue_type: IssueType::LowConfidence,
-                description: IssueType::LowConfidence.description(&format!(
-                    "{:.2} < {:.2}",
-                    candidate.confidence, self.policy.min_confidence
-                )),
-                score_impact: IssueType::LowConfidence.score_impact(),
-            });
-        }
-
-        // 3. Supersession check
-        if self.policy.supersession_enabled {
-            if candidate.superseded_by.is_some() {
-                let superseded_by_str = candidate
-                    .superseded_by
-                    .map(|id| id.to_string())
-                    .unwrap_or_default();
-                issues.push(ValidationIssue {
-                    issue_type: IssueType::Superseded,
-                    description: IssueType::Superseded.description(&superseded_by_str),
-                    score_impact: IssueType::Superseded.score_impact(),
-                });
-            }
-        }
-
-        // 4. Sensitivity check
-        if self.policy.blocked_sensitivities.contains(&candidate.sensitivity) {
-            issues.push(ValidationIssue {
-                issue_type: IssueType::SensitivityBlocked,
-                description: IssueType::SensitivityBlocked.description(&format!("{:?}", candidate.sensitivity)),
-                score_impact: IssueType::SensitivityBlocked.score_impact(),
-            });
-        }
-
-        // 5. Staleness check
+        // Additional check: staleness (GovernanceValidator only)
         if let Some(max_age) = self.policy.max_age_days {
             let age = Utc::now() - candidate.created_at;
             if age > Duration::days(max_age as i64) {
@@ -270,7 +283,7 @@ impl GovernanceValidator {
             }
         }
 
-        // 6. Conflict check
+        // Additional check: conflict (GovernanceValidator only)
         if self.policy.conflict_check_enabled {
             if candidate.conflict_state == ConflictState::Pending {
                 issues.push(ValidationIssue {
@@ -354,22 +367,12 @@ impl GovernanceCandidate {
     }
 
     fn apply_governance(&self, policy: &GovernancePolicy) -> f64 {
-        let mut multiplier = 1.0;
+        // Core governance checks (shared with GovernanceValidator::validate)
+        let (multiplier, _issues) = policy.governance_check(self);
 
-        if self.confidence < policy.min_confidence {
-            multiplier *= 0.5;
-        }
-        if self.superseded_by.is_some() && policy.supersession_enabled {
-            return 0.0;
-        }
-        if policy.blocked_sensitivities.contains(&self.sensitivity) {
-            return 0.0;
-        }
-        if !self.status.is_retrievable() {
-            return 0.0;
-        }
-        if policy.conflict_check_enabled && self.conflict_state == ConflictState::Pending {
-            multiplier *= 0.3;
+        // Additional: conflict penalty (GovernanceCandidate only)
+        if multiplier > 0.0 && policy.conflict_check_enabled && self.conflict_state == ConflictState::Pending {
+            return multiplier * 0.3;
         }
 
         multiplier
