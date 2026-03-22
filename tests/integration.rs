@@ -16,7 +16,8 @@ use knowwhere_server::storage::MemoryStore;
 
 fn test_state() -> routes::AppState {
     let store = MemoryStore::new();
-    let dream = DreamMode::new(store.clone());
+    let dream_store = store.clone();
+    let dream = DreamMode::new(dream_store);
     let embedding: Arc<dyn knowwhere_server::embedding::EmbeddingProvider> =
         create_provider(
             ProviderKind::OpenAI,
@@ -24,7 +25,8 @@ fn test_state() -> routes::AppState {
                 .expect("OPENAI_API_KEY must be set in environment")),
         );
     routes::AppState {
-        store,
+        store: Arc::new(store),
+        dream_store,
         dream,
         embedding,
         governance_policy: GovernancePolicy::default_policy(),

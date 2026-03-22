@@ -101,4 +101,10 @@ pub trait StorageBackend: Send + Sync {
 
     /// Total count of stored nodes.
     async fn count(&self) -> usize;
+
+    // --- Maintenance ---
+
+    /// Remove nodes that have placeholder/dummy vectors (vector is all zeros or near-zero).
+    /// Returns the number of nodes removed.
+    async fn purge_dummy_vectors(&self) -> usize;
 }

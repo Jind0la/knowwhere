@@ -172,6 +172,10 @@ impl StorageBackend for MemoryStore {
     async fn count(&self) -> usize {
         self.count().await
     }
+
+    async fn purge_dummy_vectors(&self) -> usize {
+        self.purge_dummy_vectors().await
+    }
 }
 
 impl std::fmt::Debug for MemoryStore {

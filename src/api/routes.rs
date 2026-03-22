@@ -135,11 +135,14 @@ fn clean_for_embedding(text: &str) -> String {
     }
     out
 }
-use crate::storage::MemoryStore;
+use crate::storage::{MemoryStore, StorageBackend};
 
 #[derive(Clone)]
 pub struct AppState {
-    pub store: MemoryStore,
+    /// Primary storage backend (trait object for flexibility).
+    pub store: Arc<dyn StorageBackend>,
+    /// DreamMode needs a concrete MemoryStore for internal operations.
+    pub dream_store: MemoryStore,
     pub dream: DreamMode,
     pub embedding: Arc<dyn EmbeddingProvider>,
     /// Active governance policy for Stage 2 retrieval validation.

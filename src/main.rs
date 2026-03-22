@@ -22,6 +22,7 @@ use knowwhere_server::connectors::frigate::FrigateConnector;
 use knowwhere_server::connectors::store_external_event;
 use knowwhere_server::embedding::{create_provider, EmbeddingProvider, ProviderKind};
 use knowwhere_server::memory::events::InMemoryEventStore;
+use knowwhere_server::storage::StorageBackend;
 use knowwhere_server::memory::{DreamMode, GovernancePolicy};
 use knowwhere_server::scheduler::{AuditScheduler, ConsolidationScheduler, SchedulerConfig};
 use knowwhere_server::storage::MemoryStore;
@@ -65,7 +66,10 @@ async fn run() -> anyhow::Result<()> {
             tracing::warn!("persistence init failed ({e}), using in-memory only");
             MemoryStore::new()
         });
-    let dream = DreamMode::new(store.clone());
+    // Concrete store for VLM worker, schedulers, and DreamMode.
+    let dream_store = store.clone();
+    let store_for_api: Arc<dyn StorageBackend> = Arc::new(store);
+    let dream = DreamMode::new(dream_store);
 
     let embedding: Arc<dyn EmbeddingProvider> =
         if let Ok(key) = std::env::var("GROK_API_KEY") {
@@ -174,7 +178,8 @@ async fn run() -> anyhow::Result<()> {
     }
 
     let state = routes::AppState {
-        store,
+        store: store_for_api,
+        dream_store,
         dream,
         embedding,
         governance_policy: GovernancePolicy::default_policy(),
