@@ -22,6 +22,8 @@ use knowwhere_server::connectors::frigate::FrigateConnector;
 use knowwhere_server::connectors::store_external_event;
 use knowwhere_server::embedding::{create_provider, EmbeddingProvider, ProviderKind};
 use knowwhere_server::memory::events::InMemoryEventStore;
+use std::sync::Arc;
+
 use knowwhere_server::storage::StorageBackend;
 use knowwhere_server::memory::{DreamMode, GovernancePolicy};
 use knowwhere_server::scheduler::{AuditScheduler, ConsolidationScheduler, SchedulerConfig};
@@ -154,6 +156,7 @@ async fn run() -> anyhow::Result<()> {
 
     // -- Dream Mode Background Schedulers --
     let scheduler_config = SchedulerConfig::from_env();
+    let consolidation_scheduler: Option<Arc<ConsolidationScheduler>>;
     if scheduler_config.is_enabled() {
         // ConsolidationScheduler: periodically enqueues L2 nodes for VLM summarization
         let consolidation = ConsolidationScheduler::new(
@@ -161,7 +164,8 @@ async fn run() -> anyhow::Result<()> {
             vlm_worker.clone(),
             scheduler_config.clone(),
         );
-        let _ = consolidation.spawn();
+        let (scheduler, _) = consolidation.spawn();
+        consolidation_scheduler = Some(scheduler);
 
         // AuditScheduler: periodically applies energy decay, deduplication, conflict detection
         #[cfg(feature = "postgres-storage")]
@@ -172,6 +176,7 @@ async fn run() -> anyhow::Result<()> {
 
         tracing::info!("Dream Mode scheduler started");
     } else {
+        consolidation_scheduler = None;
         tracing::info!("Dream Mode scheduler disabled (DREAM_ENABLED=false)");
     }
 
@@ -188,6 +193,7 @@ async fn run() -> anyhow::Result<()> {
         #[cfg(feature = "postgres-storage")]
         trajectory_pool,
         vlm_worker,
+        consolidation: consolidation_scheduler,
     };
 
     let api_key = ApiKey(std::env::var("KNOWWHERE_API_KEY").ok());

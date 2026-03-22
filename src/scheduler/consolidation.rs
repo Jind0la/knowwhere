@@ -6,6 +6,7 @@
 //! Consolidation targets memories that are old enough and unprocessed,
 //! grouping them into batches and enqueuing VLM jobs to create L1/L0 summaries.
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -28,6 +29,8 @@ pub struct ConsolidationScheduler {
     last_run: Arc<RwLock<Option<Instant>>>,
     /// How many nodes were enqueued in the last run.
     last_enqueued: Arc<RwLock<usize>>,
+    /// How many consolidation cycles have been completed.
+    cycle_count: Arc<AtomicU64>,
 }
 
 impl ConsolidationScheduler {
@@ -43,34 +46,47 @@ impl ConsolidationScheduler {
             config,
             last_run: Arc::new(RwLock::new(None)),
             last_enqueued: Arc::new(RwLock::new(0)),
+            cycle_count: Arc::new(AtomicU64::new(0)),
         }
+    }
+
+    /// Returns the number of completed consolidation cycles.
+    pub fn cycle_count(&self) -> u64 {
+        self.cycle_count.load(Ordering::Relaxed)
     }
 
     /// Start the scheduler in the background. Returns the JoinHandle.
     ///
     /// Runs on the tokio runtime using `tokio::spawn`.
     /// Calls `VlmWorkerHandle::enqueue()` for each batch of consolidation candidates.
-    pub fn spawn(self) -> tokio::task::JoinHandle<()> {
-        let interval_ms = self.config.consolidation_interval_ms;
+    /// Returns an `Arc` to the scheduler so the API can query its state.
+    pub fn spawn(self) -> (Arc<Self>, tokio::task::JoinHandle<()>) {
+        let scheduler = Arc::new(self);
+        let scheduler_for_task = scheduler.clone();
+        let interval_ms = scheduler.config.consolidation_interval_ms;
 
-        tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
             let dur = Duration::from_millis(interval_ms);
             let mut ticker = interval(dur);
 
             tracing::info!(
                 interval_ms,
-                batch_size = self.config.consolidation_batch_size,
+                batch_size = scheduler_for_task.config.consolidation_batch_size,
                 "ConsolidationScheduler started"
             );
 
             // Run immediately on startup, then every interval
-            self.run().await;
+            scheduler_for_task.run().await;
+            scheduler_for_task.cycle_count.fetch_add(1, Ordering::Relaxed);
 
             loop {
                 ticker.tick().await;
-                self.run().await;
+                scheduler_for_task.run().await;
+                scheduler_for_task.cycle_count.fetch_add(1, Ordering::Relaxed);
             }
-        })
+        });
+
+        (scheduler, handle)
     }
 
     /// Run one consolidation pass.

@@ -155,6 +155,8 @@ pub struct AppState {
     pub trajectory_pool: Option<std::sync::Arc<sqlx::PgPool>>,
     /// VLM background worker handle for async summarization.
     pub vlm_worker: Option<crate::vlm::VlmWorkerHandle>,
+    /// Consolidation scheduler for querying cycle_count in /dream/status.
+    pub consolidation: Option<std::sync::Arc<crate::scheduler::ConsolidationScheduler>>,
 }
 
 impl std::fmt::Debug for AppState {
@@ -795,7 +797,11 @@ pub async fn reembed_all(
     )
 )]
 pub async fn dream_status(State(state): State<AppState>) -> Json<DreamStatus> {
-    Json(state.dream.status().await)
+    let mut status = state.dream.status().await;
+    if let Some(ref scheduler) = state.consolidation {
+        status.cycle_count = scheduler.cycle_count();
+    }
+    Json(status)
 }
 
 // -- Governance Policy --
