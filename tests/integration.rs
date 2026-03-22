@@ -34,6 +34,7 @@ fn test_state() -> routes::AppState {
         #[cfg(feature = "postgres-storage")]
         trajectory_pool: None,
         vlm_worker: None,
+        consolidation: None,
     }
 }
 
