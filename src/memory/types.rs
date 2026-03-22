@@ -2,8 +2,6 @@
 //!
 //! Implements the typed memory objects from the Source of Truth document.
 //! Each type has distinct consolidation logic and epistemological properties.
-
-#![allow(clippy::should_implement_trait)]
 //!
 //! Reference: KnowWhere Source of Truth (2026-03-14), Section: "Typed Memory Objects"
 
