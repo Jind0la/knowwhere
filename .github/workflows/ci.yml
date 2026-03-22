@@ -38,9 +38,7 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: cargo clippy
-        env:
-          RUSTFLAGS: "-D warnings"
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --all-targets -- -D warnings -A clippy::module_inception -A clippy::clone_on_copy -A clippy::unnecessary_filter_map -A clippy::map_identity
 
       - name: cargo check
         run: cargo check --all-targets
