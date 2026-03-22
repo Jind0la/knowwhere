@@ -21,6 +21,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: "1.85"
+          components: clippy
 
       - name: Cache cargo registry & build
         uses: actions/cache@v4
@@ -32,6 +33,14 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
+      - name: cargo fmt check
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy
+        env:
+          RUSTFLAGS: "-D warnings"
+        run: cargo clippy --all-targets -- -D warnings
+
       - name: cargo check
         run: cargo check --all-targets
 
@@ -40,6 +49,9 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           RUST_LOG: info
         run: cargo test --all-targets
+
+      - name: cargo audit
+        run: cargo audit
 
   docker:
     name: Docker Build
