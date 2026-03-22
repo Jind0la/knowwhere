@@ -160,14 +160,16 @@
 
 ---
 
-### [LOW-003] CI erweitern: Clippy, Audit, Fmt
+### [LOW-003] CI erweitern: Clippy, Audit, Fmt ✅
 
-**Status:** 🟢 Offen
+**Erledigt.** CI jetzt mit drei zusätzlichen Steps.
 
-**Problem:** CI macht nur check + test. Fehlt Linting, Security-Audit, Format-Check.
+**Was hinzugefügt:**
+- `cargo fmt --all -- --check`: Format-Prüfung
+- `cargo clippy --all-targets -D warnings`: Linting, dead code, style (treats warnings as errors)
+- `cargo audit`: Security-Vulnerability-Check in Dependencies
 
-**Aufwand:** ~1 Stunde  
-**Dateien:** `.github/workflows/ci.yml`
+**Commit:** `06be859`
 
 ---
 
@@ -194,7 +196,7 @@
 | MED-008 StorageBackend Intern | ✅ | ~4h | eceb6e2, b4244db, 4cfa5b7 |
 | LOW-001 Arena | 🟢 Offen | ~3 Tage | — |
 | LOW-002 Batch Embed | 🟢 Offen | ~4h | — |
-| LOW-003 CI erweitern | 🟢 Offen | ~1h | — |
+| LOW-003 CI erweitern | ✅ | ~1h | 06be859 |
 | LOW-004 RRF | ✅ | — | rrf_fuse() |
 
 ---
