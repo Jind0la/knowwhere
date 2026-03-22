@@ -73,6 +73,9 @@ struct PersistedState {
     uuid_to_key: HashMap<Uuid, u64>,
     key_to_uuid: HashMap<u64, Uuid>,
     next_key: u64,
+    /// Persisted BM25 corpus — rebuilt on startup if missing.
+    /// Fixes MED-003: BM25 index for external nodes survives restart.
+    bm25_corpus: Vec<(Uuid, String)>,
 }
 
 #[derive(Clone)]
@@ -282,15 +285,24 @@ impl MemoryStore {
             }
         }
 
-        let mut corpus = Vec::new();
-        for (id, node) in &state.nodes {
-            let text = node.content.as_deref()
-                .or(node.original_pointer.as_deref())
-                .unwrap_or("");
-            if !text.is_empty() {
-                corpus.push((*id, text.to_string()));
+        // Load persisted BM25 corpus directly — survives restart for external nodes.
+        // Backward compat: if bm25_corpus is empty (old state file), rebuild from nodes.
+        let corpus = if state.bm25_corpus.is_empty() {
+            let mut rebuilt = Vec::new();
+            for (id, node) in &state.nodes {
+                let text = node.content.as_deref()
+                    .or(node.original_pointer.as_deref())
+                    .unwrap_or("");
+                if !text.is_empty() {
+                    rebuilt.push((*id, text.to_string()));
+                }
             }
-        }
+            tracing::info!(count = rebuilt.len(), "BM25 corpus rebuilt from nodes (empty persisted state)");
+            rebuilt
+        } else {
+            tracing::info!(count = state.bm25_corpus.len(), "BM25 corpus loaded from persisted state");
+            state.bm25_corpus
+        };
         self.bm25_corpus = Arc::new(RwLock::new(corpus));
 
         self.nodes = Arc::new(RwLock::new(state.nodes));
@@ -311,6 +323,7 @@ impl MemoryStore {
             uuid_to_key: self.uuid_to_key.read().await.clone(),
             key_to_uuid: self.key_to_uuid.read().await.clone(),
             next_key: self.next_key.load(AtomicOrdering::Relaxed),
+            bm25_corpus: self.bm25_corpus.read().await.clone(),
         };
 
         let tmp_path = dir.join("state.json.tmp");
