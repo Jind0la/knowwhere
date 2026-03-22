@@ -91,6 +91,19 @@
 
 ---
 
+### [MED-006] StorageBackend Trait für interne Komponenten
+
+**Status:** 🟡 Offen
+
+**Problem:** VLM Worker, ConsolidationScheduler, AuditScheduler und FrigateConnector nutzen konkretes `MemoryStore` statt `Arc<dyn StorageBackend>`. Das verhindert volle Backend-Flexibilität.
+
+**Aufwand:** ~3 Stunden
+**Dateien:** `src/main.rs`, `src/vlm/mod.rs`, `src/memory/dream/`
+
+**Hinweis:** Niedrig priorisiert — aktueller Stand (konkretes MemoryStore intern, Trait für API) ist funktional ausreichend. Erst relevant wenn echte Multi-Backend-Unterstützung gebraucht wird.
+
+---
+
 ### [MED-006] Test-Fixture Fix ✅
 
 **Erledigt.** AppState hatte fehlende Felder (`events`, `governance_policy`).
@@ -162,8 +175,7 @@
 | MED-003 BM25 Persistenz | 🟡 Offen | ~2h | — |
 | MED-004 Vektor Conflict | 🟡 Offen | ~4h | — |
 | MED-005 Gov. Dedup | 🟡 Offen | ~1h | — |
-| MED-006 Test-Fixture | ✅ Erledigt | 1h | da43722 |
-| MED-007 OpenAI Tests | ✅ Erledigt | 30min | 8d38b55 |
+| MED-006 StorageBackend Intern | 🟡 Offen | ~3h | — |
 | LOW-001 Arena | 🟢 Offen | ~3 Tage | — |
 | LOW-002 Batch Embed | 🟢 Offen | ~4h | — |
 | LOW-003 CI erweitern | 🟢 Offen | ~1h | — |
