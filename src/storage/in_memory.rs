@@ -13,7 +13,7 @@ use usearch::{new_index, Index, IndexOptions, MetricKind, ScalarKind};
 use uuid::Uuid;
 
 use crate::memory::FractalNode;
-use crate::storage::{HybridQuery, ScoredNode, StorageBackend};
+use crate::storage::{HybridQuery, ScoredNode, StorageBackend, UpdateOperation};
 
 const USEARCH_THRESHOLD: usize = 50;
 const SAVE_DEBOUNCE_SECS: u64 = 5;
@@ -106,6 +106,11 @@ impl StorageBackend for MemoryStore {
 
     async fn update_vector(&self, id: &Uuid, new_vector: Vec<f32>) -> anyhow::Result<bool> {
         self.update_vector(id, new_vector).await
+    }
+
+    async fn update(&self, id: &Uuid, op: UpdateOperation) -> anyhow::Result<()> {
+        let op = op.clone();
+        self.update_node(id, |n| op.apply(n)).await
     }
 
     async fn hybrid_retrieve(&self, query: &HybridQuery) -> anyhow::Result<Vec<ScoredNode>> {

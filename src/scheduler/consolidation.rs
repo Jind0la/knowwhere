@@ -16,7 +16,7 @@ use uuid::Uuid;
 
 use crate::memory::types::{ContextTier, MemoryStatus};
 use crate::scheduler::SchedulerConfig;
-use crate::storage::MemoryStore;
+use crate::storage::{MemoryStore, UpdateOperation};
 use crate::vlm::{SummaryContext, VlmJob, VlmWorkerHandle};
 
 /// Consolidation Scheduler state.
@@ -121,13 +121,7 @@ impl ConsolidationScheduler {
             for node_id in &node_ids {
                 let _ = self
                     .store
-                    .update_node(node_id, |n| {
-                        // Set parent_tier_id to itself as a "pending" marker
-                        // (will be replaced with real summary ID when VLM completes)
-                        if n.parent_tier_id.is_none() {
-                            n.parent_tier_id = Some(*node_id);
-                        }
-                    })
+                    .update(node_id, UpdateOperation::SetParentTierId(*node_id))
                     .await;
             }
         }

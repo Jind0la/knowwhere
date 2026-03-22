@@ -31,7 +31,7 @@ use crate::embedding::EmbeddingProvider;
 use crate::memory::fractal_node::{FractalNode, NodeType};
 use crate::memory::types::{ConflictState, ContextTier, MemorySource, MemoryStatus, Sensitivity};
 use crate::memory::MemoryType;
-use crate::storage::backend::{HybridQuery, ScoredNode, StorageBackend};
+use crate::storage::backend::{HybridQuery, ScoredNode, StorageBackend, UpdateOperation};
 
 /// PostgreSQL-backed storage layer.
 /// Wraps the existing in-memory USearch index with persistent PostgreSQL storage.
@@ -912,6 +912,74 @@ impl StorageBackend for PostgresStore {
 
     async fn purge_dummy_vectors(&self) -> usize {
         self.purge_dummy_vectors().await.unwrap_or(0)
+    }
+
+    async fn update(&self, id: &Uuid, op: UpdateOperation) -> anyhow::Result<()> {
+        use crate::storage::UpdateOperation;
+        match op {
+            UpdateOperation::MultiplyWeight(factor) => {
+                let query = sqlx::query_scalar::<_, f64>(
+                    "UPDATE memories SET weight = weight * $1 WHERE id = $2 RETURNING id",
+                )
+                .bind(factor)
+                .bind(*id);
+                query.fetch_one(&self.pool).await?;
+            }
+            UpdateOperation::SetWeight(w) => {
+                let query = sqlx::query(
+                    "UPDATE memories SET weight = $1 WHERE id = $2",
+                )
+                .bind(w)
+                .bind(*id);
+                query.execute(&self.pool).await?;
+            }
+            UpdateOperation::SetParentTierId(parent_id) => {
+                let query = sqlx::query(
+                    "UPDATE memories SET parent_tier_id = $1 WHERE id = $2 AND parent_tier_id IS NULL",
+                )
+                .bind(parent_id)
+                .bind(*id);
+                query.execute(&self.pool).await?;
+            }
+            UpdateOperation::SetStatus(status) => {
+                let status_str = match status {
+                    crate::memory::types::MemoryStatus::Active => "active",
+                    crate::memory::types::MemoryStatus::Stale => "stale",
+                    crate::memory::types::MemoryStatus::Superseded => "superseded",
+                    crate::memory::types::MemoryStatus::Pending => "pending",
+                };
+                let query = sqlx::query(
+                    "UPDATE memories SET status = $1 WHERE id = $2",
+                )
+                .bind(status_str)
+                .bind(*id);
+                query.execute(&self.pool).await?;
+            }
+            UpdateOperation::SetEnergy(e) => {
+                let query = sqlx::query(
+                    "UPDATE memories SET energy = $1 WHERE id = $2",
+                )
+                .bind(e)
+                .bind(*id);
+                query.execute(&self.pool).await?;
+            }
+            UpdateOperation::ApplyAudit { weight, status } => {
+                let status_str = status.map(|s| match s {
+                    crate::memory::types::MemoryStatus::Active => "active",
+                    crate::memory::types::MemoryStatus::Stale => "stale",
+                    crate::memory::types::MemoryStatus::Superseded => "superseded",
+                    crate::memory::types::MemoryStatus::Pending => "pending",
+                });
+                let query = sqlx::query(
+                    "UPDATE memories SET weight = $1, status = COALESCE($2, status) WHERE id = $3",
+                )
+                .bind(weight)
+                .bind(status_str)
+                .bind(*id);
+                query.execute(&self.pool).await?;
+            }
+        }
+        Ok(())
     }
 }
 

@@ -49,7 +49,7 @@ use uuid::Uuid;
 
 use crate::memory::fractal_node::cosine_similarity;
 use crate::memory::FractalNode;
-use crate::storage::MemoryStore;
+use crate::storage::{MemoryStore, UpdateOperation};
 
 const SIMILARITY_THRESHOLD: f32 = 0.85;
 const BOOST_FACTOR: f64 = 1.1;
@@ -118,9 +118,7 @@ impl DreamMode {
             };
             if self
                 .store
-                .update_node(&node.id, |n| {
-                    n.weight *= factor;
-                })
+                .update(&node.id, UpdateOperation::MultiplyWeight(factor))
                 .await
                 .is_ok()
             {

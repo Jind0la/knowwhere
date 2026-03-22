@@ -5,6 +5,7 @@
 use std::sync::Arc;
 use uuid::Uuid;
 use crate::memory::FractalNode;
+use crate::memory::types::MemoryStatus;
 
 /// Query parameters for hybrid retrieval (vector + BM25 combined search).
 #[derive(Debug, Clone)]
@@ -47,6 +48,57 @@ impl HybridQuery {
             query_vector: Some(vector),
             top_k,
             max_depth,
+        }
+    }
+}
+
+/// Operations for updating a node — used by DreamMode, ConsolidationScheduler,
+/// and AuditScheduler. This enum-based approach is dyn Trait-compatible
+/// (unlike closure-based update_node which doesn't work with Arc<dyn StorageBackend>).
+#[derive(Debug, Clone)]
+pub enum UpdateOperation {
+    /// Multiply the node's weight by a factor (e.g., weight *= 0.95).
+    MultiplyWeight(f64),
+    /// Set the weight directly (used by AuditScheduler).
+    SetWeight(f64),
+    /// Set parent_tier_id if not already set (used by ConsolidationScheduler as pending marker).
+    SetParentTierId(Uuid),
+    /// Set the node status (used by AuditScheduler).
+    SetStatus(MemoryStatus),
+    /// Set the energy value directly (used by AuditScheduler).
+    SetEnergy(f64),
+    /// Composite operation: set weight + optionally status (used by AuditScheduler).
+    /// This must be atomic — both changes happen together.
+    ApplyAudit { weight: f64, status: Option<MemoryStatus> },
+}
+
+impl UpdateOperation {
+    /// Apply this operation to a FractalNode in-place.
+    pub fn apply(&self, node: &mut FractalNode) {
+        match self {
+            UpdateOperation::MultiplyWeight(factor) => {
+                node.weight *= factor;
+            }
+            UpdateOperation::SetWeight(w) => {
+                node.weight = *w;
+            }
+            UpdateOperation::SetParentTierId(id) => {
+                if node.parent_tier_id.is_none() {
+                    node.parent_tier_id = Some(*id);
+                }
+            }
+            UpdateOperation::SetStatus(status) => {
+                node.status = status.clone();
+            }
+            UpdateOperation::SetEnergy(e) => {
+                node.energy = *e;
+            }
+            UpdateOperation::ApplyAudit { weight, status } => {
+                node.weight = *weight;
+                if let Some(s) = status {
+                    node.status = s.clone();
+                }
+            }
         }
     }
 }
@@ -95,6 +147,9 @@ pub trait StorageBackend: Send + Sync {
 
     /// Update a node's vector embedding.
     async fn update_vector(&self, id: &Uuid, new_vector: Vec<f32>) -> anyhow::Result<bool>;
+
+    /// Apply an UpdateOperation to a node (dyn Trait-compatible alternative to closure-based updates).
+    async fn update(&self, id: &Uuid, op: UpdateOperation) -> anyhow::Result<()>;
 
     // --- Query ---
 

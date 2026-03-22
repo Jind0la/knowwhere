@@ -21,7 +21,7 @@ use sqlx::PgPool;
 
 use crate::memory::types::MemoryStatus;
 use crate::scheduler::SchedulerConfig;
-use crate::storage::MemoryStore;
+use crate::storage::{MemoryStore, UpdateOperation};
 
 /// Audit Scheduler state.
 ///
@@ -205,11 +205,9 @@ impl AuditScheduler {
             if new_weight < node.weight {
                 let _ = self
                     .store
-                    .update_node(&node.id, |n| {
-                        n.weight = new_weight;
-                        if let Some(s) = new_status {
-                            n.status = s;
-                        }
+                    .update(&node.id, UpdateOperation::ApplyAudit {
+                        weight: new_weight,
+                        status: new_status,
                     })
                     .await;
                 updated += 1;
