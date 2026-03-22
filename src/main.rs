@@ -66,10 +66,10 @@ async fn run() -> anyhow::Result<()> {
             tracing::warn!("persistence init failed ({e}), using in-memory only");
             MemoryStore::new()
         });
-    // Concrete store for VLM worker, schedulers, and DreamMode.
+    // Concrete store for VLM worker, schedulers, DreamMode, and FrigateConnector.
     let dream_store = store.clone();
-    let store_for_api: Arc<dyn StorageBackend> = Arc::new(store);
-    let dream = DreamMode::new(dream_store.clone());
+    let connector_store = store.clone();
+    let shutdown_store = store.clone();
 
     let embedding: Arc<dyn EmbeddingProvider> =
         if let Ok(key) = std::env::var("GROK_API_KEY") {
@@ -90,7 +90,6 @@ async fn run() -> anyhow::Result<()> {
     tracing::info!("dream mode started (micro-dream every 1h)");
 
     if let Ok(frigate_url) = std::env::var("FRIGATE_URL") {
-        let connector_store = store.clone();
         let connector_embedding = embedding.clone();
         tracing::info!(url = %frigate_url, "connector manager started (frigate poller every 30s)");
         tokio::spawn(async move {
@@ -118,8 +117,6 @@ async fn run() -> anyhow::Result<()> {
     } else {
         tracing::info!("frigate connector disabled (set FRIGATE_URL to enable)");
     }
-
-    let shutdown_store = store.clone();
 
     #[cfg(feature = "postgres-storage")]
     let trajectory_pool: Option<std::sync::Arc<sqlx::PgPool>> =
@@ -176,6 +173,9 @@ async fn run() -> anyhow::Result<()> {
     } else {
         tracing::info!("Dream Mode scheduler disabled (DREAM_ENABLED=false)");
     }
+
+    // Arc<dyn StorageBackend> for API layer — wrap at the end after all concrete clones taken
+    let store_for_api: Arc<dyn StorageBackend> = Arc::new(store);
 
     let state = routes::AppState {
         store: store_for_api,
