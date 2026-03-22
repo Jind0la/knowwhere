@@ -83,19 +83,21 @@ pub struct FractalNode {
 pub struct TieredCompactionWorker {
     pool: PgPool,
     embedding: Arc<dyn EmbeddingProvider>,
+    vlm_handle: Option<VlmWorkerHandle>, // VLM-enqueueing, nicht direkt-call
 }
 
 impl TieredCompactionWorker {
-    /// Kompaktiert Memories wenn Session zu groß wird
-    pub async fn compact_session(&self, session_id: Uuid) -> Result<()> {
-        // 1. Sammle alle L2 (raw) Memories der Session
-        // 2. Generiere L1 (overview) via VLM
-        // 3. Generiere L0 (summary) via VLM
-        // 4. Speichere mit parent_id Verknüpfung
-        // 5. Markiere originale L2 als "compacted"
+    /// Kompaktiert Memories via VLM (enqueued, fire-and-forget)
+    pub async fn compact_memory(&self, memory_id: Uuid, target_tier: Option<ContextTier>) -> Result<Uuid> {
+        // 1. Bestimme target tier (Overview or Summary)
+        // 2. Enqueue VlmJob an VlmWorkerHandle
+        // 3. VlmWorker: process_job() → VLM call → store.insert() + store.update()
+        // 4. Fallback: truncation wenn VLM unavailable
     }
 }
 ```
+> **Hinweis:** Plan vs. Implementation — TieredCompactionWorker nutzt VlmWorkerHandle (async enqueue),
+> nicht direkten LLM-Client Call. Siehe DREAM-MODE-SCHEDULER.md + Commit `279265c`.
 
 4. **API-Änderungen:**
 - Neuer Endpoint: `POST /consolidate/{session_id}` — triggert Tiered Compaction

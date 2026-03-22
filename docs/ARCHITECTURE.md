@@ -60,7 +60,8 @@ knowwhere/
 │   ├── memory/
 │   │   ├── mod.rs
 │   │   ├── fractal_node.rs   # FractalNode, NodeType, Relation, zoom_retrieve
-│   │   └── dream.rs          # DreamMode (micro-dream clustering)
+│   │   ├── tiered.rs        # TieredCompactionWorker (VLM-based, async)
+│   │   └── dream.rs         # DreamMode (micro-dream clustering)
 │   ├── embedding/
 │   │   ├── mod.rs            # ProviderKind, create_provider
 │   │   └── provider.rs       # Grok, OpenAI, LocalOllama + task prefixes
@@ -72,6 +73,8 @@ knowwhere/
 │   ├── connectors/
 │   │   ├── mod.rs
 │   │   └── frigate.rs        # Frigate NVR poller (pointer-first)
+│   ├── vlm/
+│   │   └── mod.rs           # VlmWorker, VlmWorkerHandle, VlmClient, SummaryContext
 │   └── multimodal.rs         # MultimodalData (image/audio/sensor)
 ├── frontend/                 # Dashboard (vanilla JS + Tailwind)
 ├── data/                     # Persisted state (state.json)

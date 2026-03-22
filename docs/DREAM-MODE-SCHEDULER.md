@@ -1,8 +1,11 @@
-# Dream Mode Scheduler — Implementation Plan
+# Dream Mode Scheduler
+
+> **Status:** ✅ Implemented  
+> **Commits:** `a210e76` (VLM Worker), `279265c` (TieredCompactionWorker VLM integration), `7bf6f01` (truncation fallback)
 
 ## Context
 
-KnowWhere has a VLM Worker (Commit `a210e76`) that handles summarization asynchronously.
+KnowWhere has a VLM Worker that handles summarization asynchronously.
 Dream Mode consists of two processes (Consolidation + Audit) that need to run periodically.
 Both currently have no automated trigger — they require manual HTTP calls.
 
