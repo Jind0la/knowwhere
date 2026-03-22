@@ -35,6 +35,8 @@ jobs:
         run: cargo check --all-targets
 
       - name: cargo test
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: cargo test --all-targets
 
   docker:
