@@ -70,6 +70,7 @@ async fn run() -> anyhow::Result<()> {
     let dream_store = store.clone();
     let connector_store = store.clone();
     let shutdown_store = store.clone();
+    let dream = DreamMode::new(dream_store.clone());
 
     let embedding: Arc<dyn EmbeddingProvider> =
         if let Ok(key) = std::env::var("GROK_API_KEY") {
