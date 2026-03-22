@@ -20,6 +20,7 @@
 //! ```
 
 use anyhow::Result;
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::postgres::{PgPool, PgPoolOptions};
@@ -28,7 +29,9 @@ use uuid::Uuid;
 
 use crate::embedding::EmbeddingProvider;
 use crate::memory::fractal_node::{FractalNode, NodeType};
+use crate::memory::types::{ConflictState, ContextTier, MemorySource, MemoryStatus, Sensitivity};
 use crate::memory::MemoryType;
+use crate::storage::backend::{HybridQuery, ScoredNode, StorageBackend};
 
 /// PostgreSQL-backed storage layer.
 /// Wraps the existing in-memory USearch index with persistent PostgreSQL storage.
@@ -190,7 +193,8 @@ impl PostgresStore {
                    provenance, parent_id, depth,
                    access_count, last_accessed,
                    created_at, updated_at, deleted_at, metadata,
-                   entities, tags
+                   entities, tags,
+                   embedding
             FROM memories
             WHERE id = $1 AND status != 'deleted'
             "#,
@@ -278,6 +282,72 @@ impl PostgresStore {
         Ok(())
     }
 
+    /// Update a memory's embedding vector.
+    pub async fn update_vector(&self, id: Uuid, new_embedding: Vec<f32>) -> Result<bool> {
+        let result = sqlx::query!(
+            r#"
+            UPDATE memories
+            SET embedding = $2, updated_at = NOW()
+            WHERE id = $1 AND status != 'deleted'
+            "#,
+            id,
+            new_embedding as _
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(result.rows_affected() > 0)
+    }
+
+    /// Full-text search using PostgreSQL ts_rank (BM25-like approximation).
+    /// Returns (memory_id, rank_score) pairs ordered by relevance.
+    pub async fn search_bm25(&self, query_text: &str, top_k: i32) -> Result<Vec<(Uuid, f32)>> {
+        if query_text.trim().is_empty() {
+            return Ok(vec![]);
+        }
+
+        #[derive(Debug, sqlx::FromRow)]
+        struct Bm25Row {
+            id: Uuid,
+            rank: f64,
+        }
+
+        let rows: Vec<Bm25Row> = sqlx::query_as!(
+            Bm25Row,
+            r#"
+            SELECT id, ts_rank(to_tsvector('english', content), plainto_tsquery('english', $1)) AS rank
+            FROM memories
+            WHERE status = 'active'
+              AND to_tsvector('english', content) @@ plainto_tsquery('english', $1)
+            ORDER BY rank DESC
+            LIMIT $2
+            "#,
+            query_text,
+            top_k
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(|r| (r.id, r.rank as f32)).collect())
+    }
+
+    /// Purge memories with null or all-zero embedding vectors.
+    /// Returns the number of purged memories.
+    pub async fn purge_dummy_vectors(&self) -> Result<usize> {
+        let result = sqlx::query(
+            r#"
+            DELETE FROM memories
+            WHERE status = 'active'
+              AND (embedding IS NULL
+                   OR embedding = '{}'::vector)
+            "#
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(result.rows_affected() as usize)
+    }
+
     /// Vector similarity search.
     pub async fn vector_search(
         &self,
@@ -297,7 +367,8 @@ impl PostgresStore {
                            source, source_id, provenance,
                            access_count, last_accessed,
                            created_at, updated_at,
-                           (1 - (embedding <=> $1::vector))::float AS similarity
+                           (1 - (embedding <=> $1::vector))::float AS similarity,
+                           embedding
                     FROM memories
                     WHERE status = 'active'
                       AND embedding IS NOT NULL
@@ -323,7 +394,8 @@ impl PostgresStore {
                            source, source_id, provenance,
                            access_count, last_accessed,
                            created_at, updated_at,
-                           (1 - (embedding <=> $1::vector))::float AS similarity
+                           (1 - (embedding <=> $1::vector))::float AS similarity,
+                           embedding
                     FROM memories
                     WHERE status = 'active'
                       AND embedding IS NOT NULL
@@ -347,7 +419,8 @@ impl PostgresStore {
                        source, source_id, provenance,
                        access_count, last_accessed,
                        created_at, updated_at,
-                       (1 - (embedding <=> $1::vector))::float AS similarity
+                       (1 - (embedding <=> $1::vector))::float AS similarity,
+                       embedding
                 FROM memories
                 WHERE status = 'active'
                   AND embedding IS NOT NULL
@@ -375,13 +448,37 @@ impl PostgresStore {
                    provenance, parent_id, depth,
                    access_count, last_accessed,
                    created_at, updated_at, deleted_at, metadata,
-                   entities, tags
+                   entities, tags,
+                   embedding
             FROM memories
             WHERE status = 'active'
             ORDER BY created_at DESC
             LIMIT $1
             "#,
             limit
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows)
+    }
+
+    /// List all active memories (for list_all).
+    pub async fn list_memories(&self) -> Result<Vec<MemoryRow>> {
+        let rows = sqlx::query_as!(
+            MemoryRow,
+            r#"
+            SELECT id, memory_type, content, content_preview,
+                   importance, confidence, sensitivity, status,
+                   superseded_by, conflict_state, source, source_id,
+                   provenance, parent_id, depth,
+                   access_count, last_accessed,
+                   created_at, updated_at, deleted_at, metadata,
+                   entities, tags,
+                   embedding
+            FROM memories
+            WHERE status = 'active'
+            ORDER BY created_at DESC
+            "#
         )
         .fetch_all(&self.pool)
         .await?;
@@ -643,6 +740,312 @@ impl PostgresStore {
 }
 
 // =============================================================================
+// StorageBackend implementation
+// =============================================================================
+
+#[async_trait]
+impl StorageBackend for PostgresStore {
+    // --- CRUD ---
+
+    async fn insert(&self, node: FractalNode) -> anyhow::Result<Uuid> {
+        let content = node.content.clone().unwrap_or_default();
+        let embedding = node.vector.clone();
+        let memory_type = node.memory_type;
+        let provenance = node.provenance.clone();
+        let source = match node.source {
+            MemorySource::Conversation => "conversation",
+            MemorySource::Document => "document",
+            MemorySource::Import => "import",
+            MemorySource::Manual => "manual",
+            MemorySource::Consolidation => "consolidation",
+        };
+        let source_id = None;
+        let entities: Vec<String> = vec![];
+        let tags = vec![];
+        let importance = node.importance;
+        let confidence = node.confidence;
+        let sensitivity = match node.sensitivity {
+            Sensitivity::Normal => "normal",
+            Sensitivity::Low => "low",
+            Sensitivity::High => "high",
+            Sensitivity::Restricted => "restricted",
+        };
+        let metadata = node.metadata.clone();
+
+        self.store_session(
+            content,
+            embedding,
+            memory_type,
+            provenance,
+            source,
+            source_id,
+            entities,
+            tags,
+            importance,
+            confidence,
+            sensitivity,
+            metadata,
+        )
+        .await
+    }
+
+    async fn get(&self, id: &Uuid) -> anyhow::Result<Option<FractalNode>> {
+        let row = self.get_memory(*id).await?;
+        Ok(row.map(|r| memory_row_to_fractal_node(r)))
+    }
+
+    async fn delete(&self, id: &Uuid) -> anyhow::Result<bool> {
+        self.delete(*id).await?;
+        Ok(true)
+    }
+
+    async fn update_vector(&self, id: &Uuid, new_vector: Vec<f32>) -> anyhow::Result<bool> {
+        self.update_vector(*id, new_vector).await
+    }
+
+    // --- Query ---
+
+    async fn hybrid_retrieve(&self, query: &HybridQuery) -> anyhow::Result<Vec<ScoredNode>> {
+        let vector = query
+            .query_vector
+            .as_deref()
+            .unwrap_or(&[]);
+
+        // If only text is provided, fall back to BM25
+        if query.query_text.is_some() && query.query_vector.is_none() {
+            let text = query.query_text.as_ref().unwrap();
+            let bm25_results = self.search_bm25(text, query.top_k as i32).await?;
+            // Convert BM25 results to ScoredNodes by fetching full nodes
+            let mut scored_nodes = Vec::new();
+            for (id, score) in bm25_results {
+                if let Some(node) = self.get(&id).await? {
+                    scored_nodes.push(ScoredNode { id, score, node });
+                }
+            }
+            return Ok(scored_nodes);
+        }
+
+        // Vector search (with optional BM25 boost)
+        let rows = self
+            .vector_search(vector, query.top_k as i32, None, None)
+            .await?;
+
+        // If no text query, return pure vector results
+        if query.query_text.is_none() {
+            return Ok(rows
+                .into_iter()
+                .filter_map(|row| {
+                    let row_vector = row.embedding.unwrap_or_default();
+                    let node = memory_with_score_to_fractal_node(row)?;
+                    let sim = crate::memory::fractal_node::cosine_similarity(&row_vector, vector);
+                    Some(ScoredNode {
+                        id: node.id,
+                        score: sim,
+                        node,
+                    })
+                })
+                .collect());
+        }
+
+        // Hybrid: combine vector + BM25 via RRF
+        let bm25_text = query.query_text.as_ref().unwrap();
+        let bm25_results = self.search_bm25(bm25_text, query.top_k as i32).await?;
+        let bm25_ids: Vec<(Uuid, f32)> = bm25_results;
+
+        let vector_ids: Vec<Uuid> = rows.iter().map(|r| r.id).collect();
+
+        let fused = rrf_fuse(&vector_ids, &bm25_ids, 60.0);
+
+        let mut scored_nodes = Vec::new();
+        for (id, score) in fused {
+            if let Some(node) = self.get(&id).await? {
+                scored_nodes.push(ScoredNode { id, score, node });
+            }
+        }
+
+        Ok(scored_nodes)
+    }
+
+    async fn retrieve_fractal(&self, query: &HybridQuery) -> anyhow::Result<Vec<ScoredNode>> {
+        // PostgreSQL doesn't have a fractal tree structure.
+        // Fall back to hybrid_retrieve for the top-k results.
+        let results = self.hybrid_retrieve(query).await?;
+
+        // Take top-k, score defaults to 1.0 for fractal mode
+        Ok(results
+            .into_iter()
+            .take(query.top_k)
+            .map(|mut r| {
+                r.score = 1.0;
+                r
+            })
+            .collect())
+    }
+
+    async fn search_bm25(&self, query_text: &str, top_k: usize) -> anyhow::Result<Vec<(Uuid, f32)>> {
+        self.search_bm25(query_text, top_k as i32).await
+    }
+
+    // --- Enumeration ---
+
+    async fn list_all(&self) -> anyhow::Result<Vec<FractalNode>> {
+        let rows = self.list_memories().await?;
+        Ok(rows
+            .into_iter()
+            .map(memory_row_to_fractal_node)
+            .collect())
+    }
+
+    async fn recent(&self, limit: usize) -> anyhow::Result<Vec<FractalNode>> {
+        let rows = self.recent_memories(limit as i32).await?;
+        Ok(rows
+            .into_iter()
+            .map(memory_row_to_fractal_node)
+            .collect())
+    }
+
+    async fn count(&self) -> usize {
+        self.count(None).await.unwrap_or(0) as usize
+    }
+
+    // --- Maintenance ---
+
+    async fn purge_dummy_vectors(&self) -> usize {
+        self.purge_dummy_vectors().await.unwrap_or(0)
+    }
+}
+
+// =============================================================================
+// Helper functions
+// =============================================================================
+
+/// Convert a MemoryRow into a FractalNode.
+fn memory_row_to_fractal_node(row: MemoryRow) -> FractalNode {
+    let metadata = row.metadata.clone();
+
+    // Parse structured fields from strings stored in the DB
+    let memory_type =
+        MemoryType::from_str(&row.memory_type).unwrap_or(MemoryType::Episodic);
+    let source = MemorySource::from_str(&row.source).unwrap_or(MemorySource::Conversation);
+    let sensitivity =
+        Sensitivity::from_str(&row.sensitivity).unwrap_or(Sensitivity::Normal);
+    let status = MemoryStatus::from_str(&row.status).unwrap_or(MemoryStatus::Active);
+    let conflict_state =
+        ConflictState::from_str(&row.conflict_state).unwrap_or(ConflictState::None);
+
+    // Fields not stored per-row — use sensible defaults
+    let context_tier = ContextTier::Raw;
+    let parent_tier_id: Option<Uuid> = None;
+    let summary_content: Option<String> = None;
+    let overview_content: Option<String> = None;
+    let children: Vec<FractalNode> = vec![];
+    let relations: Vec<crate::memory::fractal_node::Relation> = vec![];
+    let original_pointer: Option<String> = None;
+    let multimodal: Option<crate::multimodal::MultimodalData> = None;
+
+    FractalNode {
+        id: row.id,
+        memory_type,
+        source,
+        vector: row.embedding.unwrap_or_default(),
+        content: if row.content.is_empty() {
+            None
+        } else {
+            Some(row.content)
+        },
+        original_pointer,
+        metadata,
+        weight: 1.0,
+        multimodal,
+        children,
+        relations,
+        created_at: row.created_at,
+        last_accessed: row.last_accessed.unwrap_or(row.created_at),
+        confidence: row.confidence,
+        sensitivity,
+        superseded_by: row.superseded_by,
+        conflict_state,
+        provenance: row.provenance,
+        importance: row.importance,
+        status,
+        access_count: row.access_count,
+        context_tier,
+        parent_tier_id,
+        summary_content,
+        overview_content,
+    }
+}
+
+/// Convert a MemoryWithScore into a FractalNode.
+fn memory_with_score_to_fractal_node(row: MemoryWithScore) -> Option<FractalNode> {
+    let provenance = row.provenance.clone();
+
+    let memory_type =
+        MemoryType::from_str(&row.memory_type).unwrap_or(MemoryType::Episodic);
+    let source = MemorySource::from_str(&row.source).unwrap_or(MemorySource::Conversation);
+    let sensitivity =
+        Sensitivity::from_str(&row.sensitivity).unwrap_or(Sensitivity::Normal);
+    let status = MemoryStatus::from_str(&row.status).unwrap_or(MemoryStatus::Active);
+
+    Some(FractalNode {
+        id: row.id,
+        memory_type,
+        source,
+        vector: row.embedding.unwrap_or_default(),
+        content: if row.content.is_empty() {
+            None
+        } else {
+            Some(row.content)
+        },
+        original_pointer: None,
+        metadata: serde_json::json!({}),
+        weight: 1.0,
+        multimodal: None,
+        children: vec![],
+        relations: vec![],
+        created_at: row.created_at,
+        last_accessed: row.last_accessed.unwrap_or(row.created_at),
+        confidence: row.confidence,
+        sensitivity,
+        superseded_by: None,
+        conflict_state: ConflictState::None,
+        provenance,
+        importance: row.importance,
+        status,
+        access_count: row.access_count,
+        context_tier: ContextTier::Raw,
+        parent_tier_id: None,
+        summary_content: None,
+        overview_content: None,
+    })
+}
+
+/// Reciprocal Rank Fusion — combines two result sets with rank scores.
+fn rrf_fuse(vector_ids: &[Uuid], bm25_results: &[(Uuid, f32)], k: f32) -> Vec<(Uuid, f32)> {
+    use std::collections::HashMap;
+
+    let mut scores: HashMap<Uuid, f32> = HashMap::new();
+
+    // Vector results get score 1/(k + rank)
+    for (rank, id) in vector_ids.iter().enumerate() {
+        let score = 1.0 / (k + (rank as f32 + 1.0));
+        *scores.entry(*id).or_insert(0.0) += score;
+    }
+
+    // BM25 results get score 1/(k + rank)
+    for (rank, (id, bm25_score)) in bm25_results.iter().enumerate() {
+        let score = 1.0 / (k + (rank as f32 + 1.0));
+        // Normalize BM25 score (typically 0-20 range) to 0-1
+        let normalized_bm25 = (bm25_score / 20.0).min(1.0);
+        *scores.entry(*id).or_insert(0.0) += score * (normalized_bm25 + 0.1);
+    }
+
+    let mut results: Vec<_> = scores.into_iter().collect();
+    results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    results
+}
+
+// =============================================================================
 // Row Types (matching the SQL schema)
 // =============================================================================
 
@@ -685,6 +1088,8 @@ pub struct MemoryRow {
     pub metadata: serde_json::Value,
     pub entities: serde_json::Value,
     pub tags: Vec<String>,
+    /// Dense vector embedding (stored as f32 array, deserialized from PostgreSQL vector type).
+    pub embedding: Option<Vec<f32>>,
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -705,6 +1110,8 @@ pub struct MemoryWithScore {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub similarity: f64,
+    /// Dense vector embedding (stored as f32 array, deserialized from PostgreSQL vector type).
+    pub embedding: Option<Vec<f32>>,
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]

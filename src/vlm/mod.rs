@@ -24,7 +24,7 @@ use crate::embedding::{embed_document, EmbeddingProvider};
 use crate::memory::types::{ContextTier, MemorySource, MemoryStatus, MemoryType};
 use std::collections::HashMap;
 use crate::memory::FractalNode;
-use crate::storage::MemoryStore;
+use crate::storage::{MemoryStore, StorageBackend};
 
 // ---------------------------------------------------------------------------
 // Public API — Enqueue a summarization job
@@ -502,7 +502,7 @@ mod worker {
 
     /// Full VLM background worker (not Clone).
     pub struct VlmWorker {
-        store: MemoryStore,
+        store: Arc<dyn StorageBackend>,
         embedding: Arc<dyn EmbeddingProvider>,
         client: VlmClient,
         config: VlmConfig,
@@ -513,7 +513,7 @@ mod worker {
 
     impl VlmWorker {
         pub fn new(
-            store: MemoryStore,
+            store: Arc<dyn StorageBackend>,
             embedding: Arc<dyn EmbeddingProvider>,
             client: VlmClient,
             config: VlmConfig,
@@ -538,7 +538,7 @@ mod worker {
 
         /// Build a handle and start the worker in the background.
         pub fn spawn(
-            store: MemoryStore,
+            store: Arc<dyn StorageBackend>,
             embedding: Arc<dyn EmbeddingProvider>,
             config: VlmConfig,
         ) -> (VlmWorkerHandle, tokio::task::JoinHandle<()>) {

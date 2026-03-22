@@ -144,7 +144,7 @@ async fn run() -> anyhow::Result<()> {
     // -- VLM Background Worker (3-stage fallback: GPT-5-nano → GPT-4o-mini → Grok-4-fast) --
     let vlm_config = VlmConfig::from_env();
     let (vlm_worker, _vlm_join) = if vlm_config.is_configured() {
-        let (h, j) = VlmWorker::spawn(store.clone(), embedding.clone(), vlm_config);
+        let (h, j) = VlmWorker::spawn(Arc::new(store.clone()), embedding.clone(), vlm_config);
         tracing::info!("VLM summarization worker started (OPENAI_API_KEY or GROK_API_KEY detected)");
         (Some(h), Some(j))
     } else {
