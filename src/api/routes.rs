@@ -717,9 +717,14 @@ fn default_recent_limit() -> usize {
 pub async fn recent_nodes(
     State(state): State<AppState>,
     axum::extract::Query(q): axum::extract::Query<RecentQuery>,
-) -> Json<Vec<FractalNode>> {
+) -> Result<Json<Vec<FractalNode>>, StatusCode> {
     let limit = q.limit.min(100);
-    Json(state.store.recent(limit).await)
+    let nodes = state.store.recent(limit).await
+        .map_err(|e| {
+            tracing::error!("recent failed: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    Ok(Json(nodes))
 }
 
 // -- Re-embed All Nodes --
