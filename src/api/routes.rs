@@ -525,6 +525,7 @@ pub async fn retrieve_fractal(
         Some(v) => v.clone(),
         None => {
             if let Some(text) = &req.query_text {
+                tracing::info!(query_text = %text, "embedding query text");
                 state
                     .embedding
                     .embed(text)
@@ -538,6 +539,7 @@ pub async fn retrieve_fractal(
             }
         }
     };
+    tracing::info!(query_vector_dim = query_vector.len(), "using query vector");
 
     // Parse max_tier filter (default: overview)
     let max_tier = req.max_tier.as_ref()

@@ -539,11 +539,13 @@ impl MemoryStore {
         // Note: trajectory logging is now done inside retrieve_fractal
 
         let vector_ids: Vec<Uuid> = vector_results.iter().map(|n| n.id).collect();
+        tracing::info!(vector_result_count = vector_ids.len(), "vector search returned");
 
         let bm25_results = match query_text {
             Some(q) if !q.is_empty() => self.search_bm25(q, top_k * 2).await,
             _ => vec![],
         };
+        tracing::info!(bm25_result_count = bm25_results.len(), "bm25 search returned");
 
         if bm25_results.is_empty() {
             #[cfg(feature = "postgres-storage")]
