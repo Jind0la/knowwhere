@@ -99,10 +99,6 @@ impl StorageBackend for MemoryStore {
         self.insert(node).await
     }
 
-    async fn insert_many(&self, nodes: Vec<FractalNode>) -> anyhow::Result<Vec<Uuid>> {
-        self.insert_many(nodes).await
-    }
-
     async fn get(&self, id: &Uuid) -> anyhow::Result<Option<FractalNode>> {
         self.get(id).await
     }
