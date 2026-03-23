@@ -251,15 +251,26 @@ async fn run() -> anyhow::Result<()> {
             .route("/skills/match", get(routes::match_skills));
     }
 
-    let protected = protected
-        // Rate-limit BEFORE auth — fail-fast on abuse, even with invalid tokens
-        .layer(
+    // Rate-limit middleware — requires RealIpLayer with proxy headers (X-Forwarded-For, X-Real-IP).
+    // Without proxy headers, RealIp can't extract client IP → rate limiter fails.
+    // Enable with RATE_LIMIT=1 when behind a reverse proxy (nginx, cloudflare, etc.)
+    let rate_limit_layer = if std::env::var("RATE_LIMIT").is_ok() {
+        Some(
             ServiceBuilder::new()
-                .layer(GovernorLayer::new(auth::protected_governor_config())) // 5 req/s per IP
-                .layer(RealIpLayer::default()) // Extract real client IP first (needed by Governor)
+                .layer(RealIpLayer::default())
+                .layer(GovernorLayer::new(auth::protected_governor_config()))
         )
-        .route_layer(middleware::from_fn(auth::auth_middleware))
-        .layer(axum::Extension(api_key.clone()));
+    } else {
+        tracing::warn!("RATE_LIMIT not set — rate limiting disabled (dev mode without proxy)");
+        None
+    };
+
+    let protected = match rate_limit_layer {
+        Some(layer) => protected.layer(layer),
+        None => protected,
+    }
+    .route_layer(middleware::from_fn(auth::auth_middleware))
+    .layer(axum::Extension(api_key.clone()));
 
     let app = Router::new()
         .route("/health", get(routes::health))
