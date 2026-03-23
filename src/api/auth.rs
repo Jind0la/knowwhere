@@ -165,8 +165,8 @@ pub fn auth_router() -> Router {
         .route("/register", post(register))
         .layer(
             ServiceBuilder::new()
-                .layer(RealIpLayer::default()) // Extract real client IP first
-                .layer(GovernorLayer::new(auth_governor_config())) // Then rate-limit
+                .layer(GovernorLayer::new(auth_governor_config())) // Rate-limit first
+                .layer(RealIpLayer::default()) // Extract real IP (needed by Governor)
         )
 }
 
@@ -181,8 +181,8 @@ pub fn auth_router_with_state<S: Clone + Send + Sync + 'static>(state: S) -> Rou
         .route("/register", post(register))
         .layer(
             ServiceBuilder::new()
-                .layer(RealIpLayer::default()) // Extract real client IP first
-                .layer(GovernorLayer::new(auth_governor_config())) // Then rate-limit
+                .layer(GovernorLayer::new(auth_governor_config())) // Rate-limit first
+                .layer(RealIpLayer::default()) // Extract real IP (needed by Governor)
         )
         .with_state(state)
 }

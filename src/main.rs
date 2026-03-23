@@ -255,8 +255,8 @@ async fn run() -> anyhow::Result<()> {
         // Rate-limit BEFORE auth — fail-fast on abuse, even with invalid tokens
         .layer(
             ServiceBuilder::new()
-                .layer(RealIpLayer::default()) // Extract real client IP first
                 .layer(GovernorLayer::new(auth::protected_governor_config())) // 5 req/s per IP
+                .layer(RealIpLayer::default()) // Extract real client IP first (needed by Governor)
         )
         .route_layer(middleware::from_fn(auth::auth_middleware))
         .layer(axum::Extension(api_key.clone()));
