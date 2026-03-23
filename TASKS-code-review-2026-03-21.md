@@ -140,17 +140,15 @@
 
 ### [LOW-001] FractalNode: Hotpath Clone Elimination
 
-**Status:** 🟢 Offen
+**Status:** 🟡 In Evaluation
 
-**Problem:** `zoom_retrieve()` gibt `Vec<(f32, FractalNode)>` zurück — `self.clone()` bei jedem Rekursions-Schritt. Hotpath: alle Results werden gecloned, sortiert, dann nur `top_k` behalten → 90%+ Clones umsonst.
+**Problem:** `zoom_retrieve()` gab `Vec<(f32, FractalNode)>` zurück — `self.clone()` bei jedem Rekursions-Schritt. Hotpath: alle Results werden gecloned, sortiert, dann nur `top_k` behalten → 90%+ Clones umsonst.
 
-**Lösung:** Signatur ändern zu `Vec<(f32, &FractalNode)>` — Referenz-Rückgabe. Nur finale `top_k` Nodes werden gecloned nach RRF.
+**Lösung (LOW-001a ✅):** Signatur geändert zu `Vec<(f32, &FractalNode)>` — Referenz-Rückgabe. Commit `7db3c80`.
 
-**Teil-Tasks:**
-- LOW-001a: `zoom_retrieve` Referenz-Rückgabe (~2-4h)
-- LOW-001b: Evaluation: Arena Allocation noch nötig? (~1h)
+**LOW-001b (offen):** Evaluation: Ist Arena Allocation nach dem Clone-Elimination-Fix noch nötig?
 
-**Externer Review:** 23.03.2026 — Die Arena-Allocation wurde als falsche Priorität identifiziert. Das eigentliche Problem ist die Rückgabe-Semantik.
+**Externer Review:** 23.03.2026
 
 ---
 
