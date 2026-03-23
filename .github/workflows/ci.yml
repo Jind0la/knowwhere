@@ -66,6 +66,62 @@ jobs:
         # RUSTSEC-2026-0049 ignored: transitive dep (rustls-webpki via reqwest), no direct fix
         # RUSTSEC-2023-0071 ignored: transitive dep (rsa via sqlx-mysql), no fixed version
 
+  postgres-build:
+    name: Postgres Storage Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust 1.85
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.85"
+          components: clippy, rustfmt
+
+      - name: Cache cargo registry & build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-pg
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Start PostgreSQL with pgvector
+        run: |
+          docker run -d --name kw-pg \
+            -e POSTGRES_PASSWORD=kw \
+            -e POSTGRES_DB=kw \
+            -p 5433:5432 \
+            pgvector/pgvector:pg16
+
+      - name: Wait for PostgreSQL
+        run: |
+          for i in $(seq 1 30); do
+            docker exec kw-pg pg_isready -U postgres && break
+            sleep 1
+          done
+
+      - name: Load PostgreSQL schema
+        run: |
+          docker exec -i kw-pg psql -U postgres -d kw < docs/postgresql_schema.sql
+          for f in migrations/003_add_tiered_context.sql \
+                   migrations/004_add_retrieval_trajectory.sql \
+                   migrations/007_add_conflict_detection.sql \
+                   migrations/008_add_energy_decay.sql \
+                   migrations/009_add_content_hash.sql \
+                   migrations/010_add_namespaces.sql \
+                   migrations/011_add_skills.sql; do
+            docker exec -i kw-pg psql -U postgres -d kw < "$f" || true
+          done
+
+      - name: cargo build postgres-storage
+        env:
+          DATABASE_URL: "postgres://postgres:kw@localhost:5433/kw"
+          RUST_LOG: info
+        run: cargo build --features postgres-storage
+
   docker:
     name: Docker Build
     runs-on: ubuntu-latest
