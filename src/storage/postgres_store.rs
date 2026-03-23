@@ -1058,7 +1058,7 @@ fn memory_with_score_to_fractal_node(row: MemoryWithScore) -> Option<FractalNode
             Some(row.content)
         },
         original_pointer: None,
-        metadata: serde_json::json!({}),
+        metadata: std::collections::HashMap::new(),
         weight: 1.0,
         multimodal: None,
         children: vec![],

@@ -265,7 +265,7 @@ impl GovernanceValidator {
     /// Validate a single memory candidate.
     pub fn validate(&self, candidate: &GovernanceCandidate) -> ValidationResult {
         // Core checks (shared with GovernanceCandidate::apply_governance)
-        let (mut multiplier, mut issues) = self.policy.governance_check(candidate);
+        let (_multiplier, mut issues) = self.policy.governance_check(candidate);
 
         // Additional check: staleness (GovernanceValidator only)
         if let Some(max_age) = self.policy.max_age_days {

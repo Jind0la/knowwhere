@@ -152,9 +152,9 @@ impl ConflictDetector {
         // to retrieve it. This is safe because we only do this for the concrete
         // PostgresStore type; all other store types return None.
         use std::any::Any;
-        let store_ptr: *const dyn crate::storage::StorageBackend = &**store;
         // Get the type name to identify PostgresStore
-        let type_name = std::any::type_name_of_val(&*store_ptr);
+        let store_ref: &dyn crate::storage::StorageBackend = &**store;
+        let type_name = std::any::type_name_of_val(store_ref);
         if !type_name.contains("PostgresStore") {
             return None;
         }

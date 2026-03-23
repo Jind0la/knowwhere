@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 #[cfg(feature = "postgres-storage")]
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 
 /// Step type labels used in [`RetrievalStep`].
 pub mod step_type {
