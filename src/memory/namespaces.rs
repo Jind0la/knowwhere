@@ -12,12 +12,13 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
+use utoipa::ToSchema;
 
 use super::types::MemoryType;
 
 /// A named namespace for organizing memories.
 #[cfg(feature = "postgres-storage")]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct MemoryNamespace {
     /// Unique identifier.
     pub id: Uuid,
@@ -219,7 +220,7 @@ struct MemoryNamespaceRow {
 
 // Partial memory row used for namespace-scoped browsing.
 #[cfg(feature = "postgres-storage")]
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, ToSchema)]
 pub struct MemoryRow {
     pub id: Uuid,
     pub memory_type: String,

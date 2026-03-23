@@ -27,6 +27,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
+use utoipa::ToSchema;
 
 // =============================================================================
 // Types
@@ -66,7 +67,7 @@ impl std::fmt::Display for ConflictType {
 }
 
 /// A detected group of conflicting memories.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ConflictGroup {
     /// Unique ID for this conflict group.
     pub id: Uuid,
@@ -83,7 +84,7 @@ pub struct ConflictGroup {
 }
 
 /// Row type for querying conflict groups from DB.
-#[derive(Debug, Clone, sqlx::FromRow)]
+#[derive(Debug, Clone, sqlx::FromRow, ToSchema)]
 pub struct ConflictGroupRow {
     pub id: Uuid,
     pub conflicting_memory_ids: Vec<Uuid>,
@@ -100,7 +101,7 @@ pub struct ResolveConflictRequest {
 }
 
 /// Result of a conflict detection run.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct ConflictDetectionResult {
     pub conflicts_found: usize,
     pub conflicts_marked_pending: usize,
@@ -741,7 +742,7 @@ impl ConflictDetector {
 // =============================================================================
 
 /// Row type for conflict detection runs.
-#[derive(Debug, Clone, sqlx::FromRow)]
+#[derive(Debug, Clone, sqlx::FromRow, ToSchema)]
 pub struct ConflictDetectionRunRow {
     pub id: Uuid,
     pub conflicts_found: i32,

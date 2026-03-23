@@ -41,13 +41,14 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
 use anyhow::Result;
+use utoipa::ToSchema;
 
 // =============================================================================
 // Types
 // =============================================================================
 
 /// A pair of duplicate memories with their similarity score.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct DuplicatePair {
     pub id_a: Uuid,
     pub id_b: Uuid,
@@ -71,7 +72,7 @@ struct MemoryForMerge {
 }
 
 /// Row from the `deduplication_runs` log.
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, ToSchema)]
 pub struct DeduplicationRunRow {
     pub id: Uuid,
     pub pairs_found: i32,
@@ -80,7 +81,7 @@ pub struct DeduplicationRunRow {
 }
 
 /// Result of a deduplication run.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct DeduplicationResult {
     /// Number of duplicate pairs found in this run.
     pub pairs_found: usize,

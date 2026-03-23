@@ -40,7 +40,7 @@ pub struct HealthCheckResult {
 }
 
 /// How a pointer was repaired (or that it could not be repaired).
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum RepairStatus {
     RepairedHash,

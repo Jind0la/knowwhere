@@ -43,6 +43,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
 use anyhow::Result;
+use utoipa::ToSchema;
 
 // =============================================================================
 // Types
@@ -68,7 +69,7 @@ impl Default for EnergyDecayConfig {
 }
 
 /// A memory with its current energy level and last update timestamp.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct MemoryEnergyInfo {
     pub id: Uuid,
     pub energy: i32,
@@ -78,7 +79,7 @@ pub struct MemoryEnergyInfo {
 }
 
 /// Result of an energy decay application pass.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct DecayResult {
     /// Number of memories that had their energy updated.
     pub memories_updated: usize,
@@ -87,7 +88,7 @@ pub struct DecayResult {
 }
 
 /// Result of a compression operation.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct CompressionResult {
     /// ID of the newly created compressed memory.
     pub new_memory_id: Uuid,
