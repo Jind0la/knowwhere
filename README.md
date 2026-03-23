@@ -49,8 +49,16 @@ Open [http://localhost:3737/swagger-ui/](http://localhost:3737/swagger-ui/) for 
 ### Docker
 
 ```bash
-docker compose up --build
+docker build -t knowwhere-server:local .
+docker run -d --name knowwhere -p 3000:3000 \
+  -e KNOWWHERE_API_KEY=your-key \
+  -e OPENAI_API_KEY=your-key \
+  -e KNOWWHERE_PORT=3000 \
+  -e RUST_LOG=info \
+  knowwhere-server:local
 ```
+
+Note: `postgres-storage` feature is optional — without it, KnowWhere runs with in-memory storage (data lost on container restart). PostgreSQL support is documented in `docs/postgresql_schema.sql`.
 
 ## Core Concepts
 
@@ -197,6 +205,8 @@ context = memory.get_context_string("When do we deploy?")
 | `OLLAMA_MODEL`       | No       | `nomic-embed-text-v2-moe`| Local Ollama embedding model name                        |
 | `FRIGATE_URL`        | No       | *(unset)*                | Frigate NVR URL (enables camera event connector)         |
 | `RUST_LOG`           | No       | `info`                   | Tracing log level                                        |
+| `RATE_LIMIT`        | No       | *(unset)*                | Enable rate limiting (requires reverse proxy in front)    |
+| `DATABASE_URL`      | No       | *(unset)*                | PostgreSQL connection (enables postgres-storage feature)   |
 
 If neither `GROK_API_KEY` nor `OPENAI_API_KEY` is set, KnowWhere falls back to local Ollama.
 
@@ -255,6 +265,16 @@ cargo run
 ```bash
 cargo test
 ```
+
+## Known Issues
+
+- **Rate Limiting**: Requires a reverse proxy (nginx, Cloudflare) that sets `X-Forwarded-For` headers. Enable with `RATE_LIMIT=1` when behind a proxy.
+- **PostgreSQL Storage**: The `postgres-storage` feature requires `--features postgres-storage` at build time. Currently has compile errors — use in-memory storage for local testing.
+- **Governance Default**: With `governance_enabled=true` (default), new nodes may be filtered. Use `governance_enabled=false` for testing new memories.
+
+## Lesson Learned
+
+**Always run `git pull origin main` before testing or building.** The codebase evolves quickly; local copies may contain outdated code that doesn't match CI.
 
 ## Contributing
 
