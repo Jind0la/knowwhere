@@ -212,14 +212,11 @@ Arena löst das Problem "wenn ich einen Node klone, klont er alle Kinder mit". A
 
 ---
 
-### [LOW-002] Embedding-Batching-Support
+### [LOW-002] Embedding-Batching-Support ✅
 
-**Status:** 🟢 Offen
+**Erledigt.** `embed_batch()` auf Trait, OpenAI+Grok native batch, Ollama concurrent via try_join_all, `insert_many`, `store_external_events_batch`.
 
-**Problem:** `embed()` unterstützt nur Einzel-Embeddings. Bulk-Import macht N sequenzielle HTTP-Requests.
-
-**Aufwand:** ~4 Stunden  
-**Dateien:** `src/embedding/provider.rs`
+**Commits:** `bf5a591`, `d24fa83`
 
 ---
 
@@ -277,6 +274,63 @@ Arena löst das Problem "wenn ich einen Node klone, klont er alle Kinder mit". A
 | LOW-003 CI erweitern | ✅ | ~1h | 06be859 |
 | LOW-004 RRF | ✅ | — | rrf_fuse() |
 | LOW-005 DreamStatus + cycle_count | ✅ | ~30min | 3238e1a, f34e8fc |
+
+---
+
+## 🐛 Offene Bugs / Issues
+
+### [BUG-001] postgres-storage kompiliert nicht 🔴
+
+**Status:** 🔴 Offen
+
+**Problem:** Docker Build mit `--features postgres-storage` schlägt fehl mit 163 Rust Compile Errors. Betrifft `src/storage/postgres_store.rs`.
+
+**Erstes identifiziertes Problem:**
+- Zeile 838: `row.embedding.unwrap_or_default()` — `row.embedding` wird consumed, dann wird `row` nochmal in `memory_with_score_to_fractal_node(row)` verwendet
+- Fix: `.clone()` auf `.embedding` vor dem ersten use
+
+**Workaround:** Docker Build ohne Feature — In-Memory Storage funktioniert für User Testing.
+
+**Impact:** Keine PostgreSQL Persistence möglich.
+
+---
+
+### [BUG-002] Rate Limiter RealIpLayer in Docker 🟡
+
+**Status:** 🟡 Offen (Workaround existiert)
+
+**Problem:** `axum_governor` mit `RealIpLayer` funktioniert nicht in Docker ohne Reverse Proxy. RealIpLayer kann keine Client-IP extrahieren wenn keine `X-Forwarded-For` oder `X-Real-IP` Header existieren.
+
+**Fehler:** `RealIp extension not found. Make sure RealIpLayer is installed before GovernorLayer.`
+
+**Workaround:** `RATE_LIMIT=1` env var — Rate Limiter ist dann deaktiviert.
+
+**Impact:** Rate Limiting in Docker Dev-Environment nicht nutzbar.
+
+---
+
+## 📋 Aktuelle Übersicht
+
+| Task | Status | Aufwand | Commit |
+|------|--------|---------|--------|
+| CRIT-001 Timing-Angriff | ✅ | 30min | e2182f2 |
+| CRIT-002 Rate-Limiting | ✅ | 2h | 2a0d58e, 32d5023 |
+| CRIT-003 PostgreSQL | ✅ | ~1 Tag | 6f9cfc6, 4cfa5b7 |
+| MED-001 Exp. Decay | ✅ | 1h | 4bd5c98 |
+| MED-002 LLM Compaction | ✅ | ~1 Tag | 279265c, 7bf6f01 |
+| MED-003 BM25 Persistenz | ✅ | ~2h | fcee458 |
+| MED-004 Vektor Conflict | ✅ | ~4h | 352505d |
+| MED-005 Gov. Dedup | ✅ | ~1h | dab48dc |
+| MED-006 Test-Fixture | ✅ | 1h | da43722 |
+| MED-007 OpenAI Tests | ✅ | 30min | 8d38b55 |
+| MED-008 StorageBackend Intern | ✅ | ~4h | eceb6e2, b4244db, 4cfa5b7 |
+| LOW-001 Zoom-Retrieve Refactor | ✅ | ~2-4h | 7db3c80 (a+b) |
+| LOW-002 Batch Embed | ✅ | ~4h | bf5a591, d24fa83 |
+| LOW-003 CI erweitern | ✅ | ~1h | 06be859 |
+| LOW-004 RRF | ✅ | — | rrf_fuse() |
+| LOW-005 DreamStatus + cycle_count | ✅ | ~30min | 3238e1a, f34e8fc |
+| BUG-001 postgres-storage compile | 🔴 Offen | ~2h | — |
+| BUG-002 Rate Limiter Docker | 🟡 Offen | ~1h | — |
 
 ---
 
