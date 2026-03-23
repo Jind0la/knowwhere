@@ -796,7 +796,7 @@ impl MemoryStore {
                 return scored
                     .into_iter()
                     .take(top_k)
-                    .map(|(_, n)| n)
+                    .map(|(_, n)| n.clone())
                     .collect();
             }
         }
@@ -816,7 +816,7 @@ impl MemoryStore {
         scored
             .into_iter()
             .take(top_k)
-            .map(|(_, n)| n)
+            .map(|(_, n)| n.clone())
             .collect()
     }
 }
