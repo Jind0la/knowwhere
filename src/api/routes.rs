@@ -1136,9 +1136,6 @@ pub struct CompactMemoryResponse {
     params(
         ("id" = Uuid, Path, description = "Memory UUID to compact")
     ),
-    query(
-        CompactMemoryQuery
-    ),
     responses(
         (status = 200, description = "Memory compacted", body = CompactMemoryResponse),
         (status = 404, description = "Memory not found", body = String),
@@ -2271,9 +2268,6 @@ pub struct UseSkillResponse {
     tag = "skills",
     params(
         ("id" = Uuid, Path, description = "Skill UUID")
-    ),
-    query(
-        UseSkillQuery
     ),
     responses(
         (status = 200, description = "Usage recorded", body = UseSkillResponse),
