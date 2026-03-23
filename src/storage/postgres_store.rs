@@ -835,7 +835,7 @@ impl StorageBackend for PostgresStore {
             return Ok(rows
                 .into_iter()
                 .filter_map(|row| {
-                    let row_vector = row.embedding.unwrap_or_default();
+                    let row_vector = row.embedding.clone().unwrap_or_default();
                     let node = memory_with_score_to_fractal_node(row)?;
                     let sim = crate::memory::fractal_node::cosine_similarity(&row_vector, vector);
                     Some(ScoredNode {
@@ -952,14 +952,6 @@ impl StorageBackend for PostgresStore {
                     "UPDATE memories SET status = $1 WHERE id = $2",
                 )
                 .bind(status_str)
-                .bind(*id);
-                query.execute(&self.pool).await?;
-            }
-            UpdateOperation::SetEnergy(e) => {
-                let query = sqlx::query(
-                    "UPDATE memories SET energy = $1 WHERE id = $2",
-                )
-                .bind(e)
                 .bind(*id);
                 query.execute(&self.pool).await?;
             }
