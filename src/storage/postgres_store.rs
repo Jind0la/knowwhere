@@ -609,6 +609,7 @@ impl PostgresStore {
                        access_count, last_accessed,
                        created_at, updated_at, deleted_at, metadata,
                        entities, tags,
+                       embedding,
                        1 AS level
                 FROM memories
                 WHERE parent_id = $1 AND status = 'active'
@@ -622,6 +623,7 @@ impl PostgresStore {
                        m.access_count, m.last_accessed,
                        m.created_at, m.updated_at, m.deleted_at, m.metadata,
                        m.entities, m.tags,
+                       m.embedding,
                        ft.level + 1
                 FROM memories m
                 INNER JOIN fractal_tree ft ON m.parent_id = ft.id
@@ -633,7 +635,8 @@ impl PostgresStore {
                    provenance, parent_id, depth,
                    access_count, last_accessed,
                    created_at, updated_at, deleted_at, metadata,
-                   entities, tags
+                   entities, tags,
+                   embedding
             FROM fractal_tree
             ORDER BY level
             "#,
@@ -770,7 +773,8 @@ impl StorageBackend for PostgresStore {
             Sensitivity::High => "high",
             Sensitivity::Restricted => "restricted",
         };
-        let metadata = node.metadata.clone();
+        let metadata = serde_json::to_value(&node.metadata)
+            .unwrap_or(serde_json::json!({}));
 
         self.store_session(
             content,
@@ -944,9 +948,11 @@ impl StorageBackend for PostgresStore {
             UpdateOperation::SetStatus(status) => {
                 let status_str = match status {
                     crate::memory::types::MemoryStatus::Active => "active",
-                    crate::memory::types::MemoryStatus::Stale => "stale",
+                    crate::memory::types::MemoryStatus::Draft => "draft",
+                    crate::memory::types::MemoryStatus::Archived => "archived",
+                    crate::memory::types::MemoryStatus::Deleted => "deleted",
                     crate::memory::types::MemoryStatus::Superseded => "superseded",
-                    crate::memory::types::MemoryStatus::Pending => "pending",
+                    crate::memory::types::MemoryStatus::Stale => "stale",
                 };
                 let query = sqlx::query(
                     "UPDATE memories SET status = $1 WHERE id = $2",
@@ -958,9 +964,11 @@ impl StorageBackend for PostgresStore {
             UpdateOperation::ApplyAudit { weight, status } => {
                 let status_str = status.map(|s| match s {
                     crate::memory::types::MemoryStatus::Active => "active",
-                    crate::memory::types::MemoryStatus::Stale => "stale",
+                    crate::memory::types::MemoryStatus::Draft => "draft",
+                    crate::memory::types::MemoryStatus::Archived => "archived",
+                    crate::memory::types::MemoryStatus::Deleted => "deleted",
                     crate::memory::types::MemoryStatus::Superseded => "superseded",
-                    crate::memory::types::MemoryStatus::Pending => "pending",
+                    crate::memory::types::MemoryStatus::Stale => "stale",
                 });
                 let query = sqlx::query(
                     "UPDATE memories SET weight = $1, status = COALESCE($2, status) WHERE id = $3",
@@ -981,7 +989,8 @@ impl StorageBackend for PostgresStore {
 
 /// Convert a MemoryRow into a FractalNode.
 fn memory_row_to_fractal_node(row: MemoryRow) -> FractalNode {
-    let metadata = row.metadata.clone();
+    let metadata: std::collections::HashMap<String, serde_json::Value> =
+        serde_json::from_value(row.metadata.clone()).unwrap_or_default();
 
     // Parse structured fields from strings stored in the DB
     let memory_type =

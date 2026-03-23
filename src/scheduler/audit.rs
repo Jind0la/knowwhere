@@ -253,10 +253,10 @@ impl AuditScheduler {
         let detector = ConflictDetector::new(pool);
         let pending = detector.list_pending_conflicts().await?;
 
-        let threshold = self.config.conflict_auto_resolve_threshold;
+        let _threshold = self.config.conflict_auto_resolve_threshold;
 
         for conflict in pending {
-            if self.can_auto_resolve(&conflict, threshold) {
+            if self.can_auto_resolve(&conflict, _threshold) {
                 // Find the highest-confidence memory as the winner
                 if let Some(winner_id) = self.find_winner(pool, &conflict.conflicting_memory_ids).await? {
                     tracing::info!(
@@ -275,7 +275,7 @@ impl AuditScheduler {
     }
 
     #[cfg(feature = "postgres-storage")]
-    fn can_auto_resolve(&self, conflict: &ConflictGroup, threshold: f64) -> bool {
+    fn can_auto_resolve(&self, conflict: &ConflictGroup, _threshold: f64) -> bool {
         // Only auto-resolve confidence conflicts (same claim, different confidence)
         // Entity conflicts should be reviewed manually
         conflict.conflict_type.to_string() == "confidence"
