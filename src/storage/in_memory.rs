@@ -778,7 +778,7 @@ impl MemoryStore {
                 drop(k2u);
 
                 let nodes = self.nodes.read().await;
-                let mut scored: Vec<(f32, FractalNode)> = candidate_uuids
+                let mut scored: Vec<(f32, &FractalNode)> = candidate_uuids
                     .iter()
                     .filter_map(|uid| nodes.get(uid))
                     .flat_map(|node| node.zoom_retrieve(query_vector, max_depth, pruning_threshold))
@@ -808,7 +808,7 @@ impl MemoryStore {
         }
         
         let nodes = self.nodes.read().await;
-        let mut scored: Vec<(f32, FractalNode)> = nodes
+        let mut scored: Vec<(f32, &FractalNode)> = nodes
             .values()
             .flat_map(|node| node.zoom_retrieve(query_vector, max_depth, pruning_threshold))
             .collect();

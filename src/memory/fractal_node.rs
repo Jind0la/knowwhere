@@ -287,14 +287,14 @@ impl FractalNode {
     ///
     /// Dies reduziert die Anzahl der Vektor-Distanzberechnungen massiv
     /// bei tiefen Graphen und erhöht die Retrieval-Geschwindigkeit.
-    pub fn zoom_retrieve(
-        &self,
+    pub fn zoom_retrieve<'a>(
+        &'a self,
         query_vector: &[f32],
         max_depth: usize,
         pruning_threshold: f32,
-    ) -> Vec<(f32, FractalNode)> {
+    ) -> Vec<(f32, &'a FractalNode)> {
         let sim = cosine_similarity(&self.vector, query_vector);
-        let mut results = vec![(sim, self.clone())];
+        let mut results = vec![(sim, self)];
         
         if max_depth > 0 && sim >= pruning_threshold {
             if let Some(best) = self.find_best_child(query_vector) {
