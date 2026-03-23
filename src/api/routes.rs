@@ -499,7 +499,9 @@ fn default_governance_enabled() -> bool {
     true
 }
 fn default_max_tier() -> Option<String> {
-    Some("overview".to_string())
+    // Default to None (show all tiers) — users can opt-in to tier filtering
+    // by explicitly passing "summary" or "overview" in their request.
+    None
 }
 
 #[utoipa::path(
