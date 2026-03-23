@@ -621,7 +621,7 @@ impl MemoryStore {
         }
     }
 
-    pub async fn hybrid_retrieve(
+    pub async fn hybrid_retrieve<'a>(
         &self,
         query_text: Option<&str>,
         query_vector: &[f32],

@@ -443,18 +443,16 @@ impl<'a> SkillsStore<'a> {
 
 // Internal row type matching the SQLx query.
 #[cfg(feature = "postgres-storage")]
-sqlx::FromRow! {
-    #[derive(Debug)]
-    struct AgentSkillRow {
-        id: Uuid,
-        skill_name: String,
-        category: String,
-        proficiency: i32,
-        last_used: Option<DateTime<Utc>>,
-        success_rate: Option<f64>,
-        components: Vec<String>,
-        prerequisites: Vec<String>,
-        namespace_id: Option<Uuid>,
-        metadata: serde_json::Value,
-    }
+#[derive(Debug, sqlx::FromRow)]
+struct AgentSkillRow {
+    id: Uuid,
+    skill_name: String,
+    category: String,
+    proficiency: i32,
+    last_used: Option<DateTime<Utc>>,
+    success_rate: Option<f64>,
+    components: Vec<String>,
+    prerequisites: Vec<String>,
+    namespace_id: Option<Uuid>,
+    metadata: serde_json::Value,
 }

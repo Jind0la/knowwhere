@@ -207,16 +207,14 @@ impl<'a> NamespaceStore<'a> {
 
 // Internal row type matching the SQLx query shape.
 #[cfg(feature = "postgres-storage")]
-sqlx::FromRow! {
-    #[derive(Debug)]
-    struct MemoryNamespaceRow {
-        id: Uuid,
-        path: String,
-        depth: i32,
-        parent_id: Option<Uuid>,
-        description: Option<String>,
-        memory_type_hint: Option<String>,
-    }
+#[derive(Debug, sqlx::FromRow)]
+struct MemoryNamespaceRow {
+    id: Uuid,
+    path: String,
+    depth: i32,
+    parent_id: Option<Uuid>,
+    description: Option<String>,
+    memory_type_hint: Option<String>,
 }
 
 // Partial memory row used for namespace-scoped browsing.
