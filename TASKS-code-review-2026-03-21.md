@@ -309,6 +309,22 @@ Arena löst das Problem "wenn ich einen Node klone, klont er alle Kinder mit". A
 
 ---
 
+### [BUG-003] Governance Default filtert alle neuen Nodes 🟡
+
+**Status:** 🟡 Offen
+
+**Problem:** `governance_enabled=true` (Default) filtered alle neuen Nodes bei Retrieval raus. User bekommt 0 Results obwohl Memories existieren.
+
+**Root Cause:** Neue Nodes haben niedrige Importance/Confidence — Governance Validator lehnt alles ab wenn kein Policy definiert ist.
+
+**Workaround:** `governance_enabled=false` bei Retrieval setzen.
+
+**Fix-Idee:** Governance Policy mit vernünftigen Defaults, oder Governance nur optional aufrufen wenn ein echtes Policy existiert.
+
+**Impact:** Jeder neue User bekommt 0 Suchergebnisse — verwirrend.
+
+---
+
 ## 📋 Aktuelle Übersicht
 
 | Task | Status | Aufwand | Commit |
@@ -331,6 +347,7 @@ Arena löst das Problem "wenn ich einen Node klone, klont er alle Kinder mit". A
 | LOW-005 DreamStatus + cycle_count | ✅ | ~30min | 3238e1a, f34e8fc |
 | BUG-001 postgres-storage compile | 🔴 Offen | ~2h | — |
 | BUG-002 Rate Limiter Docker | 🟡 Offen | ~1h | — |
+| BUG-003 Governance过滤t alle Nodes | 🟡 Offen | ~1h | — |
 
 ---
 
