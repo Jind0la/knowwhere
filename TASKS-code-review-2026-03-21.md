@@ -1,7 +1,7 @@
 # KnowWhere — Task-Liste
 
 > Erstellt: 2026-03-21 | Letztes Update: 2026-03-22  
-> Status: 🟢 Gute Fortschritte
+> Status: ✅ Alle Tasks erledigt
 
 ---
 
@@ -140,13 +140,13 @@
 
 ### [LOW-001] FractalNode: Hotpath Clone Elimination
 
-**Status:** 🟡 In Evaluation
+**Status:** ✅ Erledigt
 
 **Problem:** `zoom_retrieve()` gab `Vec<(f32, FractalNode)>` zurück — `self.clone()` bei jedem Rekursions-Schritt. Hotpath: alle Results werden gecloned, sortiert, dann nur `top_k` behalten → 90%+ Clones umsonst.
 
 **Lösung (LOW-001a ✅):** Signatur geändert zu `Vec<(f32, &FractalNode)>` — Referenz-Rückgabe. Commit `7db3c80`.
 
-**LOW-001b (offen):** Evaluation: Ist Arena Allocation nach dem Clone-Elimination-Fix noch nötig?
+**LOW-001b (✅):** Evaluation: Arena Allocation nicht nötig — Problem war zoom_retrieve, nicht children-Storage.
 
 **Externer Review:** 23.03.2026
 
@@ -272,8 +272,8 @@ Arena löst das Problem "wenn ich einen Node klone, klont er alle Kinder mit". A
 | MED-006 Test-Fixture | ✅ | 1h | da43722 |
 | MED-007 OpenAI Tests | ✅ | 30min | 8d38b55 |
 | MED-008 StorageBackend Intern | ✅ | ~4h | eceb6e2, b4244db, 4cfa5b7 |
-| LOW-001 Arena | 🟢 Offen | ~3 Tage | — |
-| LOW-002 Batch Embed | 🟢 Offen | ~4h | — |
+| LOW-001 Zoom-Retrieve Refactor | ✅ | ~2-4h | 7db3c80 (a+b) |
+| LOW-002 Batch Embed | ✅ | ~4h | bf5a591, d24fa83 |
 | LOW-003 CI erweitern | ✅ | ~1h | 06be859 |
 | LOW-004 RRF | ✅ | — | rrf_fuse() |
 | LOW-005 DreamStatus + cycle_count | ✅ | ~30min | 3238e1a, f34e8fc |
