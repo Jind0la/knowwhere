@@ -265,7 +265,7 @@ impl<'a> TrajectoryStore<'a> {
     /// Log a complete retrieval trajectory to PostgreSQL.
     ///
     /// Returns the run_id of the inserted retrieval_runs row.
-    pub async fn log_retrieval(&self, trajectory: &RetrievalTrajectory) -> Result<Uuid> {
+    pub async fn log_retrieval(&self, trajectory: &RetrievalTrajectory) -> sqlx::Result<Uuid> {
         let run_id = Uuid::new_v4();
 
         // Insert the run row
@@ -317,7 +317,7 @@ impl<'a> TrajectoryStore<'a> {
     }
 
     /// List recent retrieval runs (cursor-based pagination).
-    pub async fn list_runs(&self, limit: i32, after_id: Option<Uuid>) -> Result<Vec<RetrievalRunRow>> {
+    pub async fn list_runs(&self, limit: i32, after_id: Option<Uuid>) -> sqlx::Result<Vec<RetrievalRunRow>> {
         let rows = if let Some(after) = after_id {
             sqlx::query_as!(
                 RetrievalRunRow,
@@ -353,7 +353,7 @@ impl<'a> TrajectoryStore<'a> {
     }
 
     /// Get a single retrieval run by ID.
-    pub async fn get_run(&self, run_id: Uuid) -> Result<Option<RetrievalRunRow>> {
+    pub async fn get_run(&self, run_id: Uuid) -> sqlx::Result<Option<RetrievalRunRow>> {
         let row = sqlx::query_as!(
             RetrievalRunRow,
             r#"
@@ -370,7 +370,7 @@ impl<'a> TrajectoryStore<'a> {
     }
 
     /// Get all trajectory steps for a retrieval run.
-    pub async fn get_trajectory(&self, run_id: Uuid) -> Result<Vec<TrajectoryStepRow>> {
+    pub async fn get_trajectory(&self, run_id: Uuid) -> sqlx::Result<Vec<TrajectoryStepRow>> {
         let rows = sqlx::query_as!(
             TrajectoryStepRow,
             r#"

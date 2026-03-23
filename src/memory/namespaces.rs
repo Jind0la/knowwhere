@@ -219,20 +219,6 @@ sqlx::FromRow! {
     }
 }
 
-#[cfg(feature = "postgres-storage")]
-impl From<MemoryNamespaceRow> for MemoryNamespace {
-    fn from(r: MemoryNamespaceRow) -> Self {
-        Self {
-            id: r.id,
-            path: r.path,
-            depth: r.depth,
-            parent_id: r.parent_id,
-            description: r.description,
-            memory_type_hint: r.memory_type_hint,
-        }
-    }
-}
-
 // Partial memory row used for namespace-scoped browsing.
 #[cfg(feature = "postgres-storage")]
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]

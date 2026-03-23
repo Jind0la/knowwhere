@@ -458,21 +458,3 @@ sqlx::FromRow! {
         metadata: serde_json::Value,
     }
 }
-
-#[cfg(feature = "postgres-storage")]
-impl From<AgentSkillRow> for AgentSkill {
-    fn from(r: AgentSkillRow) -> Self {
-        Self {
-            id: r.id,
-            skill_name: r.skill_name,
-            category: r.category,
-            proficiency: r.proficiency,
-            last_used: r.last_used,
-            success_rate: r.success_rate,
-            components: r.components,
-            prerequisites: r.prerequisites,
-            namespace_id: r.namespace_id,
-            metadata: r.metadata,
-        }
-    }
-}

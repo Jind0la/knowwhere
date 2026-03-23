@@ -22,6 +22,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use blake3::Hash;
 use sqlx::PgPool;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 // ---------------------------------------------------------------------------
@@ -29,7 +30,7 @@ use uuid::Uuid;
 // ---------------------------------------------------------------------------
 
 /// Result of a self-healing check.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, ToSchema)]
 pub struct HealthCheckResult {
     pub memory_id: Uuid,
     pub uri: String,
@@ -48,7 +49,7 @@ pub enum RepairStatus {
 }
 
 /// Statistics about broken vs. repaired pointers.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, ToSchema)]
 pub struct HealingStats {
     pub total_checked: i64,
     pub currently_broken: i64,

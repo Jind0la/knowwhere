@@ -696,9 +696,9 @@ impl PostgresStore {
                    processing_time_ms, status, error_message, created_at
             FROM consolidation_history
             ORDER BY created_at DESC
-            LIMIT $1
+            LIMIT $1::bigint
             "#,
-            limit
+            limit as i64
         )
         .fetch_all(&self.pool)
         .await?;
@@ -1108,12 +1108,6 @@ fn rrf_fuse(vector_ids: &[Uuid], bm25_results: &[(Uuid, f32)], k: f32) -> Vec<(U
 // =============================================================================
 // Row Types (matching the SQL schema)
 // =============================================================================
-
-sqlx::impl_for!(Event in "postgres");
-sqlx::impl_for!(MemoryRow in "postgres");
-sqlx::impl_for!(MemoryWithScore in "postgres");
-sqlx::impl_for!(EdgeRow in "postgres");
-sqlx::impl_for!(ConsolidationRow in "postgres");
 
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct Event {

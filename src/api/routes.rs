@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use axum::extract::{Path, State};
@@ -11,6 +12,7 @@ use uuid::Uuid;
 
 use crate::embedding::{EmbeddingProvider, embed_document, embed_query};
 use crate::memory::dream::DreamStatus;
+use crate::memory::skills::{CreateSkillResponse, SkillsStore};
 use crate::memory::types::{ConflictState, ContextTier, MemorySource, MemoryStatus, MemoryType, Sensitivity};
 use crate::memory::{DreamMode, Event, EventStore, FractalNode, GovernancePolicy, GovernanceValidator, InMemoryEventStore};
 use crate::multimodal::MultimodalData;
@@ -1686,7 +1688,7 @@ pub async fn reindex_external_node(
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("/"));
 
-    let service = SelfHealingService::new(pool, file_root);
+    let service = SelfHealingService::new((*pool).clone(), file_root);
     service
         .index_external_node(id, &file_path)
         .await
@@ -1753,7 +1755,7 @@ pub async fn memory_health_check(
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("/"));
 
-    let service = SelfHealingService::new(pool, file_root);
+    let service = SelfHealingService::new((*pool).clone(), file_root);
     match service.health_check(id).await {
         Ok(result) => Ok(Json(result)),
         Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
@@ -1783,7 +1785,7 @@ pub async fn self_healing_stats(
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("/"));
 
-    let service = SelfHealingService::new(pool, file_root);
+    let service = SelfHealingService::new((*pool).clone(), file_root);
     match service.stats().await {
         Ok(stats) => Ok(Json(stats)),
         Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
