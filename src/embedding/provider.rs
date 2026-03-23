@@ -5,6 +5,15 @@ use serde::Deserialize;
 #[async_trait]
 pub trait EmbeddingProvider: Send + Sync {
     async fn embed(&self, text: &str) -> Result<Vec<f32>>;
+    
+    async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+        let mut results = Vec::with_capacity(texts.len());
+        for t in texts {
+            results.push(self.embed(t).await?);
+        }
+        Ok(results)
+    }
+    
     fn dimension(&self) -> usize;
     fn name(&self) -> &str;
     fn document_prefix(&self) -> &str { "" }
@@ -26,6 +35,28 @@ pub async fn embed_query(provider: &dyn EmbeddingProvider, text: &str) -> Result
         provider.embed(text).await
     } else {
         provider.embed(&format!("{p}{text}")).await
+    }
+}
+
+pub async fn embed_document_batch(provider: &dyn EmbeddingProvider, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+    let p = provider.document_prefix();
+    if p.is_empty() {
+        provider.embed_batch(texts).await
+    } else {
+        let prefixed: Vec<String> = texts.iter().map(|t| format!("{p}{t}")).collect();
+        let refs: Vec<&str> = prefixed.iter().map(String::as_str).collect();
+        provider.embed_batch(&refs).await
+    }
+}
+
+pub async fn embed_query_batch(provider: &dyn EmbeddingProvider, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+    let p = provider.query_prefix();
+    if p.is_empty() {
+        provider.embed_batch(texts).await
+    } else {
+        let prefixed: Vec<String> = texts.iter().map(|t| format!("{p}{t}")).collect();
+        let refs: Vec<&str> = prefixed.iter().map(String::as_str).collect();
+        provider.embed_batch(&refs).await
     }
 }
 
@@ -52,6 +83,7 @@ struct EmbeddingResponse {
 
 #[derive(Deserialize)]
 struct EmbeddingData {
+    index: usize,
     embedding: Vec<f32>,
 }
 
@@ -80,6 +112,29 @@ impl EmbeddingProvider for GrokProvider {
             .next()
             .map(|d| d.embedding)
             .context("empty embedding response from grok")
+    }
+
+    async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+        let resp: EmbeddingResponse = self
+            .client
+            .post("https://api.x.ai/v1/embeddings")
+            .bearer_auth(&self.api_key)
+            .json(&serde_json::json!({
+                "model": "v3-embedding",
+                "input": texts
+            }))
+            .send()
+            .await
+            .context("grok batch embedding request failed")?
+            .error_for_status()
+            .context("grok API returned error status")?
+            .json()
+            .await
+            .context("failed to parse grok batch response")?;
+
+        let mut data = resp.data;
+        data.sort_by_key(|d| d.index);
+        Ok(data.into_iter().map(|d| d.embedding).collect())
     }
 
     fn dimension(&self) -> usize {
@@ -132,6 +187,29 @@ impl EmbeddingProvider for OpenAIProvider {
             .next()
             .map(|d| d.embedding)
             .context("empty embedding response from openai")
+    }
+
+    async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+        let resp: EmbeddingResponse = self
+            .client
+            .post("https://api.openai.com/v1/embeddings")
+            .bearer_auth(&self.api_key)
+            .json(&serde_json::json!({
+                "model": "text-embedding-3-small",
+                "input": texts
+            }))
+            .send()
+            .await
+            .context("openai batch embedding request failed")?
+            .error_for_status()
+            .context("openai API returned error status")?
+            .json()
+            .await
+            .context("failed to parse openai batch response")?;
+
+        let mut data = resp.data;
+        data.sort_by_key(|d| d.index);
+        Ok(data.into_iter().map(|d| d.embedding).collect())
     }
 
     fn dimension(&self) -> usize {
@@ -205,11 +283,99 @@ impl EmbeddingProvider for LocalOllamaProvider {
         Ok(resp.embedding)
     }
 
+    async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+        use futures::future::try_join_all;
+        let futures: Vec<_> = texts.iter().map(|t| self.embed(t)).collect();
+        try_join_all(futures).await
+    }
+
     fn dimension(&self) -> usize {
         768
     }
 
     fn name(&self) -> &str {
         "local-ollama"
+    }
+}
+
+#[cfg(test)]
+mod batch_tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    struct MockProvider {
+        calls: Mutex<Vec<Vec<String>>>,
+        responses: Mutex<Vec<Vec<Vec<f32>>>>,
+        call_count: Mutex<usize>,
+    }
+
+    impl MockProvider {
+        fn new(responses: Vec<Vec<Vec<f32>>>) -> Self {
+            Self {
+                calls: Mutex::new(vec![]),
+                responses: Mutex::new(responses),
+                call_count: Mutex::new(0),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl EmbeddingProvider for MockProvider {
+        async fn embed(&self, _text: &str) -> Result<Vec<f32>> {
+            Ok(vec![1.0])
+        }
+
+        async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+            let mut calls = self.calls.lock().unwrap();
+            calls.push(texts.iter().map(|s| s.to_string()).collect());
+            let mut count = self.call_count.lock().unwrap();
+            let resp = self.responses.lock().unwrap();
+            let result = resp.get(*count).cloned().unwrap_or(vec![]);
+            *count += 1;
+            drop(resp);
+            Ok(result)
+        }
+
+        fn document_prefix(&self) -> &str { "search_document: " }
+        fn query_prefix(&self) -> &str { "search_query: " }
+
+        fn dimension(&self) -> usize { 4 }
+        fn name(&self) -> &str { "mock" }
+    }
+
+    #[tokio::test]
+    async fn test_embed_document_batch_with_prefix() {
+        let provider = MockProvider::new(vec![
+            vec![vec![1.0, 0.0, 0.0, 0.0], vec![0.0, 1.0, 0.0, 0.0]]
+        ]);
+        let texts = vec!["hello", "world"];
+        let results = embed_document_batch(&provider, &texts).await.unwrap();
+        assert_eq!(results.len(), 2);
+        let calls = provider.calls.lock().unwrap();
+        assert!(calls[0][0].starts_with("search_document: "));
+    }
+
+    #[tokio::test]
+    async fn test_embed_query_batch_with_prefix() {
+        let provider = MockProvider::new(vec![
+            vec![vec![1.0, 0.0, 0.0, 0.0]]
+        ]);
+        let texts = vec!["query text"];
+        let results = embed_query_batch(&provider, &texts).await.unwrap();
+        assert_eq!(results.len(), 1);
+        let calls = provider.calls.lock().unwrap();
+        assert!(calls[0][0].starts_with("search_query: "));
+    }
+
+    #[tokio::test]
+    async fn test_batch_order_preserved() {
+        let provider = MockProvider::new(vec![
+            vec![vec![1.0], vec![2.0], vec![3.0]]
+        ]);
+        let texts = vec!["first", "second", "third"];
+        let results = provider.embed_batch(&texts).await.unwrap();
+        assert_eq!(results[0], vec![1.0]);
+        assert_eq!(results[1], vec![2.0]);
+        assert_eq!(results[2], vec![3.0]);
     }
 }

@@ -134,6 +134,13 @@ pub trait StorageBackend: Send + Sync {
     /// Insert a new memory node. Returns the assigned UUID.
     async fn insert(&self, node: FractalNode) -> anyhow::Result<Uuid>;
 
+    /// Insert multiple nodes concurrently. Returns their assigned UUIDs.
+    async fn insert_many(&self, nodes: Vec<FractalNode>) -> anyhow::Result<Vec<Uuid>> {
+        use futures::future::try_join_all;
+        let ids: Vec<_> = nodes.into_iter().map(|n| self.insert(n)).collect();
+        try_join_all(ids).await
+    }
+
     /// Retrieve a node by ID.
     async fn get(&self, id: &Uuid) -> anyhow::Result<Option<FractalNode>>;
 

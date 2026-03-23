@@ -48,3 +48,38 @@ pub async fn store_external_event(
     tracing::info!(%id, "external event stored via connector");
     Ok(id)
 }
+
+/// Stores multiple ExternalEvents in batch.
+/// Only handles events WITHOUT multimodal data (those go through embed() individually).
+/// For events with multimodal data, use store_external_event individually.
+pub async fn store_external_events_batch(
+    store: &MemoryStore,
+    embedding: &Arc<dyn EmbeddingProvider>,
+    events: Vec<ExternalEvent>,
+) -> Result<Vec<Uuid>> {
+    let (plain_events, multimodal_events): (Vec<_>, Vec<_>) = events
+        .into_iter()
+        .partition(|e| e.multimodal.is_none());
+
+    let pointers: Vec<&str> = plain_events.iter().map(|e| e.pointer.as_str()).collect();
+    let embeddings = crate::embedding::provider::embed_document_batch(embedding.as_ref(), &pointers).await?;
+
+    let nodes: Result<Vec<_>> = plain_events
+        .into_iter()
+        .zip(embeddings.into_iter())
+        .map(|(event, vector)| {
+            Ok(FractalNode::new_external(event.pointer, vector, event.metadata))
+        })
+        .collect();
+    let nodes = nodes?;
+
+    let mut ids = store.insert_many(nodes).await?;
+
+    for event in multimodal_events {
+        let id = store_external_event(store, embedding, event).await?;
+        ids.push(id);
+        tracing::warn!(%id, "multimodal event stored individually (batch follow-up pending)");
+    }
+
+    Ok(ids)
+}

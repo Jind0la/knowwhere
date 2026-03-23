@@ -99,6 +99,10 @@ impl StorageBackend for MemoryStore {
         self.insert(node).await
     }
 
+    async fn insert_many(&self, nodes: Vec<FractalNode>) -> anyhow::Result<Vec<Uuid>> {
+        self.insert_many(nodes).await
+    }
+
     async fn get(&self, id: &Uuid) -> anyhow::Result<Option<FractalNode>> {
         self.get(id).await
     }
@@ -445,6 +449,12 @@ impl MemoryStore {
         self.nodes.write().await.insert(id, node);
         self.maybe_save().await;
         Ok(id)
+    }
+
+    pub async fn insert_many(&self, nodes: Vec<FractalNode>) -> Result<Vec<Uuid>> {
+        use futures::future::try_join_all;
+        let ids: Vec<_> = nodes.into_iter().map(|n| self.insert(n)).collect();
+        try_join_all(ids).await
     }
 
     pub async fn get(&self, id: &Uuid) -> Result<Option<FractalNode>> {

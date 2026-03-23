@@ -30,6 +30,7 @@ subtle = "2.6"
 utoipa = { version = "5", features = ["axum_extras", "chrono", "uuid"] }
 utoipa-swagger-ui = { version = "9", features = ["axum"] }
 bm25 = "2.3.2"
+futures = "0.3"
 
 [features]
 default = []
