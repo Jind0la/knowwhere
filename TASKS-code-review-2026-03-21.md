@@ -152,6 +152,66 @@
 
 ---
 
+### [LOW-001b] Evaluation: Arena Allocation — Notwendig? (DONE)
+
+**Fazit: NEIN. Arena Allocation ist zum jetzigen Zeitpunkt nicht gerechtfertigt.**
+
+---
+
+#### Analyse: Was passiert nach LOW-001a noch mit FractalNode clones?
+
+**Hotpath `zoom_retrieve` (jetzt mit LOW-001a):**
+```rust
+// fractal_node.rs — KEIN clone() mehr
+pub fn zoom_retrieve<'a>(&'a self, ...) -> Vec<(f32, &'a FractalNode)> {
+    let mut results = vec![(sim, self)];  // Referenz, kein Clone
+    if let Some(best) = self.find_best_child(query_vector) {
+        results.extend(best.zoom_retrieve(...));  // Referenzen durchgereicht
+    }
+}
+
+// in_memory.rs — NUR top_k Nodes werden geclont (nach Sort)
+scored.into_iter().take(top_k).map(|(_, n)| n.clone()).collect()
+```
+→ Nur die wenigsten Nodes (top_k, typisch 5-20) werden am Ende geclont. Kein deep clone der gesamten Tree-Struktur mehr.
+
+**Verbleibende FractalNode::clone() Stellen im Code:**
+
+| Ort | Was | Häufigkeit | Problem? |
+|-----|-----|------------|----------|
+| `in_memory.rs:799,819` | `.map(\|(_, n)\| n.clone())` | Pro Retrieval-Call, N=top_k | ✅ Nur top_k, nicht whole tree |
+| `in_memory.rs:496` `recent()` | `nodes.values().cloned().collect()` | Pro `/recent` API-Call | ⚠️ Nicht zoom_retrieve hotpath |
+| `dream/mod.rs:186` | `vec![a.clone(), b.clone()]` | Pro Consolidation-Cycle | ✅ Hintergrund-Task, selten |
+| `postgres_store.rs` | Einzelne Feld-clones (vector, content) | Pro Insert/Update | ✅ Kein deep clone |
+
+**Was Arena lösen würde:**
+Wenn jemand `FractalNode::clone()` aufruft → rekursiv alle Kinder + Vektoren + Metadata klonen.
+
+**Was tatsächlich passiert:**
+- Nach LOW-001a: `zoom_retrieve` klont nicht mehr rekursiv
+- `find_best_child()` iteriert nur über `children` (Referenz, kein Clone)
+- `children: Vec<FractalNode>` wird NUR noch gelesen (via Referenz), nicht mehr geklont im Hotpath
+- Die verbleibenden Clones sind einzelne Nodes (top_k, background tasks)
+
+**Würde Arena das `children`-Problem lösen?**
+Arena löst das Problem "wenn ich einen Node klone, klont er alle Kinder mit". Aber:
+1. Niemand klont im Hotpath noch ganze Subtrees
+2. `children` wird nur noch iteriert, nicht mehr rekursiv geklont
+3. Selbst wenn jemand `node.clone()` aufruft — das wäre ein Bug oder bewusster Akt, kein alltäglicher Pfad
+
+**Performance-Problem heute:**
+- `recent()` klont alle Nodes → aber das ist ein anderer Code-Pfad
+- `zoom_retrieve` hotpath ist jetzt optimal (Referenzen)
+
+** Empfehlung:**
+- Arena Allocation auf "Future / Only if profiling shows it" setzen
+- Stattdessen: `recent()` optimieren wenn es zum Bottleneck wird (aber aktuell kein Problem)
+- Arena wäre auch breaking change für Serialisierung (Arc<Self> ist nicht Serialize-friendly ohne custom impl)
+
+**Conclusion:** Arena Allocation löst ein Problem, das nach LOW-001a nicht mehr existiert. **LOW-001b = Done, Arena not needed.**
+
+---
+
 ### [LOW-002] Embedding-Batching-Support
 
 **Status:** 🟢 Offen
