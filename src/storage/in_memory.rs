@@ -629,10 +629,10 @@ impl MemoryStore {
         max_depth: usize,
         #[cfg(feature = "postgres-storage")] trajectory_store: Option<&'a crate::storage::TrajectoryStore<'_>>,
     ) -> Vec<(f32, FractalNode)> {
-        let start = Instant::now();
+        let _start = Instant::now();
 
         #[cfg(feature = "postgres-storage")]
-        let mut trajectory = trajectory_store.map(|ts| {
+        let mut trajectory = trajectory_store.map(|_ts| {
             crate::storage::RetrievalTrajectory::new(
                 query_text.unwrap_or("").to_string(),
                 query_vector.to_vec(),
