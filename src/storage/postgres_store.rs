@@ -328,7 +328,7 @@ impl PostgresStore {
             LIMIT $2::bigint
             "#,
             query_text,
-            top_k
+            top_k as i64
         )
         .fetch_all(&self.pool)
         .await?;
