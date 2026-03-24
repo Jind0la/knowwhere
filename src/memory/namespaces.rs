@@ -64,7 +64,8 @@ impl<'a> NamespaceStore<'a> {
         let row = sqlx::query_as!(
             MemoryNamespaceRow,
             r#"
-            SELECT id, path, depth, parent_id, description, memory_type_hint
+            SELECT id as "id!", path as "path!", depth as "depth!",
+                   parent_id, description, memory_type_hint
             FROM memory_namespaces
             WHERE path = $1
             "#,
@@ -81,7 +82,8 @@ impl<'a> NamespaceStore<'a> {
         let rows = sqlx::query_as!(
             MemoryNamespaceRow,
             r#"
-            SELECT id, path, depth, parent_id, description, memory_type_hint
+            SELECT id as "id!", path as "path!", depth as "depth!",
+                   parent_id, description, memory_type_hint
             FROM memory_namespaces
             ORDER BY path ASC
             "#,
@@ -122,7 +124,8 @@ impl<'a> NamespaceStore<'a> {
         let rows = sqlx::query_as!(
             MemoryNamespaceRow,
             r#"
-            SELECT id, path, depth, parent_id, description, memory_type_hint
+            SELECT id as "id!", path as "path!", depth as "depth!",
+                   parent_id, description, memory_type_hint
             FROM memory_namespaces
             WHERE parent_id = $1
             ORDER BY path ASC
@@ -148,22 +151,21 @@ impl<'a> NamespaceStore<'a> {
             MemoryRow,
             r#"
             SELECT
-                id,
-                memory_type,
+                id as "id!",
+                memory_type as "memory_type!",
                 content,
-                embedding,
+                embedding as "embedding: _",
                 importance,
                 confidence,
                 sensitivity,
                 status,
-                access_count,
-                created_at,
-                updated_at,
+                access_count as "access_count!",
+                created_at as "created_at!",
+                updated_at as "updated_at!",
                 namespace_id,
                 parent_tier_id,
                 context_tier,
                 energy,
-                original_pointer,
                 content_hash,
                 semantic_thumbnail,
                 provenance,
@@ -190,7 +192,8 @@ impl<'a> NamespaceStore<'a> {
         let ns = sqlx::query_as!(
             MemoryNamespaceRow,
             r#"
-            SELECT id, path, depth, parent_id, description, memory_type_hint
+            SELECT id as "id!", path as "path!", depth as "depth!",
+                   parent_id, description, memory_type_hint
             FROM memory_namespaces
             WHERE id = $1
             "#,
@@ -236,7 +239,6 @@ pub struct MemoryRow {
     pub parent_tier_id: Option<Uuid>,
     pub context_tier: Option<i32>,
     pub energy: Option<f32>,
-    pub original_pointer: Option<String>,
     pub content_hash: Option<String>,
     pub semantic_thumbnail: Option<String>,
     pub provenance: Option<serde_json::Value>,
