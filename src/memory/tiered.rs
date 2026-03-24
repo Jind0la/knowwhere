@@ -64,17 +64,19 @@ impl TieredCompactionWorker {
         let row = sqlx::query_as!(
             MemoryRowTiered,
             r#"
-            SELECT id, memory_type, content, content_preview,
-                   importance, confidence, sensitivity, status,
-                   superseded_by, conflict_state, source, source_id,
-                   provenance, parent_id, depth,
-                   access_count, last_accessed,
-                   created_at, updated_at, deleted_at, metadata,
-                   entities, tags,
+            SELECT id as "id!", memory_type as "memory_type!",
+                   content as "content!", importance as "importance!",
+                   confidence as "confidence!", sensitivity as "sensitivity!",
+                   status as "status!", conflict_state as "conflict_state!",
+                   source as "source!", depth as "depth!",
+                   access_count as "access_count!",
+                   created_at as "created_at!", updated_at as "updated_at!",
+                   superseded_by, source_id, provenance, parent_id,
+                   last_accessed, deleted_at, metadata, entities, tags,
                    context_tier::text AS context_tier,
                    parent_tier_id,
                    summary_content, overview_content,
-                   embedding
+                   embedding as "embedding: _"
             FROM memories
             WHERE id = $1 AND status = 'active'
             "#,

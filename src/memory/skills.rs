@@ -181,8 +181,12 @@ impl<'a> SkillsStore<'a> {
         let row = sqlx::query_as!(
             AgentSkillRow,
             r#"
-            SELECT id, skill_name, category, proficiency, last_used,
-                   success_rate, components, prerequisites, namespace_id, metadata
+            SELECT id as "id!", skill_name as "skill_name!",
+                   category as "category!", proficiency as "proficiency!",
+                   last_used, success_rate,
+                   COALESCE(components, ARRAY[]::TEXT[]) as components,
+                   COALESCE(prerequisites, ARRAY[]::TEXT[]) as prerequisites,
+                   namespace_id, metadata
             FROM agent_skills
             WHERE id = $1
             "#,
@@ -205,8 +209,12 @@ impl<'a> SkillsStore<'a> {
                 sqlx::query_as!(
                     AgentSkillRow,
                     r#"
-                    SELECT id, skill_name, category, proficiency, last_used,
-                           success_rate, components, prerequisites, namespace_id, metadata
+                    SELECT id as "id!", skill_name as "skill_name!",
+                           category as "category!", proficiency as "proficiency!",
+                           last_used, success_rate,
+                           COALESCE(components, ARRAY[]::TEXT[]) as components,
+                           COALESCE(prerequisites, ARRAY[]::TEXT[]) as prerequisites,
+                           namespace_id, metadata
                     FROM agent_skills
                     WHERE category = $1 AND proficiency >= $2
                     ORDER BY proficiency DESC, skill_name ASC
@@ -221,8 +229,12 @@ impl<'a> SkillsStore<'a> {
                 sqlx::query_as!(
                     AgentSkillRow,
                     r#"
-                    SELECT id, skill_name, category, proficiency, last_used,
-                           success_rate, components, prerequisites, namespace_id, metadata
+                    SELECT id as "id!", skill_name as "skill_name!",
+                           category as "category!", proficiency as "proficiency!",
+                           last_used, success_rate,
+                           COALESCE(components, ARRAY[]::TEXT[]) as components,
+                           COALESCE(prerequisites, ARRAY[]::TEXT[]) as prerequisites,
+                           namespace_id, metadata
                     FROM agent_skills
                     WHERE category = $1
                     ORDER BY proficiency DESC, skill_name ASC
@@ -236,8 +248,12 @@ impl<'a> SkillsStore<'a> {
                 sqlx::query_as!(
                     AgentSkillRow,
                     r#"
-                    SELECT id, skill_name, category, proficiency, last_used,
-                           success_rate, components, prerequisites, namespace_id, metadata
+                    SELECT id as "id!", skill_name as "skill_name!",
+                           category as "category!", proficiency as "proficiency!",
+                           last_used, success_rate,
+                           COALESCE(components, ARRAY[]::TEXT[]) as components,
+                           COALESCE(prerequisites, ARRAY[]::TEXT[]) as prerequisites,
+                           namespace_id, metadata
                     FROM agent_skills
                     WHERE proficiency >= $1
                     ORDER BY proficiency DESC, skill_name ASC
@@ -251,8 +267,12 @@ impl<'a> SkillsStore<'a> {
                 sqlx::query_as!(
                     AgentSkillRow,
                     r#"
-                    SELECT id, skill_name, category, proficiency, last_used,
-                           success_rate, components, prerequisites, namespace_id, metadata
+                    SELECT id as "id!", skill_name as "skill_name!",
+                           category as "category!", proficiency as "proficiency!",
+                           last_used, success_rate,
+                           COALESCE(components, ARRAY[]::TEXT[]) as components,
+                           COALESCE(prerequisites, ARRAY[]::TEXT[]) as prerequisites,
+                           namespace_id, metadata
                     FROM agent_skills
                     ORDER BY proficiency DESC, skill_name ASC
                     "#,
@@ -362,8 +382,12 @@ impl<'a> SkillsStore<'a> {
         let rows = sqlx::query_as!(
             AgentSkillRow,
             r#"
-            SELECT id, skill_name, category, proficiency, last_used,
-                   success_rate, components, prerequisites, namespace_id, metadata
+            SELECT id as "id!", skill_name as "skill_name!",
+                   category as "category!", proficiency as "proficiency!",
+                   last_used, success_rate,
+                   COALESCE(components, ARRAY[]::TEXT[]) as components,
+                   COALESCE(prerequisites, ARRAY[]::TEXT[]) as prerequisites,
+                   namespace_id, metadata
             FROM agent_skills
             WHERE skill_name ILIKE $1
                OR category ILIKE $1

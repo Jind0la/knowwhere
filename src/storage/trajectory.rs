@@ -280,10 +280,10 @@ impl<'a> TrajectoryStore<'a> {
             run_id,
             &trajectory.query_text,
             trajectory.query_embedding.clone() as _,
-            trajectory.total_candidates as _,
-            trajectory.retrieved_count as _,
+            trajectory.total_candidates as i32,
+            trajectory.retrieved_count as i32,
             trajectory.execution_time_ms as i32,
-            trajectory.max_depth_used as _,
+            trajectory.max_depth_used as i32,
             serde_json::json!({}),
         )
         .execute(self.pool)
@@ -322,8 +322,11 @@ impl<'a> TrajectoryStore<'a> {
             sqlx::query_as!(
                 RetrievalRunRow,
                 r#"
-                SELECT id, query_text, embedding, run_at,
-                       total_candidates, retrieved_count, execution_time_ms, max_depth_used, metadata
+                SELECT id as "id!", query_text as "query_text!",
+                       run_at as "run_at!",
+                       embedding as "embedding: _",
+                       total_candidates, retrieved_count, execution_time_ms, max_depth_used,
+                       metadata
                 FROM retrieval_runs
                 WHERE id < $1
                 ORDER BY run_at DESC
@@ -338,8 +341,11 @@ impl<'a> TrajectoryStore<'a> {
             sqlx::query_as!(
                 RetrievalRunRow,
                 r#"
-                SELECT id, query_text, embedding, run_at,
-                       total_candidates, retrieved_count, execution_time_ms, max_depth_used, metadata
+                SELECT id as "id!", query_text as "query_text!",
+                       run_at as "run_at!",
+                       embedding as "embedding: _",
+                       total_candidates, retrieved_count, execution_time_ms, max_depth_used,
+                       metadata
                 FROM retrieval_runs
                 ORDER BY run_at DESC
                 LIMIT $1
@@ -357,8 +363,11 @@ impl<'a> TrajectoryStore<'a> {
         let row = sqlx::query_as!(
             RetrievalRunRow,
             r#"
-            SELECT id, query_text, embedding, run_at,
-                   total_candidates, retrieved_count, execution_time_ms, max_depth_used, metadata
+            SELECT id as "id!", query_text as "query_text!",
+                   run_at as "run_at!",
+                   embedding as "embedding: _",
+                   total_candidates, retrieved_count, execution_time_ms, max_depth_used,
+                   metadata
             FROM retrieval_runs
             WHERE id = $1
             "#,
@@ -374,8 +383,10 @@ impl<'a> TrajectoryStore<'a> {
         let rows = sqlx::query_as!(
             TrajectoryStepRow,
             r#"
-            SELECT id, run_id, step_index, step_type, memory_id,
-                   score_before, score_after, rank, decision, filter_reason, created_at
+            SELECT id as "id!", run_id as "run_id!", step_index as "step_index!",
+                   step_type as "step_type!",
+                   memory_id, score_before, score_after, rank, decision, filter_reason,
+                   created_at as "created_at!"
             FROM retrieval_trajectory
             WHERE run_id = $1
             ORDER BY step_index

@@ -616,28 +616,34 @@ impl PostgresStore {
             MemoryRow,
             r#"
             WITH RECURSIVE fractal_tree AS (
-                SELECT id, memory_type, content, content_preview,
-                       importance, confidence, sensitivity, status,
-                       superseded_by, conflict_state, source, source_id,
-                       provenance, parent_id, depth,
-                       access_count, last_accessed,
-                       created_at, updated_at, deleted_at, metadata,
-                       entities, tags,
-                       embedding,
+                SELECT id as "id!", memory_type as "memory_type!",
+                       content as "content!", importance as "importance!",
+                       confidence as "confidence!", sensitivity as "sensitivity!",
+                       status as "status!", conflict_state as "conflict_state!",
+                       source as "source!", depth as "depth!",
+                       access_count as "access_count!",
+                       created_at as "created_at!", updated_at as "updated_at!",
+                       superseded_by, source_id, provenance, parent_id,
+                       last_accessed, deleted_at, metadata, entities, tags,
+                       embedding as "embedding: _",
+                       content_preview,
                        1 AS level
                 FROM memories
                 WHERE parent_id = $1 AND status = 'active'
 
                 UNION ALL
 
-                SELECT m.id, m.memory_type, m.content, m.content_preview,
-                       m.importance, m.confidence, m.sensitivity, m.status,
-                       m.superseded_by, m.conflict_state, m.source, m.source_id,
-                       m.provenance, m.parent_id, m.depth,
-                       m.access_count, m.last_accessed,
-                       m.created_at, m.updated_at, m.deleted_at, m.metadata,
-                       m.entities, m.tags,
-                       m.embedding,
+                SELECT m.id as "id!", m.memory_type as "memory_type!",
+                       m.content as "content!", m.importance as "importance!",
+                       m.confidence as "confidence!", m.sensitivity as "sensitivity!",
+                       m.status as "status!", m.conflict_state as "conflict_state!",
+                       m.source as "source!", m.depth as "depth!",
+                       m.access_count as "access_count!",
+                       m.created_at as "created_at!", m.updated_at as "updated_at!",
+                       m.superseded_by, m.source_id, m.provenance, m.parent_id,
+                       m.last_accessed, m.deleted_at, m.metadata, m.entities, m.tags,
+                       m.embedding as "embedding: _",
+                       m.content_preview,
                        ft.level + 1 AS level
                 FROM memories m
                 INNER JOIN fractal_tree ft ON m.parent_id = ft.id
@@ -645,31 +651,20 @@ impl PostgresStore {
             )
             SELECT
                    -- Non-nullable primitives: use COALESCE to satisfy sqlx
-                   id,
-                   memory_type,
-                   content,
-                   importance,
-                   confidence,
-                   sensitivity,
-                   status,
-                   conflict_state,
-                   source,
-                   depth,
-                   access_count,
+                   id as "id!", memory_type as "memory_type!",
+                   content as "content!", importance as "importance!",
+                   confidence as "confidence!", sensitivity as "sensitivity!",
+                   status as "status!", conflict_state as "conflict_state!",
+                   source as "source!", depth as "depth!",
+                   access_count as "access_count!",
+                   created_at as "created_at!", updated_at as "updated_at!",
                    -- Nullable but should have values
                    COALESCE(content_preview, ''::text) as content_preview,
                    COALESCE(superseded_by, '00000000-0000-0000-0000-000000000000'::uuid) as superseded_by,
                    COALESCE(source_id, ''::text) as source_id,
-                   provenance,
-                   parent_id,
-                   last_accessed,
-                   created_at,
-                   updated_at,
-                   deleted_at,
-                   metadata,
-                   entities,
-                   tags,
-                   embedding
+                   provenance, parent_id, last_accessed, deleted_at,
+                   metadata, entities, tags,
+                   embedding as "embedding: _"
             FROM fractal_tree
             ORDER BY level
             "#,

@@ -281,8 +281,8 @@ impl<'a> EnergyDecayWorker<'a> {
             if let Some(content) = &row.content {
                 combined_parts.push(content.clone());
             }
-            max_importance = max_importance.max(row.importance);
-            max_confidence = max_confidence.max(row.confidence);
+            max_importance = max_importance.max(row.importance.unwrap_or(0));
+            max_confidence = max_confidence.max(row.confidence.unwrap_or(0.0));
 
             if let Some(serde_json::Value::Array(entities)) = &row.entities {
                 all_entities.extend(entities.clone());

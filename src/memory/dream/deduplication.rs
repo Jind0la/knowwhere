@@ -164,7 +164,7 @@ impl<'a> DeduplicationWorker<'a> {
                 WHERE m.status = 'active'
                   AND m.embedding IS NOT NULL
             )
-            SELECT source_id as "id_a!", neighbor_id as "id_b!", similarity
+            SELECT source_id as "id_a!", neighbor_id as "id_b!", similarity as "similarity!"
             FROM neighbors
             WHERE similarity > $1::float4
             ORDER BY similarity DESC
@@ -232,8 +232,8 @@ impl<'a> DeduplicationWorker<'a> {
         };
 
         // Take max importance and confidence
-        let max_importance = mem_a.importance.max(mem_b.importance);
-        let max_confidence = mem_a.confidence.max(mem_b.confidence);
+        let max_importance = mem_a.importance.unwrap_or(0).max(mem_b.importance.unwrap_or(0));
+        let max_confidence = mem_a.confidence.unwrap_or(0.0).max(mem_b.confidence.unwrap_or(0.0));
 
         // Combine entities
         let entities_a: Vec<serde_json::Value> = mem_a

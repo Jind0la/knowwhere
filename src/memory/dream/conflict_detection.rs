@@ -399,7 +399,8 @@ impl ConflictDetector {
             .iter()
             .filter_map(|r| {
                 let embedding: Vec<f32> = r.embedding.clone()?;
-                Some((r.id, r.content.clone(), r.confidence, embedding))
+                let confidence: f64 = r.confidence.unwrap_or(0.0);
+                Some((r.id, r.content.clone(), confidence, embedding))
             })
             .collect();
 
@@ -539,13 +540,15 @@ impl ConflictDetector {
             for k in 0..same_content.len() {
                 for l in (k + 1)..same_content.len() {
                     let diff =
-                        (same_content[k].confidence - same_content[l].confidence).abs();
+                        (same_content[k].confidence.unwrap_or(0.0) - same_content[l].confidence.unwrap_or(0.0)).abs();
                     if diff > 0.3 {
                         let conflicting_ids: Vec<Uuid> =
                             same_content.iter().map(|m| m.id).collect();
                         let description = format!(
                             "Same content has confidence scores {} and {} (diff: {:.2})",
-                            same_content[k].confidence, same_content[l].confidence, diff
+                            same_content[k].confidence.unwrap_or(0.0),
+                            same_content[l].confidence.unwrap_or(0.0),
+                            diff
                         );
 
                         let id = Uuid::new_v4();
@@ -722,7 +725,8 @@ impl ConflictDetector {
         let rows = sqlx::query_as!(
             ConflictDetectionRunRow,
             r#"
-            SELECT id, conflicts_found, conflicts_resolved, run_at
+            SELECT id as "id!", conflicts_found as "conflicts_found!",
+                   conflicts_resolved as "conflicts_resolved!", run_at as "run_at!"
             FROM conflict_detection_runs
             ORDER BY run_at DESC
             LIMIT $1
