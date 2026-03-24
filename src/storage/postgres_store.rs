@@ -318,7 +318,7 @@ impl PostgresStore {
         let rows: Vec<Bm25Row> = sqlx::query_as!(
             Bm25Row,
             r#"
-            SELECT id, COALESCE(ts_rank(to_tsvector('english', content), plainto_tsquery('english', $1)), 0.0) AS rank
+            SELECT id, COALESCE(ts_rank(to_tsvector('english', content), plainto_tsquery('english', $1)), 0.0)::float8 AS "rank!"
             FROM memories
             WHERE status = 'active'
               AND to_tsvector('english', content) @@ plainto_tsquery('english', $1)
@@ -401,6 +401,7 @@ impl PostgresStore {
                            created_at as "created_at!", updated_at as "updated_at!",
                            source_id, provenance,
                            last_accessed,
+                           content_preview,
                            COALESCE((1 - (embedding <=> $1::vector))::float, 0.0) AS "similarity: f64",
                            embedding as "embedding: _"
                     FROM memories
@@ -429,6 +430,7 @@ impl PostgresStore {
                        created_at as "created_at!", updated_at as "updated_at!",
                        source_id, provenance,
                        last_accessed,
+                       content_preview,
                        COALESCE((1 - (embedding <=> $1::vector))::float, 0.0) AS "similarity: f64",
                        embedding as "embedding: _"
                 FROM memories
