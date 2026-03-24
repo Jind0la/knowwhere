@@ -158,14 +158,14 @@ impl<'a> EnergyDecayWorker<'a> {
     /// Returns the number of memories updated and how many hit zero.
     pub async fn apply_decay(&self) -> Result<DecayResult> {
         // λ = ln(2) / halflife_hours  →  half-life decay constant
-        let lambda = 2.0_f32.ln() / self.halflife_hours;
+        let lambda = (2.0_f64.ln()) / (self.halflife_hours as f64);
 
         // Update all active memories: exponential decay based on time elapsed
         let result = sqlx::query!(
             r#"
             UPDATE memories
             SET energy = GREATEST(0, CAST(
-                (energy::double precision) * EXP((-($1::double precision)) * EXTRACT(EPOCH FROM (NOW() - (last_energy_update)::timestamptz)) / 3600.0::double precision)
+                (energy::double precision) * EXP((-($1::double precision)) * EXTRACT(EPOCH FROM (NOW() - (last_energy_update)::timestamptz)) / 3600.0)
                 AS INTEGER
             )),
             last_energy_update = NOW()
