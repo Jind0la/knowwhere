@@ -512,34 +512,30 @@ impl PostgresStore {
 
     /// Count total active memories.
     pub async fn count(&self, memory_type: Option<&str>) -> Result<i64> {
-        #[derive(Debug, sqlx::FromRow)]
-        struct CountRow(i64);
-
-        let count = if let Some(mt) = memory_type {
-            sqlx::query_as!(
-                CountRow,
+        let row = if let Some(mt) = memory_type {
+            sqlx::query(
                 r#"
-                SELECT COUNT(*)::bigint
+                SELECT COUNT(*)::bigint as "count:i64"
                 FROM memories
                 WHERE status = 'active' AND memory_type = $1
                 "#,
-                mt
             )
+            .bind(mt)
             .fetch_one(&self.pool)
             .await?
         } else {
-            sqlx::query_as!(
-                CountRow,
+            sqlx::query(
                 r#"
-                SELECT COUNT(*)::bigint
+                SELECT COUNT(*)::bigint as "count:i64"
                 FROM memories
                 WHERE status = 'active'
-                "#
+                "#,
             )
             .fetch_one(&self.pool)
             .await?
         };
-        Ok(count.0)
+        let count: i64 = row.get("count");
+        Ok(count)
     }
 
     // -------------------------------------------------------------------------
