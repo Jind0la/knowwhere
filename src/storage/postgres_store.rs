@@ -187,18 +187,18 @@ impl PostgresStore {
         let row = sqlx::query_as!(
             MemoryRow,
             r#"
-            SELECT id as "id!", memory_type as "memory_type!",
-                   content as "content!", importance as "importance!",
-                   confidence as "confidence!", sensitivity as "sensitivity!",
-                   status as "status!", conflict_state as "conflict_state!",
-                   source as "source!", depth as "depth!",
-                   access_count as "access_count!",
-                   created_at as "created_at!", updated_at as "updated_at!",
-                   superseded_by, source_id, provenance, parent_id,
-                   last_accessed, deleted_at, metadata, entities,
-                   COALESCE(tags, ARRAY[]::TEXT[]) as tags,
-                   content_preview,
-                   embedding as "embedding: _"
+            SELECT 
+                id as "id!", memory_type as "memory_type!",
+                content as "content!", content_preview,
+                importance as "importance!", confidence as "confidence!",
+                sensitivity as "sensitivity!", status as "status!",
+                superseded_by, conflict_state as "conflict_state!",
+                source as "source!", source_id, provenance as "provenance!",
+                parent_id, depth as "depth!", access_count as "access_count!",
+                last_accessed, created_at as "created_at!", updated_at as "updated_at!",
+                deleted_at, metadata as "metadata!", entities as "entities!",
+                COALESCE(tags, ARRAY[]::TEXT[]) as tags,
+                embedding as "embedding: _"
             FROM memories
             WHERE id = $1 AND status != 'deleted'
             "#,
@@ -459,18 +459,18 @@ impl PostgresStore {
         let rows = sqlx::query_as!(
             MemoryRow,
             r#"
-            SELECT id as "id!", memory_type as "memory_type!",
-                   content as "content!", importance as "importance!",
-                   confidence as "confidence!", sensitivity as "sensitivity!",
-                   status as "status!", conflict_state as "conflict_state!",
-                   source as "source!", depth as "depth!",
-                   access_count as "access_count!",
-                   created_at as "created_at!", updated_at as "updated_at!",
-                   superseded_by, source_id, provenance, parent_id,
-                   last_accessed, deleted_at, metadata, entities,
-                   COALESCE(tags, ARRAY[]::TEXT[]) as tags,
-                   content_preview,
-                   embedding as "embedding: _"
+            SELECT 
+                id as "id!", memory_type as "memory_type!",
+                content as "content!", content_preview,
+                importance as "importance!", confidence as "confidence!",
+                sensitivity as "sensitivity!", status as "status!",
+                superseded_by, conflict_state as "conflict_state!",
+                source as "source!", source_id, provenance as "provenance!",
+                parent_id, depth as "depth!", access_count as "access_count!",
+                last_accessed, created_at as "created_at!", updated_at as "updated_at!",
+                deleted_at, metadata as "metadata!", entities as "entities!",
+                COALESCE(tags, ARRAY[]::TEXT[]) as tags,
+                embedding as "embedding: _"
             FROM memories
             WHERE status = 'active'
             ORDER BY created_at DESC
@@ -488,18 +488,18 @@ impl PostgresStore {
         let rows = sqlx::query_as!(
             MemoryRow,
             r#"
-            SELECT id as "id!", memory_type as "memory_type!",
-                   content as "content!", importance as "importance!",
-                   confidence as "confidence!", sensitivity as "sensitivity!",
-                   status as "status!", conflict_state as "conflict_state!",
-                   source as "source!", depth as "depth!",
-                   access_count as "access_count!",
-                   created_at as "created_at!", updated_at as "updated_at!",
-                   superseded_by, source_id, provenance, parent_id,
-                   last_accessed, deleted_at, metadata, entities,
-                   COALESCE(tags, ARRAY[]::TEXT[]) as tags,
-                   content_preview,
-                   embedding as "embedding: _"
+            SELECT 
+                id as "id!", memory_type as "memory_type!",
+                content as "content!", content_preview,
+                importance as "importance!", confidence as "confidence!",
+                sensitivity as "sensitivity!", status as "status!",
+                superseded_by, conflict_state as "conflict_state!",
+                source as "source!", source_id, provenance as "provenance!",
+                parent_id, depth as "depth!", access_count as "access_count!",
+                last_accessed, created_at as "created_at!", updated_at as "updated_at!",
+                deleted_at, metadata as "metadata!", entities as "entities!",
+                COALESCE(tags, ARRAY[]::TEXT[]) as tags,
+                embedding as "embedding: _"
             FROM memories
             WHERE status = 'active'
             ORDER BY created_at DESC
