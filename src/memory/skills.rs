@@ -480,3 +480,20 @@ struct AgentSkillRow {
     namespace_id: Option<Uuid>,
     metadata: serde_json::Value,
 }
+
+impl From<AgentSkillRow> for AgentSkill {
+    fn from(row: AgentSkillRow) -> Self {
+        AgentSkill {
+            id: row.id,
+            skill_name: row.skill_name,
+            category: row.category,
+            proficiency: row.proficiency,
+            last_used: row.last_used,
+            success_rate: row.success_rate,
+            components: row.components,
+            prerequisites: row.prerequisites,
+            namespace_id: row.namespace_id,
+            metadata: row.metadata,
+        }
+    }
+}

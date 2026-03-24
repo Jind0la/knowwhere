@@ -221,6 +221,19 @@ struct MemoryNamespaceRow {
     memory_type_hint: Option<String>,
 }
 
+impl From<MemoryNamespaceRow> for MemoryNamespace {
+    fn from(row: MemoryNamespaceRow) -> Self {
+        MemoryNamespace {
+            id: row.id,
+            path: row.path,
+            depth: row.depth,
+            parent_id: row.parent_id,
+            description: row.description,
+            memory_type_hint: row.memory_type_hint,
+        }
+    }
+}
+
 // Partial memory row used for namespace-scoped browsing.
 #[cfg(feature = "postgres-storage")]
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, ToSchema)]

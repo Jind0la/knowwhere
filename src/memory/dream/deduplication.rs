@@ -60,11 +60,11 @@ pub struct DuplicatePair {
 struct MemoryForMerge {
     id: Uuid,
     memory_type: String,
-    content: Option<String>,
+    content: String,
     importance: i32,
     confidence: f64,
     entities: Option<serde_json::Value>,
-    tags: Option<Vec<String>>,
+    tags: Vec<String>,
     provenance: serde_json::Value,
     source: Option<String>,
     summary_content: Option<String>,
@@ -197,7 +197,8 @@ impl<'a> DeduplicationWorker<'a> {
     /// Both original memories are marked `superseded` with `conflict_state = resolved`.
     pub async fn merge_duplicates(&self, id_a: Uuid, id_b: Uuid) -> Result<Uuid> {
         // Fetch both memories
-        let rows = sqlx::query!(
+        let rows = sqlx::query_as!(
+            MemoryForMerge,
             r#"
             SELECT id, memory_type, content, importance, confidence,
                    entities, tags, provenance, source,
@@ -221,8 +222,8 @@ impl<'a> DeduplicationWorker<'a> {
         let mem_b = &rows[1];
 
         // Combine content
-        let content_a = mem_a.content.clone().unwrap_or_default();
-        let content_b = mem_b.content.clone().unwrap_or_default();
+        let content_a = mem_a.content.clone();
+        let content_b = mem_b.content.clone();
         let combined_content = if content_a.is_empty() {
             content_b.clone()
         } else if content_b.is_empty() {
@@ -254,8 +255,8 @@ impl<'a> DeduplicationWorker<'a> {
         }
 
         // Combine tags
-        let tags_a = mem_a.tags.clone().unwrap_or_default();
-        let tags_b = mem_b.tags.clone().unwrap_or_default();
+        let tags_a = mem_a.tags.clone();
+        let tags_b = mem_b.tags.clone();
         let mut all_tags: Vec<String> = tags_a;
         for tag in tags_b {
             if !all_tags.contains(&tag) {
