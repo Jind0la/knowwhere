@@ -196,6 +196,7 @@ impl PostgresStore {
                    created_at as "created_at!", updated_at as "updated_at!",
                    superseded_by, source_id, provenance, parent_id,
                    last_accessed, deleted_at, metadata, entities, tags,
+                   content_preview,
                    embedding as "embedding: _"
             FROM memories
             WHERE id = $1 AND status != 'deleted'
@@ -461,6 +462,7 @@ impl PostgresStore {
                    created_at as "created_at!", updated_at as "updated_at!",
                    superseded_by, source_id, provenance, parent_id,
                    last_accessed, deleted_at, metadata, entities, tags,
+                   content_preview,
                    embedding as "embedding: _"
             FROM memories
             WHERE status = 'active'
@@ -488,6 +490,7 @@ impl PostgresStore {
                    created_at as "created_at!", updated_at as "updated_at!",
                    superseded_by, source_id, provenance, parent_id,
                    last_accessed, deleted_at, metadata, entities, tags,
+                   content_preview,
                    embedding as "embedding: _"
             FROM memories
             WHERE status = 'active'
@@ -570,8 +573,11 @@ impl PostgresStore {
         let rows = sqlx::query_as!(
             EdgeRow,
             r#"
-            SELECT id, from_node_id, to_node_id, edge_type, strength,
-                   confidence, causality, bidirectional, reason, created_at, metadata
+            SELECT id as "id!", from_node_id as "from_node_id!", to_node_id as "to_node_id!",
+                   edge_type as "edge_type!", strength as "strength!",
+                   confidence as "confidence!", causality as "causality!",
+                   bidirectional as "bidirectional!",
+                   reason, created_at as "created_at!", metadata
             FROM knowledge_edges
             WHERE from_node_id = $1 OR to_node_id = $1
             "#,
@@ -722,9 +728,14 @@ impl PostgresStore {
         let rows = sqlx::query_as!(
             ConsolidationRow,
             r#"
-            SELECT id, consolidation_date, session_id, conversation_id,
-                   memories_processed, new_memories_created, edges_created,
-                   processing_time_ms, status, error_message, created_at
+            SELECT id as "id!", consolidation_date,
+                   session_id, conversation_id,
+                   memories_processed as "memories_processed!",
+                   new_memories_created as "new_memories_created!",
+                   edges_created as "edges_created!",
+                   processing_time_ms as "processing_time_ms!",
+                   status as "status!",
+                   error_message, created_at as "created_at!"
             FROM consolidation_history
             ORDER BY created_at DESC
             LIMIT $1::bigint
