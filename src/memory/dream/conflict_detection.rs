@@ -434,7 +434,7 @@ impl ConflictDetector {
                     ..
                 } in results
                 {
-                    if *cand_id == *mem_id || checked.contains(cand_id) {
+                    if cand_id == mem_id || checked.contains(&cand_id) {
                         continue;
                     }
 
@@ -458,7 +458,7 @@ impl ConflictDetector {
                         continue;
                     }
 
-                    let conflicting_ids = vec![*mem_id, *cand_id];
+                    let conflicting_ids = vec![mem_id, cand_id];
                     let description = format!(
                         "Similar content (sim={:.2}) has confidence scores {} and {} (diff: {:.2})",
                         similarity,
@@ -502,10 +502,10 @@ impl ConflictDetector {
                         state: "pending".to_string(),
                     });
 
-                    checked.insert(*cand_id);
+                    checked.insert(cand_id);
                 }
 
-                checked.insert(*mem_id);
+                checked.insert(mem_id);
             }
         }
 
@@ -736,9 +736,9 @@ impl ConflictDetector {
                    conflicts_resolved as "conflicts_resolved!", run_at as "run_at!"
             FROM conflict_detection_runs
             ORDER BY run_at DESC
-            LIMIT $1
+            LIMIT $1::bigint
             "#,
-            limit
+            limit as i64
         )
         .fetch_all(pool)
         .await?;
