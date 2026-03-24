@@ -64,7 +64,7 @@ struct MemoryForMerge {
     importance: i32,
     confidence: f64,
     entities: Option<serde_json::Value>,
-    tags: Vec<String>,
+    tags: Option<Vec<String>>,
     provenance: serde_json::Value,
     source: Option<String>,
     summary_content: Option<String>,
@@ -233,8 +233,8 @@ impl<'a> DeduplicationWorker<'a> {
         };
 
         // Take max importance and confidence
-        let max_importance = mem_a.importance.unwrap_or(0).max(mem_b.importance.unwrap_or(0));
-        let max_confidence = mem_a.confidence.unwrap_or(0.0).max(mem_b.confidence.unwrap_or(0.0));
+        let max_importance = mem_a.importance.max(mem_b.importance);
+        let max_confidence = mem_a.confidence.max(mem_b.confidence);
 
         // Combine entities
         let entities_a: Vec<serde_json::Value> = mem_a
@@ -255,8 +255,8 @@ impl<'a> DeduplicationWorker<'a> {
         }
 
         // Combine tags
-        let tags_a = mem_a.tags.clone();
-        let tags_b = mem_b.tags.clone();
+        let tags_a = mem_a.tags.clone().unwrap_or_default();
+        let tags_b = mem_b.tags.clone().unwrap_or_default();
         let mut all_tags: Vec<String> = tags_a;
         for tag in tags_b {
             if !all_tags.contains(&tag) {

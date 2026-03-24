@@ -475,8 +475,8 @@ struct AgentSkillRow {
     proficiency: i32,
     last_used: Option<DateTime<Utc>>,
     success_rate: Option<f64>,
-    components: Vec<String>,
-    prerequisites: Vec<String>,
+    components: Option<Vec<String>>,
+    prerequisites: Option<Vec<String>>,
     namespace_id: Option<Uuid>,
     metadata: serde_json::Value,
 }
@@ -490,8 +490,8 @@ impl From<AgentSkillRow> for AgentSkill {
             proficiency: row.proficiency,
             last_used: row.last_used,
             success_rate: row.success_rate,
-            components: row.components,
-            prerequisites: row.prerequisites,
+            components: row.components.unwrap_or_default(),
+            prerequisites: row.prerequisites.unwrap_or_default(),
             namespace_id: row.namespace_id,
             metadata: row.metadata,
         }
