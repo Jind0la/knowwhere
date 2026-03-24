@@ -612,8 +612,7 @@ impl ConflictDetector {
             .into_iter()
             .map(|r| ConflictGroup {
                 id: r.id,
-                conflicting_memory_ids: serde_json::from_value(r.conflicting_memory_ids)
-                    .unwrap_or_default(),
+                conflicting_memory_ids: r.conflicting_memory_ids,
                 conflict_type: ConflictType::from_str(&r.conflict_type)
                     .unwrap_or(ConflictType::Entity),
                 description: r.description,
@@ -651,8 +650,7 @@ impl ConflictDetector {
             None => anyhow::bail!("conflict {} not found or already resolved", conflict_id),
         };
 
-        let memory_ids: Vec<Uuid> =
-            serde_json::from_value(conflict.conflicting_memory_ids)?;
+        let memory_ids: Vec<Uuid> = conflict.conflicting_memory_ids;
 
         // Ensure winner is in the conflict group
         if !memory_ids.contains(&winning_memory_id) {
