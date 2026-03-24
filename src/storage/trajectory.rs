@@ -330,10 +330,10 @@ impl<'a> TrajectoryStore<'a> {
                 FROM retrieval_runs
                 WHERE id < $1
                 ORDER BY run_at DESC
-                LIMIT $2
+                LIMIT $2::bigint
                 "#,
                 after,
-                limit
+                limit as i64
             )
             .fetch_all(self.pool)
             .await?
