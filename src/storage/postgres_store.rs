@@ -398,7 +398,7 @@ impl PostgresStore {
                     r#"
                     SELECT id as "id!", memory_type as "memory_type!",
                            content as "content!", importance as "importance!",
-                           COALESCE(confidence, 0.0::double precision) as "confidence!",
+                           COALESCE(confidence, 0.0::double precision)::double precision AS "confidence: f64",
                            sensitivity as "sensitivity!",
                            status as "status!", source as "source!",
                            access_count as "access_count!",
