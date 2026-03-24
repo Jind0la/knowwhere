@@ -210,7 +210,7 @@ impl<'a> EnergyDecayWorker<'a> {
         let rows = sqlx::query_as!(
             MemoryEnergyInfo,
             r#"
-            SELECT id, energy::integer as energy, last_energy_update, memory_type, content
+            SELECT id, energy::integer as energy, last_energy_update, memory_type, COALESCE(content, '') as content
             FROM memories
             WHERE status = 'active'
               AND energy < $1
@@ -281,8 +281,8 @@ impl<'a> EnergyDecayWorker<'a> {
             if !row.content.is_empty() {
                 combined_parts.push(row.content.clone());
             }
-            max_importance = max_importance.max(row.importance);
-            max_confidence = max_confidence.max(row.confidence);
+            max_importance = max_importance.max(row.importance.unwrap_or(0));
+            max_confidence = max_confidence.max(row.confidence.unwrap_or(0.0));
 
             if let Some(serde_json::Value::Array(entities)) = &row.entities {
                 all_entities.extend(entities.clone());
