@@ -14,7 +14,6 @@ use std::sync::Arc;
 use anyhow::Result;
 use tokio::sync::RwLock;
 use tokio::time::{interval, Duration, Instant};
-use uuid::Uuid;
 
 #[cfg(feature = "postgres-storage")]
 use sqlx::PgPool;
