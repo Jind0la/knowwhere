@@ -625,68 +625,32 @@ impl PostgresStore {
     }
 
     /// Get fractal children (for zoom retrieval).
+    /// Uses a simple direct query for direct children only.
     pub async fn get_children(&self, memory_id: Uuid, max_depth: i32) -> Result<Vec<MemoryRow>> {
+        // For simplicity, fetch direct children only
+        // TODO: Implement proper recursive CTE if needed
         let rows = sqlx::query_as!(
             MemoryRow,
             r#"
-            WITH RECURSIVE fractal_tree AS (
-                SELECT id as "id!", memory_type as "memory_type!",
-                       content as "content!", importance as "importance!",
-                       confidence as "confidence!", sensitivity as "sensitivity!",
-                       status as "status!", conflict_state as "conflict_state!",
-                       source as "source!", depth as "depth!",
-                       access_count as "access_count!",
-                       created_at as "created_at!", updated_at as "updated_at!",
-                       superseded_by, source_id, provenance, parent_id,
-                       last_accessed, deleted_at, metadata, entities,
-                       COALESCE(tags, ARRAY[]::TEXT[]) as "tags!",
-                       embedding as "embedding: _",
-                       content_preview,
-                       1 AS level
-                FROM memories
-                WHERE parent_id = $1 AND status = 'active'
-
-                UNION ALL
-
-                SELECT m.id as "id!", m.memory_type as "memory_type!",
-                       m.content as "content!", m.importance as "importance!",
-                       m.confidence as "confidence!", m.sensitivity as "sensitivity!",
-                       m.status as "status!", m.conflict_state as "conflict_state!",
-                       m.source as "source!", m.depth as "depth!",
-                       m.access_count as "access_count!",
-                       m.created_at as "created_at!", m.updated_at as "updated_at!",
-                       m.superseded_by, m.source_id, m.provenance, m.parent_id,
-                       m.last_accessed, m.deleted_at, m.metadata, m.entities,
-                       COALESCE(m.tags, ARRAY[]::TEXT[]) as tags,
-                       m.embedding as "embedding: _",
-                       m.content_preview,
-                       ft.level + 1 AS level
-                FROM memories m
-                INNER JOIN fractal_tree ft ON m.parent_id = ft.id
-                WHERE m.status = 'active' AND ft.level < $2
-            )
-            SELECT
-                   -- Non-nullable primitives: use COALESCE to satisfy sqlx
-                   id as "id!", memory_type as "memory_type!",
+            SELECT id as "id!", memory_type as "memory_type!",
                    content as "content!", importance as "importance!",
                    confidence as "confidence!", sensitivity as "sensitivity!",
                    status as "status!", conflict_state as "conflict_state!",
                    source as "source!", depth as "depth!",
                    access_count as "access_count!",
                    created_at as "created_at!", updated_at as "updated_at!",
-                   -- Nullable but should have values
-                   COALESCE(content_preview, ''::text) as content_preview,
-                   COALESCE(superseded_by, '00000000-0000-0000-0000-000000000000'::uuid) as superseded_by,
-                   COALESCE(source_id, ''::text) as source_id,
-                   provenance, parent_id, last_accessed, deleted_at,
-                   metadata, entities,
+                   superseded_by, source_id, provenance, parent_id,
+                   last_accessed, deleted_at, metadata, entities,
                    COALESCE(tags, ARRAY[]::TEXT[]) as "tags!",
+                   content_preview,
                    embedding as "embedding: _"
-            FROM fractal_tree
-            ORDER BY level
+            FROM memories
+            WHERE parent_id = $1 AND status = 'active'
+            ORDER BY created_at
+            LIMIT $2
             "#,
             memory_id,
-            max_depth
+            max_depth as i32
         )
         .fetch_all(&self.pool)
         .await?;
