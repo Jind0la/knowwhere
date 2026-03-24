@@ -69,12 +69,12 @@ impl Default for EnergyDecayConfig {
 }
 
 /// A memory with its current energy level and last update timestamp.
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, sqlx::FromRow, Serialize, Deserialize, ToSchema)]
 pub struct MemoryEnergyInfo {
     pub id: Uuid,
-    pub energy: i32,
-    pub last_energy_update: DateTime<Utc>,
-    pub memory_type: String,
+    pub energy: Option<i32>,
+    pub last_energy_update: Option<DateTime<Utc>>,
+    pub memory_type: Option<String>,
     pub content: Option<String>,
 }
 
