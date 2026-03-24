@@ -73,6 +73,7 @@ impl TieredCompactionWorker {
                    created_at as "created_at!", updated_at as "updated_at!",
                    superseded_by, source_id, provenance, parent_id,
                    last_accessed, deleted_at, metadata, entities, tags,
+                   content_preview,
                    context_tier::text AS context_tier,
                    parent_tier_id,
                    summary_content, overview_content,

@@ -246,4 +246,5 @@ pub struct MemoryRow {
     pub tags: Option<serde_json::Value>,
     pub source: Option<String>,
     pub source_id: Option<String>,
+    pub embedding: Option<Vec<f32>>,
 }
