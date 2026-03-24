@@ -219,7 +219,7 @@ impl<'a> EnergyDecayWorker<'a> {
             LIMIT $2
             "#,
             self.min_energy_threshold,
-            limit
+            limit as i64
         )
         .fetch_all(self.pool)
         .await?;
@@ -278,11 +278,11 @@ impl<'a> EnergyDecayWorker<'a> {
         let mut provenance_parts: Vec<serde_json::Value> = Vec::new();
 
         for row in &rows {
-            if let Some(content) = &row.content {
-                combined_parts.push(content.clone());
+            if let Some(content) = row.content.as_deref() {
+                combined_parts.push(content.to_string());
             }
-            max_importance = max_importance.max(row.importance);
-            max_confidence = max_confidence.max(row.confidence);
+            max_importance = max_importance.max(row.importance.unwrap_or(0));
+            max_confidence = max_confidence.max(row.confidence.unwrap_or(0.0));
 
             if let Some(serde_json::Value::Array(entities)) = &row.entities {
                 all_entities.extend(entities.clone());
@@ -348,7 +348,7 @@ impl<'a> EnergyDecayWorker<'a> {
             max_confidence,
             combined_provenance,
             serde_json::json!(all_entities),
-            &all_tags.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+            all_tags.as_slice(),
         )
         .execute(self.pool)
         .await?;

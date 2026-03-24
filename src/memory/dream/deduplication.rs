@@ -304,7 +304,7 @@ impl<'a> DeduplicationWorker<'a> {
             max_confidence,
             provenance,
             serde_json::json!(all_entities),
-            &all_tags.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+            all_tags.as_slice(),
         )
         .execute(self.pool)
         .await?;
@@ -409,7 +409,7 @@ impl<'a> DeduplicationWorker<'a> {
             ORDER BY run_at DESC
             LIMIT $1
             "#,
-            limit
+            limit as i64
         )
         .fetch_all(self.pool)
         .await?;

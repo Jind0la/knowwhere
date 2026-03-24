@@ -155,8 +155,8 @@ impl<'a> NamespaceStore<'a> {
                 memory_type as "memory_type!",
                 content,
                 embedding as "embedding: _",
-                importance,
-                confidence,
+                importance::float as "importance: _",
+                confidence::float as "confidence: _",
                 sensitivity,
                 status,
                 access_count as "access_count!",
@@ -179,7 +179,7 @@ impl<'a> NamespaceStore<'a> {
             LIMIT $2
             "#,
             namespace_id,
-            limit,
+            limit as i64,
         )
         .fetch_all(self.pool)
         .await?;

@@ -73,7 +73,7 @@ impl TieredCompactionWorker {
                    created_at as "created_at!", updated_at as "updated_at!",
                    superseded_by, source_id, provenance as "provenance!", parent_id,
                    last_accessed, deleted_at, metadata as "metadata!", entities as "entities!",
-                   COALESCE(tags, ARRAY[]::TEXT[]) as "tags!",
+                   COALESCE(tags, ARRAY[]::TEXT[])::TEXT[] as "tags!",
                    content_preview,
                    context_tier::text AS "context_tier!",
                    parent_tier_id,

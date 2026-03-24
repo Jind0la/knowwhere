@@ -272,7 +272,7 @@ impl ConflictDetector {
             let mut conflicting_ids = Vec::new();
 
             for mem in &memories {
-                if let Some(content) = &mem.content {
+                if let Some(content) = mem.content.as_ref() {
                     if !contents.insert(content.clone()) {
                         // Duplicate content — not a conflict
                         continue;
@@ -458,7 +458,7 @@ impl ConflictDetector {
                         continue;
                     }
 
-                    let conflicting_ids = vec![mem_id, &cand_id];
+                    let conflicting_ids = vec![*mem_id, *cand_id];
                     let description = format!(
                         "Similar content (sim={:.2}) has confidence scores {} and {} (diff: {:.2})",
                         similarity,
@@ -475,7 +475,7 @@ impl ConflictDetector {
                         VALUES ($1, $2, $3, $4, NOW(), 'pending')
                         "#,
                         id,
-                        &conflicting_ids,
+                        &conflicting_ids[..],
                         "confidence",
                         description,
                     )
