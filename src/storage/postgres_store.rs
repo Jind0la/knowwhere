@@ -195,7 +195,8 @@ impl PostgresStore {
                    access_count as "access_count!",
                    created_at as "created_at!", updated_at as "updated_at!",
                    superseded_by, source_id, provenance, parent_id,
-                   last_accessed, deleted_at, metadata, entities, tags,
+                   last_accessed, deleted_at, metadata, entities,
+                   COALESCE(tags, ARRAY[]::TEXT[]) as tags,
                    content_preview,
                    embedding as "embedding: _"
             FROM memories
@@ -372,7 +373,8 @@ impl PostgresStore {
                            access_count as "access_count!",
                            created_at as "created_at!", updated_at as "updated_at!",
                            source_id, provenance, last_accessed,
-                           (1 - (embedding <=> $1::vector))::float AS similarity,
+                           content_preview,
+                           COALESCE((1 - (embedding <=> $1::vector))::float, 0.0) AS "similarity: f64",
                            embedding as "embedding: _"
                     FROM memories
                     WHERE status = 'active'
@@ -462,7 +464,8 @@ impl PostgresStore {
                    access_count as "access_count!",
                    created_at as "created_at!", updated_at as "updated_at!",
                    superseded_by, source_id, provenance, parent_id,
-                   last_accessed, deleted_at, metadata, entities, tags,
+                   last_accessed, deleted_at, metadata, entities,
+                   COALESCE(tags, ARRAY[]::TEXT[]) as tags,
                    content_preview,
                    embedding as "embedding: _"
             FROM memories
@@ -490,7 +493,8 @@ impl PostgresStore {
                    access_count as "access_count!",
                    created_at as "created_at!", updated_at as "updated_at!",
                    superseded_by, source_id, provenance, parent_id,
-                   last_accessed, deleted_at, metadata, entities, tags,
+                   last_accessed, deleted_at, metadata, entities,
+                   COALESCE(tags, ARRAY[]::TEXT[]) as tags,
                    content_preview,
                    embedding as "embedding: _"
             FROM memories
@@ -631,7 +635,8 @@ impl PostgresStore {
                        access_count as "access_count!",
                        created_at as "created_at!", updated_at as "updated_at!",
                        superseded_by, source_id, provenance, parent_id,
-                       last_accessed, deleted_at, metadata, entities, tags,
+                       last_accessed, deleted_at, metadata, entities,
+                       COALESCE(tags, ARRAY[]::TEXT[]) as tags,
                        embedding as "embedding: _",
                        content_preview,
                        1 AS level
@@ -648,7 +653,8 @@ impl PostgresStore {
                        m.access_count as "access_count!",
                        m.created_at as "created_at!", m.updated_at as "updated_at!",
                        m.superseded_by, m.source_id, m.provenance, m.parent_id,
-                       m.last_accessed, m.deleted_at, m.metadata, m.entities, m.tags,
+                       m.last_accessed, m.deleted_at, m.metadata, m.entities,
+                       COALESCE(m.tags, ARRAY[]::TEXT[]) as tags,
                        m.embedding as "embedding: _",
                        m.content_preview,
                        ft.level + 1 AS level
@@ -670,7 +676,8 @@ impl PostgresStore {
                    COALESCE(superseded_by, '00000000-0000-0000-0000-000000000000'::uuid) as superseded_by,
                    COALESCE(source_id, ''::text) as source_id,
                    provenance, parent_id, last_accessed, deleted_at,
-                   metadata, entities, tags,
+                   metadata, entities,
+                   COALESCE(tags, ARRAY[]::TEXT[]) as tags,
                    embedding as "embedding: _"
             FROM fractal_tree
             ORDER BY level
