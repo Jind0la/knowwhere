@@ -534,7 +534,7 @@ impl PostgresStore {
             .fetch_one(&self.pool)
             .await?
         };
-        let count: i64 = row.get("count");
+        let count: i64 = row.try_get("count")?;
         Ok(count)
     }
 
