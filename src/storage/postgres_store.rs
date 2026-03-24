@@ -624,18 +624,37 @@ impl PostgresStore {
                        m.created_at, m.updated_at, m.deleted_at, m.metadata,
                        m.entities, m.tags,
                        m.embedding,
-                       ft.level + 1
+                       ft.level + 1 AS level
                 FROM memories m
                 INNER JOIN fractal_tree ft ON m.parent_id = ft.id
                 WHERE m.status = 'active' AND ft.level < $2
             )
-            SELECT id, memory_type, content, content_preview,
-                   importance, confidence, sensitivity, status,
-                   superseded_by, conflict_state, source, source_id,
-                   provenance, parent_id, depth,
-                   access_count, last_accessed,
-                   created_at, updated_at, deleted_at, metadata,
-                   entities, tags,
+            SELECT
+                   -- Non-nullable primitives: use COALESCE to satisfy sqlx
+                   id,
+                   memory_type,
+                   content,
+                   importance,
+                   confidence,
+                   sensitivity,
+                   status,
+                   conflict_state,
+                   source,
+                   depth,
+                   access_count,
+                   -- Nullable but should have values
+                   COALESCE(content_preview, ''::text) as content_preview,
+                   COALESCE(superseded_by, '00000000-0000-0000-0000-000000000000'::uuid) as superseded_by,
+                   COALESCE(source_id, ''::text) as source_id,
+                   provenance,
+                   parent_id,
+                   last_accessed,
+                   created_at,
+                   updated_at,
+                   deleted_at,
+                   metadata,
+                   entities,
+                   tags,
                    embedding
             FROM fractal_tree
             ORDER BY level
