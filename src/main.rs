@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use axum::middleware;
-use axum::routing::{delete, get, post};
+use axum::routing::{delete, get, post, put};
 use axum::Router;
 use axum_governor::GovernorLayer;
 use real::RealIpLayer;
@@ -14,7 +14,7 @@ use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 #[cfg(feature = "postgres-storage")]
-use sqlx::PgPoolOptions;
+use sqlx::postgres::PgPoolOptions;
 
 use knowwhere_server::api::{auth, auth::ApiKey, docs::ApiDoc, routes};
 use lazy_limit::{init_rate_limiter, Duration, RuleConfig};
