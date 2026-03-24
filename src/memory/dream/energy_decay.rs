@@ -188,18 +188,18 @@ impl<'a> EnergyDecayWorker<'a> {
         )
         .fetch_one(self.pool)
         .await?;
-        let at_zero = at_zero_row.count;
+        let at_zero = at_zero_row.count.unwrap_or(0);
 
         tracing::info!(
             updated = result.rows_affected(),
-            at_zero = at_zero.0,
+            at_zero = at_zero,
             halflife_hours = self.halflife_hours,
             "energy decay applied (exponential)"
         );
 
         Ok(DecayResult {
             memories_updated: result.rows_affected() as usize,
-            memories_at_zero: at_zero.0 as usize,
+            memories_at_zero: at_zero as usize,
         })
     }
 
