@@ -9,7 +9,6 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
-use anyhow::Result;
 use chrono::{DateTime, Utc};
 use tokio::sync::RwLock;
 use tokio::time::{interval, Duration, Instant};
@@ -163,7 +162,7 @@ impl ConsolidationScheduler {
     /// Sorted by age (oldest first), capped at `limit`.
     async fn find_candidates(
         &self,
-        limit: usize,
+        _limit: usize,
     ) -> Vec<(Uuid, DateTime<Utc>)> {
         let all_nodes = match self.store.list_all().await {
             Ok(nodes) => nodes,
@@ -173,7 +172,7 @@ impl ConsolidationScheduler {
             }
         };
 
-        let now = Utc::now();
+        let _now = Utc::now();
         let mut candidates: Vec<(Uuid, DateTime<Utc>)> = Vec::new();
 
         for node in all_nodes {

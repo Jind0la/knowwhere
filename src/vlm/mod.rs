@@ -21,10 +21,10 @@ use tokio::sync::{mpsc, RwLock};
 use uuid::Uuid;
 
 use crate::embedding::{embed_document, EmbeddingProvider};
-use crate::memory::types::{ContextTier, MemorySource, MemoryStatus, MemoryType};
+use crate::memory::types::{ContextTier, MemorySource, MemoryType};
 use std::collections::HashMap;
 use crate::memory::FractalNode;
-use crate::storage::{MemoryStore, StorageBackend, UpdateOperation};
+use crate::storage::{StorageBackend, UpdateOperation};
 
 // ---------------------------------------------------------------------------
 // Public API — Enqueue a summarization job

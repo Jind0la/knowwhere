@@ -18,8 +18,6 @@ use uuid::Uuid;
 
 #[cfg(feature = "postgres-storage")]
 use sqlx::PgPool;
-#[cfg(feature = "postgres-storage")]
-use crate::memory::dream::conflict_detection::ConflictGroup;
 
 use crate::memory::types::MemoryStatus;
 use crate::scheduler::SchedulerConfig;

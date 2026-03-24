@@ -25,10 +25,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::postgres::{PgPool, PgPoolOptions};
 use sqlx::Row;
-use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::embedding::EmbeddingProvider;
 use crate::memory::fractal_node::FractalNode;
 use crate::memory::types::{ConflictState, ContextTier, MemorySource, MemoryStatus, Sensitivity};
 use crate::memory::MemoryType;

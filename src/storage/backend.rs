@@ -2,7 +2,6 @@
 //!
 //! Defines a backend-agnostic interface for KnowWhere's memory storage.
 //! All storage backends (MemoryStore, PostgresStore, etc.) implement this trait.
-use std::sync::Arc;
 use uuid::Uuid;
 use crate::memory::FractalNode;
 use crate::memory::types::MemoryStatus;
