@@ -278,11 +278,11 @@ impl<'a> EnergyDecayWorker<'a> {
         let mut provenance_parts: Vec<serde_json::Value> = Vec::new();
 
         for row in &rows {
-            if let Some(content) = row.content.as_deref() {
-                combined_parts.push(content.to_string());
+            if !row.content.is_empty() {
+                combined_parts.push(row.content.clone());
             }
-            max_importance = max_importance.max(row.importance.unwrap_or(0));
-            max_confidence = max_confidence.max(row.confidence.unwrap_or(0.0));
+            max_importance = max_importance.max(row.importance);
+            max_confidence = max_confidence.max(row.confidence);
 
             if let Some(serde_json::Value::Array(entities)) = &row.entities {
                 all_entities.extend(entities.clone());
