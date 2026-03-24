@@ -197,7 +197,7 @@ impl PostgresStore {
                 parent_id, depth as "depth!", access_count as "access_count!",
                 last_accessed, created_at as "created_at!", updated_at as "updated_at!",
                 deleted_at, metadata as "metadata!", entities as "entities!",
-                COALESCE(tags, ARRAY[]::TEXT[]) as tags,
+                COALESCE(tags, ARRAY[]::TEXT[]) as "tags!",
                 embedding as "embedding: _"
             FROM memories
             WHERE id = $1 AND status != 'deleted'
@@ -469,7 +469,7 @@ impl PostgresStore {
                 parent_id, depth as "depth!", access_count as "access_count!",
                 last_accessed, created_at as "created_at!", updated_at as "updated_at!",
                 deleted_at, metadata as "metadata!", entities as "entities!",
-                COALESCE(tags, ARRAY[]::TEXT[]) as tags,
+                COALESCE(tags, ARRAY[]::TEXT[]) as "tags!",
                 embedding as "embedding: _"
             FROM memories
             WHERE status = 'active'
@@ -498,7 +498,7 @@ impl PostgresStore {
                 parent_id, depth as "depth!", access_count as "access_count!",
                 last_accessed, created_at as "created_at!", updated_at as "updated_at!",
                 deleted_at, metadata as "metadata!", entities as "entities!",
-                COALESCE(tags, ARRAY[]::TEXT[]) as tags,
+                COALESCE(tags, ARRAY[]::TEXT[]) as "tags!",
                 embedding as "embedding: _"
             FROM memories
             WHERE status = 'active'
@@ -639,7 +639,7 @@ impl PostgresStore {
                        created_at as "created_at!", updated_at as "updated_at!",
                        superseded_by, source_id, provenance, parent_id,
                        last_accessed, deleted_at, metadata, entities,
-                       COALESCE(tags, ARRAY[]::TEXT[]) as tags,
+                       COALESCE(tags, ARRAY[]::TEXT[]) as "tags!",
                        embedding as "embedding: _",
                        content_preview,
                        1 AS level
@@ -680,7 +680,7 @@ impl PostgresStore {
                    COALESCE(source_id, ''::text) as source_id,
                    provenance, parent_id, last_accessed, deleted_at,
                    metadata, entities,
-                   COALESCE(tags, ARRAY[]::TEXT[]) as tags,
+                   COALESCE(tags, ARRAY[]::TEXT[]) as "tags!",
                    embedding as "embedding: _"
             FROM fractal_tree
             ORDER BY level
