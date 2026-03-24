@@ -179,16 +179,16 @@ impl<'a> EnergyDecayWorker<'a> {
         .await?;
 
         // Count how many are now at zero
-        let at_zero: (i64,) = sqlx::query_as!(
-            (i64,),
+        let at_zero_row = sqlx::query!(
             r#"
-            SELECT COUNT(*)::bigint
+            SELECT COUNT(*)::bigint as count
             FROM memories
             WHERE status = 'active' AND energy = 0
             "#
         )
         .fetch_one(self.pool)
         .await?;
+        let at_zero = at_zero_row.count;
 
         tracing::info!(
             updated = result.rows_affected(),
