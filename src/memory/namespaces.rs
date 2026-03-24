@@ -250,7 +250,7 @@ pub struct MemoryRow {
     pub updated_at: Option<DateTime<Utc>>,
     pub namespace_id: Option<Uuid>,
     pub parent_tier_id: Option<Uuid>,
-    pub context_tier: Option<i32>,
+    pub context_tier: Option<String>,
     pub energy: Option<f32>,
     pub content_hash: Option<String>,
     pub semantic_thumbnail: Option<String>,
