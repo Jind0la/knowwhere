@@ -1705,9 +1705,10 @@ pub async fn reindex_external_node(
             id,
         )
         .fetch_one(
-            state.trajectory_pool.as_ref().map(|arc| &**arc).ok_or_else(|| {
-                (StatusCode::INTERNAL_SERVER_ERROR, "no trajectory pool".into())
-            }),
+            match state.trajectory_pool.as_ref() {
+                Some(arc) => &**arc,
+                None => return Err((StatusCode::INTERNAL_SERVER_ERROR, "no trajectory pool".into()).into()),
+            },
         )
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
