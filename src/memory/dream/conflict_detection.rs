@@ -434,7 +434,7 @@ impl ConflictDetector {
                     ..
                 } in results
                 {
-                    if cand_id == mem_id || checked.contains(&cand_id) {
+                    if cand_id == *mem_id || checked.contains(&cand_id) {
                         continue;
                     }
 
@@ -458,7 +458,7 @@ impl ConflictDetector {
                         continue;
                     }
 
-                    let conflicting_ids = vec![mem_id, cand_id];
+                    let conflicting_ids = vec![mem_id, &cand_id];
                     let description = format!(
                         "Similar content (sim={:.2}) has confidence scores {} and {} (diff: {:.2})",
                         similarity,
@@ -505,7 +505,7 @@ impl ConflictDetector {
                     checked.insert(cand_id);
                 }
 
-                checked.insert(mem_id);
+                checked.insert(*mem_id);
             }
         }
 
