@@ -34,7 +34,7 @@ use utoipa::ToSchema;
 // =============================================================================
 
 /// Type of conflict detected.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ConflictType {
     /// Same entity has different factual claims.
@@ -298,7 +298,7 @@ impl ConflictDetector {
                     VALUES ($1, $2, $3, $4, NOW(), 'pending')
                     "#,
                     id,
-                    serde_json::json!(conflicting_ids),
+                    &conflicting_ids,
                     "entity",
                     description,
                 )
@@ -467,7 +467,7 @@ impl ConflictDetector {
                         VALUES ($1, $2, $3, $4, NOW(), 'pending')
                         "#,
                         id,
-                        serde_json::json!(conflicting_ids),
+                        &conflicting_ids,
                         "confidence",
                         description,
                     )
@@ -556,7 +556,7 @@ impl ConflictDetector {
                             VALUES ($1, $2, $3, $4, NOW(), 'pending')
                             "#,
                             id,
-                            serde_json::json!(conflicting_ids),
+                            &conflicting_ids,
                             "confidence",
                             description,
                         )
