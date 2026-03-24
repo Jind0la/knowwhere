@@ -24,6 +24,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::postgres::{PgPool, PgPoolOptions};
+use sqlx::Row;
 use std::sync::Arc;
 use uuid::Uuid;
 
