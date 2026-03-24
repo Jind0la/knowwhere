@@ -323,7 +323,7 @@ impl PostgresStore {
             FROM memories
             WHERE status = 'active'
               AND to_tsvector('english', content) @@ plainto_tsquery('english', $1)
-            ORDER BY rank DESC
+            ORDER BY ts_rank(to_tsvector('english', content), plainto_tsquery('english', $1)) DESC
             LIMIT $2
             "#,
             query_text,
@@ -380,8 +380,8 @@ impl PostgresStore {
                     FROM memories
                     WHERE status = 'active'
                       AND embedding IS NOT NULL
-                      AND memory_type = $4
-                      AND importance >= $5
+                      AND memory_type = $3
+                      AND importance >= $4
                     ORDER BY embedding <=> $1::vector
                     LIMIT $2
                     "#,
