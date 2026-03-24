@@ -28,7 +28,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::embedding::EmbeddingProvider;
-use crate::memory::fractal_node::{FractalNode, NodeType};
+use crate::memory::fractal_node::FractalNode;
 use crate::memory::types::{ConflictState, ContextTier, MemorySource, MemoryStatus, Sensitivity};
 use crate::memory::MemoryType;
 use crate::storage::backend::{HybridQuery, ScoredNode, StorageBackend, UpdateOperation};
@@ -512,9 +512,12 @@ impl PostgresStore {
 
     /// Count total active memories.
     pub async fn count(&self, memory_type: Option<&str>) -> Result<i64> {
-        let count: (i64,) = if let Some(mt) = memory_type {
+        #[derive(Debug, sqlx::FromRow)]
+        struct CountRow(i64);
+
+        let count = if let Some(mt) = memory_type {
             sqlx::query_as!(
-                _,
+                CountRow,
                 r#"
                 SELECT COUNT(*)::bigint
                 FROM memories
@@ -526,7 +529,7 @@ impl PostgresStore {
             .await?
         } else {
             sqlx::query_as!(
-                _,
+                CountRow,
                 r#"
                 SELECT COUNT(*)::bigint
                 FROM memories

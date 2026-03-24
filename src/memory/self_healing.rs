@@ -412,7 +412,7 @@ impl SelfHealingService {
         self.log_healing(memory_id, old_uri, status.clone(), Some(new_uri))
             .await?;
 
-        tracing::info!(%memory_id, old_uri, new_uri, ?&status, "pointer repaired");
+        tracing::info!(%memory_id, old_uri, new_uri, ?status, "pointer repaired");
         Ok(())
     }
 
