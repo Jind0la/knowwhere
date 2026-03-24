@@ -625,13 +625,38 @@ impl PostgresStore {
     }
 
     /// Get fractal children (for zoom retrieval).
-    /// Uses a simple direct query for direct children only.
+    /// Uses a properly structured CTE with column aliases defined once in the CTE header.
     pub async fn get_children(&self, memory_id: Uuid, max_depth: i32) -> Result<Vec<MemoryRow>> {
-        // For simplicity, fetch direct children only
-        // TODO: Implement proper recursive CTE if needed
         let rows = sqlx::query_as!(
             MemoryRow,
             r#"
+            WITH RECURSIVE fractal_tree(
+                id, memory_type, content, importance, confidence, sensitivity,
+                status, conflict_state, source, depth, access_count,
+                created_at, updated_at, superseded_by, source_id, provenance,
+                parent_id, last_accessed, deleted_at, metadata, entities,
+                tags, content_preview, embedding, level
+            ) AS (
+                SELECT id, memory_type, content, importance, confidence, sensitivity,
+                       status, conflict_state, source, depth, access_count,
+                       created_at, updated_at, superseded_by, source_id, provenance,
+                       parent_id, last_accessed, deleted_at, metadata, entities,
+                       tags, content_preview, embedding, 1
+                FROM memories
+                WHERE parent_id = $1 AND status = 'active'
+
+                UNION ALL
+
+                SELECT m.id, m.memory_type, m.content, m.importance, m.confidence,
+                       m.sensitivity, m.status, m.conflict_state, m.source, m.depth,
+                       m.access_count, m.created_at, m.updated_at, m.superseded_by,
+                       m.source_id, m.provenance, m.parent_id, m.last_accessed,
+                       m.deleted_at, m.metadata, m.entities, m.tags,
+                       m.content_preview, m.embedding, ft.level + 1
+                FROM memories m
+                INNER JOIN fractal_tree ft ON m.parent_id = ft.id
+                WHERE m.status = 'active' AND ft.level < $2
+            )
             SELECT id as "id!", memory_type as "memory_type!",
                    content as "content!", importance as "importance!",
                    confidence as "confidence!", sensitivity as "sensitivity!",
@@ -644,13 +669,11 @@ impl PostgresStore {
                    COALESCE(tags, ARRAY[]::TEXT[]) as "tags!",
                    content_preview,
                    embedding as "embedding: _"
-            FROM memories
-            WHERE parent_id = $1 AND status = 'active'
-            ORDER BY created_at
-            LIMIT $2
+            FROM fractal_tree
+            ORDER BY level
             "#,
             memory_id,
-            max_depth as i32
+            max_depth
         )
         .fetch_all(&self.pool)
         .await?;
