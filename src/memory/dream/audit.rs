@@ -11,11 +11,11 @@
 //! "Dream Mode Definition" > Audit
 
 use anyhow::Result;
-use chrono::{Duration, Utc};
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::memory::governance::{AuditResult, GovernanceCandidate};
+use crate::memory::governance::GovernanceCandidate;
 use crate::memory::types::{ConflictState, MemoryStatus, MemoryType};
 
 /// Result of an audit run.

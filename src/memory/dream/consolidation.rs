@@ -10,11 +10,10 @@
 //! "Dream Mode Definition" > Consolidation
 
 use anyhow::Result;
-use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::memory::types::{MemorySource, MemoryStatus, MemoryType};
+use crate::memory::types::{MemoryStatus, MemoryType};
 
 /// Result of a consolidation run.
 #[derive(Debug, Clone, Serialize, Deserialize)]
