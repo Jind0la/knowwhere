@@ -165,7 +165,7 @@ impl<'a> NamespaceStore<'a> {
                 namespace_id,
                 parent_tier_id,
                 context_tier::text AS context_tier,
-                energy,
+                energy::float4 as energy,
                 content_hash,
                 semantic_thumbnail,
                 provenance,
