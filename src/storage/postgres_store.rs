@@ -90,10 +90,10 @@ impl PostgresStore {
                 FROM events
                 WHERE id > $1
                 ORDER BY created_at ASC
-                LIMIT $2
+                LIMIT $2::bigint
                 "#,
                 after,
-                limit
+                limit as i64
             )
             .fetch_all(&self.pool)
             .await?
@@ -104,9 +104,9 @@ impl PostgresStore {
                 SELECT id, event_type, payload, created_at
                 FROM events
                 ORDER BY created_at ASC
-                LIMIT $1
+                LIMIT $1::bigint
                 "#,
-                limit
+                limit as i64
             )
             .fetch_all(&self.pool)
             .await?
@@ -324,7 +324,7 @@ impl PostgresStore {
             WHERE status = 'active'
               AND to_tsvector('english', content) @@ plainto_tsquery('english', $1)
             ORDER BY ts_rank(to_tsvector('english', content), plainto_tsquery('english', $1)) DESC
-            LIMIT $2
+            LIMIT $2::bigint
             "#,
             query_text,
             top_k
@@ -383,10 +383,10 @@ impl PostgresStore {
                       AND memory_type = $3
                       AND importance >= $4
                     ORDER BY embedding <=> $1::vector
-                    LIMIT $2
+                    LIMIT $2::bigint
                     "#,
                     embedding as _,
-                    limit,
+                    limit as i64,
                     mt,
                     mi as _
                 )
@@ -413,10 +413,10 @@ impl PostgresStore {
                       AND embedding IS NOT NULL
                       AND memory_type = $3
                     ORDER BY embedding <=> $1::vector
-                    LIMIT $2
+                    LIMIT $2::bigint
                     "#,
                     embedding as _,
-                    limit,
+                    limit as i64,
                     mt
                 )
                 .fetch_all(&self.pool)
@@ -442,10 +442,10 @@ impl PostgresStore {
                 WHERE status = 'active'
                   AND embedding IS NOT NULL
                 ORDER BY embedding <=> $1::vector
-                LIMIT $2
+                LIMIT $2::bigint
                 "#,
                 embedding as _,
-                limit
+                limit as i64
             )
             .fetch_all(&self.pool)
             .await?
@@ -474,9 +474,9 @@ impl PostgresStore {
             FROM memories
             WHERE status = 'active'
             ORDER BY created_at DESC
-            LIMIT $1
+            LIMIT $1::bigint
             "#,
-            limit
+            limit as i64
         )
         .fetch_all(&self.pool)
         .await?;
