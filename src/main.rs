@@ -122,7 +122,7 @@ async fn run() -> anyhow::Result<()> {
     #[cfg(feature = "postgres-storage")]
     let trajectory_pool: Option<std::sync::Arc<sqlx::PgPool>> =
         if let Ok(database_url) = std::env::var("DATABASE_URL") {
-            match sqlx::PgPoolOptions::new()
+            match sqlx::postgres::PgPoolOptions::new()
                 .max_connections(5)
                 .connect(&database_url)
                 .await
