@@ -165,8 +165,8 @@ impl<'a> EnergyDecayWorker<'a> {
             r#"
             UPDATE memories
             SET energy = GREATEST(0, CAST(
-                energy * EXP(-$1 * EXTRACT(EPOCH FROM (NOW() - (last_energy_update)::timestamptz)) / 3600.0)
-                AS INT
+                (energy::double precision) * EXP((-($1::double precision)) * EXTRACT(EPOCH FROM (NOW() - (last_energy_update)::timestamptz)) / 3600.0::double precision)
+                AS INTEGER
             )),
             last_energy_update = NOW()
             WHERE status = 'active'
