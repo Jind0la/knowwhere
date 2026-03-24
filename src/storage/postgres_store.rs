@@ -187,14 +187,16 @@ impl PostgresStore {
         let row = sqlx::query_as!(
             MemoryRow,
             r#"
-            SELECT id, memory_type, content, content_preview,
-                   importance, confidence, sensitivity, status,
-                   superseded_by, conflict_state, source, source_id,
-                   provenance, parent_id, depth,
-                   access_count, last_accessed,
-                   created_at, updated_at, deleted_at, metadata,
-                   entities, tags,
-                   embedding
+            SELECT id as "id!", memory_type as "memory_type!",
+                   content as "content!", importance as "importance!",
+                   confidence as "confidence!", sensitivity as "sensitivity!",
+                   status as "status!", conflict_state as "conflict_state!",
+                   source as "source!", depth as "depth!",
+                   access_count as "access_count!",
+                   created_at as "created_at!", updated_at as "updated_at!",
+                   superseded_by, source_id, provenance, parent_id,
+                   last_accessed, deleted_at, metadata, entities, tags,
+                   embedding as "embedding: _"
             FROM memories
             WHERE id = $1 AND status != 'deleted'
             "#,
@@ -362,13 +364,15 @@ impl PostgresStore {
                 sqlx::query_as!(
                     MemoryWithScore,
                     r#"
-                    SELECT id, memory_type, content, content_preview,
-                           importance, confidence, sensitivity, status,
-                           source, source_id, provenance,
-                           access_count, last_accessed,
-                           created_at, updated_at,
+                    SELECT id as "id!", memory_type as "memory_type!",
+                           content as "content!", importance as "importance!",
+                           confidence as "confidence!", sensitivity as "sensitivity!",
+                           status as "status!", source as "source!",
+                           access_count as "access_count!",
+                           created_at as "created_at!", updated_at as "updated_at!",
+                           source_id, provenance, last_accessed,
                            (1 - (embedding <=> $1::vector))::float AS similarity,
-                           embedding
+                           embedding as "embedding: _"
                     FROM memories
                     WHERE status = 'active'
                       AND embedding IS NOT NULL
@@ -389,13 +393,16 @@ impl PostgresStore {
                 sqlx::query_as!(
                     MemoryWithScore,
                     r#"
-                    SELECT id, memory_type, content, content_preview,
-                           importance, confidence, sensitivity, status,
-                           source, source_id, provenance,
-                           access_count, last_accessed,
-                           created_at, updated_at,
+                    SELECT id as "id!", memory_type as "memory_type!",
+                           content as "content!", importance as "importance!",
+                           confidence as "confidence!", sensitivity as "sensitivity!",
+                           status as "status!", source as "source!",
+                           access_count as "access_count!",
+                           created_at as "created_at!", updated_at as "updated_at!",
+                           source_id, provenance,
+                           last_accessed,
                            (1 - (embedding <=> $1::vector))::float AS similarity,
-                           embedding
+                           embedding as "embedding: _"
                     FROM memories
                     WHERE status = 'active'
                       AND embedding IS NOT NULL
@@ -414,13 +421,16 @@ impl PostgresStore {
             sqlx::query_as!(
                 MemoryWithScore,
                 r#"
-                SELECT id, memory_type, content, content_preview,
-                       importance, confidence, sensitivity, status,
-                       source, source_id, provenance,
-                       access_count, last_accessed,
-                       created_at, updated_at,
+                SELECT id as "id!", memory_type as "memory_type!",
+                       content as "content!", importance as "importance!",
+                       confidence as "confidence!", sensitivity as "sensitivity!",
+                       status as "status!", source as "source!",
+                       access_count as "access_count!",
+                       created_at as "created_at!", updated_at as "updated_at!",
+                       source_id, provenance,
+                       last_accessed,
                        (1 - (embedding <=> $1::vector))::float AS similarity,
-                       embedding
+                       embedding as "embedding: _"
                 FROM memories
                 WHERE status = 'active'
                   AND embedding IS NOT NULL
@@ -442,14 +452,16 @@ impl PostgresStore {
         let rows = sqlx::query_as!(
             MemoryRow,
             r#"
-            SELECT id, memory_type, content, content_preview,
-                   importance, confidence, sensitivity, status,
-                   superseded_by, conflict_state, source, source_id,
-                   provenance, parent_id, depth,
-                   access_count, last_accessed,
-                   created_at, updated_at, deleted_at, metadata,
-                   entities, tags,
-                   embedding
+            SELECT id as "id!", memory_type as "memory_type!",
+                   content as "content!", importance as "importance!",
+                   confidence as "confidence!", sensitivity as "sensitivity!",
+                   status as "status!", conflict_state as "conflict_state!",
+                   source as "source!", depth as "depth!",
+                   access_count as "access_count!",
+                   created_at as "created_at!", updated_at as "updated_at!",
+                   superseded_by, source_id, provenance, parent_id,
+                   last_accessed, deleted_at, metadata, entities, tags,
+                   embedding as "embedding: _"
             FROM memories
             WHERE status = 'active'
             ORDER BY created_at DESC
@@ -467,14 +479,16 @@ impl PostgresStore {
         let rows = sqlx::query_as!(
             MemoryRow,
             r#"
-            SELECT id, memory_type, content, content_preview,
-                   importance, confidence, sensitivity, status,
-                   superseded_by, conflict_state, source, source_id,
-                   provenance, parent_id, depth,
-                   access_count, last_accessed,
-                   created_at, updated_at, deleted_at, metadata,
-                   entities, tags,
-                   embedding
+            SELECT id as "id!", memory_type as "memory_type!",
+                   content as "content!", importance as "importance!",
+                   confidence as "confidence!", sensitivity as "sensitivity!",
+                   status as "status!", conflict_state as "conflict_state!",
+                   source as "source!", depth as "depth!",
+                   access_count as "access_count!",
+                   created_at as "created_at!", updated_at as "updated_at!",
+                   superseded_by, source_id, provenance, parent_id,
+                   last_accessed, deleted_at, metadata, entities, tags,
+                   embedding as "embedding: _"
             FROM memories
             WHERE status = 'active'
             ORDER BY created_at DESC
