@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS memories (
     -- Content
     content         TEXT NOT NULL,
     content_preview VARCHAR(500),
+    original_pointer TEXT,  -- For external nodes: reference to an external file (URI/path)
 
     -- Embedding (vector stored separately in usearch, but we keep pgvector too)
     embedding       vector(768),  -- 768-dim for nomic-embed-text-v2-moe
