@@ -13,7 +13,7 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::memory::types::{MemoryStatus, MemoryType};
+use crate::memory::types::MemoryType;
 
 /// Result of a consolidation run.
 #[derive(Debug, Clone, Serialize, Deserialize)]
