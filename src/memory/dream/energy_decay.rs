@@ -210,7 +210,7 @@ impl<'a> EnergyDecayWorker<'a> {
         let rows = sqlx::query_as!(
             MemoryEnergyInfo,
             r#"
-            SELECT id, energy, last_energy_update, memory_type, content
+            SELECT id, energy::integer as energy, last_energy_update, memory_type, content
             FROM memories
             WHERE status = 'active'
               AND energy < $1
