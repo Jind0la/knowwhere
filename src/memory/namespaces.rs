@@ -164,13 +164,13 @@ impl<'a> NamespaceStore<'a> {
                 updated_at as "updated_at!",
                 namespace_id,
                 parent_tier_id,
-                context_tier,
+                context_tier::text as context_tier,
                 energy,
                 content_hash,
                 semantic_thumbnail,
-                provenance,
-                entities,
-                tags,
+                provenance::jsonb as "provenance: serde_json::Value",
+                entities::jsonb as "entities: serde_json::Value",
+                tags::jsonb as "tags: serde_json::Value",
                 source,
                 source_id
             FROM memories

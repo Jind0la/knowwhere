@@ -384,7 +384,6 @@ impl PostgresStore {
                     "#,
                     embedding as _,
                     limit,
-                    embedding as _,
                     mt,
                     mi as _
                 )

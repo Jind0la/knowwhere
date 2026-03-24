@@ -25,6 +25,7 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json;
 use sqlx::PgPool;
 use uuid::Uuid;
 use utoipa::ToSchema;
@@ -378,7 +379,7 @@ impl ConflictDetector {
         // Fetch active memories with embeddings in batches.
         let rows = sqlx::query!(
             r#"
-            SELECT id, content, confidence, embedding
+            SELECT id, content, confidence, embedding::text as embedding
             FROM memories
             WHERE status = 'active'
               AND conflict_state = 'none'
@@ -398,7 +399,13 @@ impl ConflictDetector {
         let memories: Vec<_> = rows
             .iter()
             .filter_map(|r| {
-                let embedding: Vec<f32> = r.embedding.clone()?;
+                let embedding_text: Option<String> = r.embedding.clone();
+                let embedding: Vec<f32> = embedding_text
+                    .and_then(|s| serde_json::from_str::<Vec<f32>>(&s).ok())
+                    .unwrap_or_default();
+                if embedding.is_empty() {
+                    return None;
+                }
                 let confidence: f64 = r.confidence.unwrap_or(0.0);
                 Some((r.id, r.content.clone(), confidence, embedding))
             })

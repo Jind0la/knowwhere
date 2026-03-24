@@ -165,7 +165,7 @@ impl<'a> EnergyDecayWorker<'a> {
             r#"
             UPDATE memories
             SET energy = GREATEST(0, CAST(
-                energy * EXP(-$1 * EXTRACT(EPOCH FROM (NOW() - last_energy_update)) / 3600.0)
+                energy * EXP(-$1 * EXTRACT(EPOCH FROM (NOW() - (last_energy_update)::timestamptz)) / 3600.0)
                 AS INT
             )),
             last_energy_update = NOW()
@@ -180,7 +180,7 @@ impl<'a> EnergyDecayWorker<'a> {
 
         // Count how many are now at zero
         let at_zero: (i64,) = sqlx::query_as!(
-            _,
+            (i64,),
             r#"
             SELECT COUNT(*)::bigint
             FROM memories

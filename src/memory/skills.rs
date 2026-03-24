@@ -347,7 +347,7 @@ impl<'a> SkillsStore<'a> {
         .fetch_optional(self.pool)
         .await?;
 
-        let current_rate = current.unwrap_or(0.0);
+        let current_rate = current.flatten().unwrap_or(0.0);
         // Simple rolling average: new = (old * 3 + (1 if success else 0)) / 4
         let new_rate = if success {
             current_rate * 0.75 + 0.25
