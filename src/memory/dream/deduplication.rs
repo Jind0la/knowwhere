@@ -400,7 +400,9 @@ impl<'a> DeduplicationWorker<'a> {
         let rows = sqlx::query_as!(
             DeduplicationRunRow,
             r#"
-            SELECT id, pairs_found, pairs_merged, run_at
+            SELECT id as "id!", pairs_found as "pairs_found!",
+                   pairs_merged as "pairs_merged!",
+                   run_at as "run_at!"
             FROM deduplication_runs
             ORDER BY run_at DESC
             LIMIT $1

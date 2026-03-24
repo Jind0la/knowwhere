@@ -678,7 +678,7 @@ impl MemoryStore {
                 let execution_time_ms = start.elapsed().as_millis() as u64;
                 for (i, (score, node)) in results.iter().enumerate() {
                     if let Some(ref mut traj) = trajectory {
-                        traj.log_result(node.id, i + 1, *score, "final result (vector only)");
+                        traj.log_search(node.id, *score, "final result (vector only)");
                     }
                 }
                 if let (Some(ref mut traj), Some(ts)) = (trajectory, trajectory_store) {
@@ -715,7 +715,7 @@ impl MemoryStore {
             let execution_time_ms = start.elapsed().as_millis() as u64;
             for (i, (score, node)) in results.iter().enumerate() {
                 if let Some(ref mut traj) = trajectory {
-                    traj.log_result(node.id, i + 1, *score, "final result (fused)");
+                    traj.log_search(node.id, *score, "final result (fused)");
                 }
             }
             if let (Some(ref mut traj), Some(ts)) = (trajectory, trajectory_store) {
