@@ -147,7 +147,7 @@ impl<'a> NamespaceStore<'a> {
         namespace_id: Uuid,
         limit: i32,
     ) -> anyhow::Result<Vec<MemoryRow>> {
-        let rows = sqlx::query_as!(
+                let rows = sqlx::query_as!(
             MemoryRow,
             r#"
             SELECT
@@ -164,13 +164,13 @@ impl<'a> NamespaceStore<'a> {
                 updated_at as "updated_at!",
                 namespace_id,
                 parent_tier_id,
-                context_tier::text as context_tier,
+                context_tier::text AS context_tier,
                 energy,
                 content_hash,
                 semantic_thumbnail,
-                provenance::jsonb as "provenance: serde_json::Value",
-                entities::jsonb as "entities: serde_json::Value",
-                tags::jsonb as "tags: serde_json::Value",
+                provenance,
+                entities,
+                COALESCE(tags, ARRAY[]::TEXT[]) as tags,
                 source,
                 source_id
             FROM memories
@@ -256,7 +256,7 @@ pub struct MemoryRow {
     pub semantic_thumbnail: Option<String>,
     pub provenance: Option<serde_json::Value>,
     pub entities: Option<serde_json::Value>,
-    pub tags: Option<serde_json::Value>,
+    pub tags: Option<Vec<String>>,
     pub source: Option<String>,
     pub source_id: Option<String>,
     pub embedding: Option<Vec<f32>>,

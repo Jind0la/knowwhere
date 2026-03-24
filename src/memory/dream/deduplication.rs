@@ -200,7 +200,9 @@ impl<'a> DeduplicationWorker<'a> {
         let rows = sqlx::query_as!(
             MemoryForMerge,
             r#"
-            SELECT id, memory_type, content, importance, confidence,
+            SELECT id as "id!", memory_type as "memory_type!",
+                   content as "content!", importance as "importance!",
+                   confidence as "confidence!",
                    entities, tags, provenance, source,
                    summary_content, overview_content
             FROM memories
