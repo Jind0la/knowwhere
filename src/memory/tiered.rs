@@ -70,7 +70,7 @@ impl TieredCompactionWorker {
                    status as "status!", conflict_state as "conflict_state!",
                    source as "source!", depth as "depth!",
                    access_count as "access_count!",
-                   created_at as "created_at!", updated_at as "created_at!",
+                   created_at as "created_at!", updated_at as "updated_at!",
                    superseded_by, source_id, provenance, parent_id,
                    last_accessed, deleted_at, metadata, entities,
                    COALESCE(tags, ARRAY[]::TEXT[]) as tags,
