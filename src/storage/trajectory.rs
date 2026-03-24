@@ -348,9 +348,9 @@ impl<'a> TrajectoryStore<'a> {
                        metadata
                 FROM retrieval_runs
                 ORDER BY run_at DESC
-                LIMIT $1
+                LIMIT $1::bigint
                 "#,
-                limit
+                limit as i64
             )
             .fetch_all(self.pool)
             .await?
