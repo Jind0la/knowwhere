@@ -90,8 +90,8 @@ impl<C: ConsolidationStore> ConsolidationEngine<C> {
 
         let mut summaries_created = 0;
         let clusters_formed;
-        let edges_created = 0;
-        let memories_archived = 0;
+        let mut edges_created = 0;
+        let mut memories_archived = 0;
 
         // Step 1: Find eligible episodic memories
         let eligible = self
