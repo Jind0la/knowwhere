@@ -106,14 +106,10 @@ jobs:
       - name: Load PostgreSQL schema
         run: |
           docker exec -i kw-pg psql -U postgres -d kw < docs/postgresql_schema.sql
-          for f in migrations/003_add_tiered_context.sql \
-                   migrations/004_add_retrieval_trajectory.sql \
-                   migrations/007_add_conflict_detection.sql \
-                   migrations/008_add_energy_decay.sql \
-                   migrations/009_add_content_hash.sql \
-                   migrations/010_add_namespaces.sql \
-                   migrations/011_add_skills.sql; do
-            docker exec -i kw-pg psql -U postgres -d kw < "$f" || true
+          # Load ALL migration files automatically (sorts numerically)
+          for f in $(find migrations -name '*.sql' | sort -V); do
+            echo "Loading migration: $f"
+            docker exec -i kw-pg psql -U postgres -d kw < "$f" || echo "⚠️ Warning: migration $f had issues"
           done
 
       - name: cargo build postgres-storage
