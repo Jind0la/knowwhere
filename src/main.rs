@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use axum::middleware;
-use axum::routing::{delete, get, post, put};
+use axum::routing::{delete, get, post};
 use axum::Router;
 use axum_governor::GovernorLayer;
 use real::RealIpLayer;
