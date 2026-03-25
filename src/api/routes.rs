@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use axum::extract::{Path, State};
@@ -2252,6 +2251,7 @@ pub struct UseSkillQuery {
     pub success: bool,
 }
 
+    #[allow(dead_code)]
 fn default_success() -> bool {
     true
 }

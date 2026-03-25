@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use axum::middleware;
-use axum::routing::{delete, get, post, put};
+use axum::routing::{delete, get, post};
 use axum::Router;
 use axum_governor::GovernorLayer;
 use real::RealIpLayer;
@@ -170,7 +170,7 @@ async fn run() -> anyhow::Result<()> {
         let audit = AuditScheduler::new(store.clone(), trajectory_pool.clone(), scheduler_config.clone());
         #[cfg(not(feature = "postgres-storage"))]
         let audit = AuditScheduler::new(store.clone(), scheduler_config.clone());
-        let _ = audit.spawn();
+        audit.spawn();
 
         tracing::info!("Dream Mode scheduler started");
     } else {
@@ -196,7 +196,7 @@ async fn run() -> anyhow::Result<()> {
 
     let api_key = ApiKey(std::env::var("KNOWWHERE_API_KEY").ok());
 
-    let mut protected = Router::new()
+    let protected = Router::new()
         .route("/embed", post(routes::embed_text))
         .route("/store_session", post(routes::store_session))
         .route("/store_external", post(routes::store_external))
@@ -250,7 +250,7 @@ async fn run() -> anyhow::Result<()> {
             .route("/skills", post(routes::create_skill))
             .route("/skills", get(routes::list_skills))
             .route("/skills/{id}", get(routes::get_skill))
-            .route("/skills/{id}", put(routes::update_skill))
+            .route("/skills/{id}"(routes::update_skill))
             .route("/skills/{id}", delete(routes::delete_skill))
             .route("/skills/{id}/use", post(routes::use_skill))
             .route("/skills/match", get(routes::match_skills));

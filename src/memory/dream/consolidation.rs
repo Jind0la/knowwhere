@@ -89,8 +89,8 @@ impl<C: ConsolidationStore> ConsolidationEngine<C> {
         let start = std::time::Instant::now();
 
         let mut summaries_created = 0;
-        let clusters_formed;
-        let mut edges_created = 0;
+        let clusters_formed: usize;
+        let edges_created = 0;
         let mut memories_archived = 0;
 
         // Step 1: Find eligible episodic memories

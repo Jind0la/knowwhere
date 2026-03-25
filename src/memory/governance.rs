@@ -284,14 +284,12 @@ impl GovernanceValidator {
         }
 
         // Additional check: conflict (GovernanceValidator only)
-        if self.policy.conflict_check_enabled {
-            if candidate.conflict_state == ConflictState::Pending {
-                issues.push(ValidationIssue {
-                    issue_type: IssueType::UnresolvedConflict,
-                    description: IssueType::UnresolvedConflict.description("pending resolution"),
-                    score_impact: IssueType::UnresolvedConflict.score_impact(),
-                });
-            }
+        if self.policy.conflict_check_enabled && candidate.conflict_state == ConflictState::Pending {
+            issues.push(ValidationIssue {
+                issue_type: IssueType::UnresolvedConflict,
+                description: IssueType::UnresolvedConflict.description("pending resolution"),
+                score_impact: IssueType::UnresolvedConflict.score_impact(),
+            });
         }
 
         if issues.is_empty() {
