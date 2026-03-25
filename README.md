@@ -49,6 +49,7 @@ Open [http://localhost:3737/swagger-ui/](http://localhost:3737/swagger-ui/) for 
 ### Docker
 
 ```bash
+# Default build (in-memory storage only)
 docker build -t knowwhere-server:local .
 docker run -d --name knowwhere -p 3000:3000 \
   -e KNOWWHERE_API_KEY=your-key \
@@ -56,9 +57,18 @@ docker run -d --name knowwhere -p 3000:3000 \
   -e KNOWWHERE_PORT=3000 \
   -e RUST_LOG=info \
   knowwhere-server:local
+
+# With PostgreSQL support (postgres-storage feature)
+docker build --build-arg FEATURES=postgres-storage -t knowwhere-server:postgres .
+docker run -d --name knowwhere -p 3000:3000 \
+  -e KNOWWHERE_API_KEY=your-key \
+  -e DATABASE_URL=postgresql://user:pass@host:5432/knowwhere \
+  -e KNOWWHERE_PORT=3000 \
+  -e RUST_LOG=info \
+  knowwhere-server:postgres
 ```
 
-Note: `postgres-storage` feature is optional — without it, KnowWhere runs with in-memory storage (data lost on container restart). PostgreSQL support is documented in `docs/postgresql_schema.sql`.
+Note: `postgres-storage` feature enables PostgreSQL persistence with full-text search, deduplication, and conflict detection. Without it, KnowWhere runs with in-memory storage (data lost on container restart). Schema: `docs/postgresql_schema.sql`.
 
 ## Core Concepts
 
@@ -80,20 +90,86 @@ A background process that periodically clusters related nodes and strengthens co
 
 ## API Endpoints
 
-| Method | Path                | Auth     | Description                                    |
-|--------|---------------------|----------|------------------------------------------------|
-| GET    | `/health`           | Public   | Server status + node count                     |
-| GET    | `/swagger-ui/`      | Public   | Interactive OpenAPI documentation               |
-| POST   | `/embed`            | Required | Generate embedding vector for text              |
-| POST   | `/store_session`    | Required | Store session node (full content + embedding)   |
-| POST   | `/store_external`   | Required | Store external pointer (no raw data)            |
-| GET    | `/retrieve/{id}`    | Required | Retrieve single node by UUID                    |
-| POST   | `/retrieve_fractal` | Required | Hybrid fractal search (returns `ScoredNode[]`)  |
-| GET    | `/nodes/recent`     | Required | Recent nodes (sorted by `created_at`)           |
-| DELETE | `/nodes/{id}`       | Required | Delete node by UUID                             |
-| POST   | `/nodes/purge_dummy`| Required | Remove nodes with placeholder vectors           |
-| POST   | `/nodes/reembed_all`| Required | Re-embed all nodes with current provider        |
-| GET    | `/dream/status`     | Required | Dream mode status                               |
+### Public Endpoints (no auth required)
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/health` | Server status + node count |
+| GET | `/swagger-ui/*` | Interactive OpenAPI documentation |
+| POST | `/auth/login` | Login with credentials |
+| POST | `/auth/register` | Register new account |
+| POST | `/auth/refresh` | Refresh access token |
+
+### Core Memory (auth required)
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/embed` | Generate embedding vector for text |
+| POST | `/store_session` | Store session node (full content + embedding) |
+| POST | `/store_external` | Store external pointer (no raw data) |
+| GET | `/retrieve/{id}` | Retrieve single node by UUID |
+| POST | `/retrieve_fractal` | Hybrid fractal search (vector + BM25 + RRF) |
+| GET | `/nodes/recent` | Recent nodes (sorted by `created_at`) |
+| DELETE | `/nodes/{id}` | Delete node by UUID |
+| POST | `/nodes/purge_dummy` | Remove nodes with placeholder vectors |
+| POST | `/nodes/reembed_all` | Re-embed all nodes with current provider |
+
+### Dream Mode & VLM (auth required)
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/dream/status` | Dream mode scheduler status |
+| GET | `/vlm/status` | VLM summarization worker status |
+| POST | `/vlm/summarize` | Enqueue text for VLM summarization |
+
+### Memory Lifecycle — Energy & Compaction (auth required, postgres-storage)
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/memories/{id}/energy/boost` | Boost memory energy (Ebbinghaus access boost) |
+| GET | `/energy/low` | List low-energy memories needing decay |
+| POST | `/energy/decay/apply` | Manually trigger energy decay on all memories |
+| POST | `/energy/compress` | Compress memory cluster via VLM |
+| POST | `/memories/{id}/compact` | Trigger tiered compaction for a memory |
+
+### Deduplication & Conflicts (auth required, postgres-storage)
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/deduplication/candidates` | List potential duplicate memories |
+| POST | `/deduplication/run` | Run deduplication merge |
+| GET | `/deduplication/runs` | List past deduplication runs |
+| GET | `/conflicts` | List memory conflicts (competing versions) |
+| POST | `/conflicts/{id}/resolve` | Resolve a conflict |
+
+### Retrieval Analytics (auth required, postgres-storage)
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/retrieval/runs` | List retrieval runs (paginated) |
+| GET | `/retrieval/runs/{id}` | Get specific retrieval run details |
+| GET | `/retrieval/runs/{id}/trajectory` | Get full retrieval trajectory (steps + scores) |
+
+### Self-Healing (auth required, postgres-storage)
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/memories/{id}/reindex` | Re-index external node (update pointer hash) |
+| GET | `/memories/{id}/health` | Check memory health / pointer validity |
+| GET | `/self-healing/stats` | Self-healing statistics (broken vs repaired) |
+
+### Namespaces (auth required)
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/namespaces` | List all namespaces |
+| POST | `/namespaces` | Create a new namespace |
+| GET | `/namespaces/{path}` | Get namespace details |
+| GET | `/namespaces/{path}/memories` | List memories in namespace |
+| GET | `/namespaces/{path}/search` | Search within namespace |
+
+### Skills (auth required)
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/skills` | Create a new skill |
+| GET | `/skills` | List all skills |
+| GET | `/skills/{id}` | Get skill by ID |
+| PUT | `/skills/{id}` | Update skill |
+| DELETE | `/skills/{id}` | Delete skill |
+| POST | `/skills/{id}/use` | Execute a skill |
+| GET | `/skills/match` | Find skills matching a query |
 
 ### Key Response Types
 
@@ -269,8 +345,8 @@ cargo test
 ## Known Issues
 
 - **Rate Limiting**: Requires a reverse proxy (nginx, Cloudflare) that sets `X-Forwarded-For` headers. Enable with `RATE_LIMIT=1` when behind a proxy.
-- **PostgreSQL Storage**: The `postgres-storage` feature requires `--features postgres-storage` at build time. Currently has compile errors — use in-memory storage for local testing.
-- **Governance Default**: With `governance_enabled=true` (default), new nodes may be filtered. Use `governance_enabled=false` for testing new memories.
+- **Governance Default**: With `governance_enabled=true` (default), new nodes may be filtered by Stage 2 validation. Use `governance_enabled=false` for testing new memories.
+- **Docker postgres-storage**: The default Docker image does not include `postgres-storage` feature. Build with `docker build --build-arg FEATURES=postgres-storage .` or use the CI-built images for PostgreSQL support.
 
 ## Lesson Learned
 
