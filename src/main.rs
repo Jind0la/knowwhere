@@ -209,7 +209,12 @@ async fn run() -> anyhow::Result<()> {
         .route("/dream/status", get(routes::dream_status))
         // -- VLM Summarization Worker (3-stage fallback) --
         .route("/vlm/status", get(routes::vlm_status))
-        .route("/vlm/summarize", post(routes::vlm_enqueue));
+        .route("/vlm/summarize", post(routes::vlm_enqueue))
+        // -- System routes --
+        .route("/events", get(routes::list_events))
+        // -- Governance routes --
+        .route("/governance/policy", get(routes::get_governance_policy))
+        .route("/governance/policy", post(routes::update_governance_policy));
 
     #[cfg(feature = "postgres-storage")]
     {
