@@ -13,7 +13,7 @@ COPY Cargo.toml Cargo.lock* ./
 RUN mkdir src && echo "fn main() {}" > src/main.rs && cargo build --release 2>/dev/null || true
 COPY src/ src/
 COPY frontend/ frontend/
-RUN cargo build --release --features ${FEATURES}
+RUN if [ -n "${FEATURES}" ]; then cargo build --release --features ${FEATURES}; else cargo build --release; fi
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y ca-certificates && \
