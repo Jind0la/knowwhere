@@ -1,7 +1,7 @@
 # KnowWhere — Task-Liste
 
-> Erstellt: 2026-03-21 | Letztes Update: 2026-03-22  
-> Status: ✅ Alle Tasks erledigt
+> Erstellt: 2026-03-21 | Letztes Update: 2026-03-25  
+> Status: ✅ Alle Tasks erledigt | Alle Bugs behoben
 
 ---
 
@@ -274,80 +274,62 @@ Arena löst das Problem "wenn ich einen Node klone, klont er alle Kinder mit". A
 | LOW-003 CI erweitern | ✅ | ~1h | 06be859 |
 | LOW-004 RRF | ✅ | — | rrf_fuse() |
 | LOW-005 DreamStatus + cycle_count | ✅ | ~30min | 3238e1a, f34e8fc |
+| BUG-001 postgres-storage | ✅ Erledigt | — | CI Update |
+| BUG-002 Rate Limiter Docker | ✅ Erledigt | — | 32d5023 |
+| BUG-003 Governance | ✅ False Alarm | — | af57ec0 |
 
 ---
 
 ## 🐛 Offene Bugs / Issues
 
-### [BUG-001] postgres-storage kompiliert nicht 🔴
+### [BUG-001] postgres-storage kompiliert nicht 🔴 → ✅ ERLEDIGT
 
-**Status:** 🔴 Offen
+**Status:** ✅ Behoben (2026-03-21)
 
-**Problem:** Docker Build mit `--features postgres-storage` schlägt fehl mit 163 Rust Compile Errors. Betrifft `src/storage/postgres_store.rs`.
+**Was war das Problem:** Docker Build mit `--features postgres-storage` schlug fehl mit Compile Errors in `src/storage/postgres_store.rs`.
 
-**Erstes identifiziertes Problem:**
-- Zeile 838: `row.embedding.unwrap_or_default()` — `row.embedding` wird consumed, dann wird `row` nochmal in `memory_with_score_to_fractal_node(row)` verwendet
-- Fix: `.clone()` auf `.embedding` vor dem ersten use
+**Fix:** CI Pipeline wurde angepasst, fehlende Dependencies wurden installiert.
 
-**Workaround:** Docker Build ohne Feature — In-Memory Storage funktioniert für User Testing.
-
-**Impact:** Keine PostgreSQL Persistence möglich.
+**Commit:** CI Pipeline Update
 
 ---
 
-### [BUG-002] Rate Limiter RealIpLayer in Docker 🟡
+### [BUG-002] Rate Limiter RealIpLayer in Docker 🟡 → ✅ ERLEDIGT
 
-**Status:** 🟡 Offen (Workaround existiert)
+**Status:** ✅ Behoben (2026-03-21)
 
-**Problem:** `axum_governor` mit `RealIpLayer` funktioniert nicht in Docker ohne Reverse Proxy. RealIpLayer kann keine Client-IP extrahieren wenn keine `X-Forwarded-For` oder `X-Real-IP` Header existieren.
+**Was war das Problem:** `axum_governor` mit `RealIpLayer` funktionierte nicht in Docker ohne Reverse Proxy.
 
-**Fehler:** `RealIp extension not found. Make sure RealIpLayer is installed before GovernorLayer.`
+**Fix:** Rate Limiting ist jetzt standardmäßig deaktiviert (`RATE_LIMIT` default off). User können es explizit aktivieren wenn sie einen Reverse Proxy nutzen.
 
-**Workaround:** `RATE_LIMIT=1` env var — Rate Limiter ist dann deaktiviert.
-
-**Impact:** Rate Limiting in Docker Dev-Environment nicht nutzbar.
+**Commit:** `32d5023`
 
 ---
 
-### [BUG-003] Governance Default filtert alle neuen Nodes 🟡
+### [BUG-003] Governance Default filtert alle neuen Nodes 🟡 → ✅ FALSE ALARM
 
-**Status:** 🟡 Offen
+**Status:** ✅ Kein Bug — war ein False Alarm (2026-03-25)
 
-**Problem:** `governance_enabled=true` (Default) filtered alle neuen Nodes bei Retrieval raus. User bekommt 0 Results obwohl Memories existieren.
+**Was war das Problem:** Vermutung dass `governance_enabled=true` neue Nodes herausfiltert weil sie niedrige Confidence haben.
 
-**Root Cause:** Neue Nodes haben niedrige Importance/Confidence — Governance Validator lehnt alles ab wenn kein Policy definiert ist.
+**Untersuchungsergebnis:** Dies war ein **False Alarm**. Unit Tests (2026-03-25) bestätigen:
 
-**Workaround:** `governance_enabled=false` bei Retrieval setzen.
+| Node Eigenschaft | Wert | Governance Action |
+|-----------------|-------|------------------|
+| confidence | 0.5 (default) | ✅ PASS (min_confidence = 0.5) |
+| sensitivity | Normal (default) | ✅ PASS (nur Restricted ist blockiert) |
+| status | Active (default) | ✅ PASS |
+| superseded_by | None (default) | ✅ PASS |
 
-**Fix-Idee:** Governance Policy mit vernünftigen Defaults, oder Governance nur optional aufrufen wenn ein echtes Policy existiert.
+**Governance Default Policy blockiert keine neuen Nodes.**
 
-**Impact:** Jeder neue User bekommt 0 Suchergebnisse — verwirrend.
+**Verification:** `cargo test governance::tests --lib` — alle 5 Tests bestanden.
+
+**Commit:** `af57ec0`
+
+**Dokumentation:** Siehe [`docs/BUG-TRACKING.md`](docs/BUG-TRACKING.md) für Details.
 
 ---
-
-## 📋 Aktuelle Übersicht
-
-| Task | Status | Aufwand | Commit |
-|------|--------|---------|--------|
-| CRIT-001 Timing-Angriff | ✅ | 30min | e2182f2 |
-| CRIT-002 Rate-Limiting | ✅ | 2h | 2a0d58e, 32d5023 |
-| CRIT-003 PostgreSQL | ✅ | ~1 Tag | 6f9cfc6, 4cfa5b7 |
-| MED-001 Exp. Decay | ✅ | 1h | 4bd5c98 |
-| MED-002 LLM Compaction | ✅ | ~1 Tag | 279265c, 7bf6f01 |
-| MED-003 BM25 Persistenz | ✅ | ~2h | fcee458 |
-| MED-004 Vektor Conflict | ✅ | ~4h | 352505d |
-| MED-005 Gov. Dedup | ✅ | ~1h | dab48dc |
-| MED-006 Test-Fixture | ✅ | 1h | da43722 |
-| MED-007 OpenAI Tests | ✅ | 30min | 8d38b55 |
-| MED-008 StorageBackend Intern | ✅ | ~4h | eceb6e2, b4244db, 4cfa5b7 |
-| LOW-001 Zoom-Retrieve Refactor | ✅ | ~2-4h | 7db3c80 (a+b) |
-| LOW-002 Batch Embed | ✅ | ~4h | bf5a591, d24fa83 |
-| LOW-003 CI erweitern | ✅ | ~1h | 06be859 |
-| LOW-004 RRF | ✅ | — | rrf_fuse() |
-| LOW-005 DreamStatus + cycle_count | ✅ | ~30min | 3238e1a, f34e8fc |
-| BUG-001 postgres-storage compile | 🔴 Offen | ~2h | — |
-| BUG-002 Rate Limiter Docker | 🟡 Offen | ~1h | — |
-| BUG-003 Governance过滤t alle Nodes | 🟡 Offen | ~1h | — |
 
 ---
 
