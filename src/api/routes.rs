@@ -296,9 +296,9 @@ pub async fn store_session(
         }
     };
 
-    let memory_type = MemoryType::from_str(&req.memory_type)
+    let memory_type = MemoryType::parse(&req.memory_type)
         .unwrap_or(MemoryType::Episodic);
-    let source = MemorySource::from_str(&req.source)
+    let source = MemorySource::parse(&req.source)
         .unwrap_or(MemorySource::Conversation);
 
     let mut node = FractalNode::new_typed(
@@ -401,9 +401,9 @@ pub async fn store_external(
         }
     };
 
-    let memory_type = MemoryType::from_str(&req.memory_type)
+    let memory_type = MemoryType::parse(&req.memory_type)
         .unwrap_or(MemoryType::Semantic);
-    let source = MemorySource::from_str(&req.source)
+    let source = MemorySource::parse(&req.source)
         .unwrap_or(MemorySource::Import);
 
     let mut node = FractalNode::new_typed(
@@ -553,7 +553,7 @@ pub async fn retrieve_fractal(
 
     // Parse max_tier filter (default: overview)
     let max_tier = req.max_tier.as_ref()
-        .and_then(|s| ContextTier::from_str(s));
+        .and_then(|s| ContextTier::parse(s));
 
     // Stage 1: Hybrid retrieval via StorageBackend trait
     let query = HybridQuery {
@@ -598,7 +598,7 @@ pub async fn retrieve_fractal(
     let type_filter = req
         .memory_type_filter
         .as_ref()
-        .and_then(|s| MemoryType::from_str(s));
+        .and_then(|s| MemoryType::parse(s));
 
     // Stage 2: Governance validation
     let validator = GovernanceValidator::new(state.governance_policy.clone());
@@ -1157,7 +1157,7 @@ pub async fn compact_memory(
         None => return Err((StatusCode::SERVICE_UNAVAILABLE, "postgres-storage not configured".into())),
     };
 
-    let target_tier = q.tier.as_ref().and_then(|s| ContextTier::from_str(s));
+    let target_tier = q.tier.as_ref().and_then(|s| ContextTier::parse(s));
 
     let worker = TieredCompactionWorker::new((*pool).clone(), state.embedding.clone(), state.vlm_worker.clone());
     match worker.compact_memory(id, target_tier).await {
@@ -1229,7 +1229,7 @@ pub async fn get_memory(
         Ok(Some(node)) => {
             // If a specific tier was requested, check if we need to follow the chain
             if let Some(ref tier_str) = q.tier {
-                if let Some(requested_tier) = ContextTier::from_str(tier_str) {
+                if let Some(requested_tier) = ContextTier::parse(tier_str) {
                     // If node is below requested tier, try to follow parent_tier_id chain
                     if node.context_tier as usize > requested_tier as usize {
                         // e.g., node is Summary (0) but Raw (2) was requested

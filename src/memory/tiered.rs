@@ -92,7 +92,7 @@ impl TieredCompactionWorker {
             None => anyhow::bail!("memory {} not found or not active", memory_id),
         };
 
-        let current_tier = ContextTier::from_str(&row.context_tier)
+        let current_tier = ContextTier::parse(&row.context_tier)
             .unwrap_or(ContextTier::Raw);
 
         // Determine target tier (default: next tier down)

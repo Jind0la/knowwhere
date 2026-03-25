@@ -35,7 +35,7 @@ impl SkillCategory {
         }
     }
 
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "language" => Some(SkillCategory::Language),
             "tool" => Some(SkillCategory::Tool),

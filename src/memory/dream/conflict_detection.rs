@@ -47,7 +47,7 @@ pub enum ConflictType {
 }
 
 impl ConflictType {
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
             "entity" => Some(ConflictType::Entity),
             "temporal" => Some(ConflictType::Temporal),
@@ -623,7 +623,7 @@ impl ConflictDetector {
             .map(|r| ConflictGroup {
                 id: r.id,
                 conflicting_memory_ids: r.conflicting_memory_ids,
-                conflict_type: ConflictType::from_str(&r.conflict_type)
+                conflict_type: ConflictType::parse(&r.conflict_type)
                     .unwrap_or(ConflictType::Entity),
                 description: r.description,
                 detected_at: r.detected_at,

@@ -156,7 +156,7 @@ impl MemoryType {
     }
 
     /// Parse from string (for API input).
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "episodic" => Some(MemoryType::Episodic),
             "semantic" => Some(MemoryType::Semantic),
@@ -207,7 +207,7 @@ pub enum Sensitivity {
 }
 
 impl Sensitivity {
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "normal" => Some(Sensitivity::Normal),
             "low" => Some(Sensitivity::Low),
@@ -242,7 +242,7 @@ pub enum ConflictState {
 }
 
 impl ConflictState {
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "none" => Some(ConflictState::None),
             "pending" => Some(ConflictState::Pending),
@@ -270,7 +270,7 @@ pub enum MemoryStatus {
 }
 
 impl MemoryStatus {
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "active" => Some(MemoryStatus::Active),
             "draft" => Some(MemoryStatus::Draft),
@@ -305,7 +305,7 @@ pub enum MemorySource {
 }
 
 impl MemorySource {
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "conversation" => Some(MemorySource::Conversation),
             "document" => Some(MemorySource::Document),
@@ -350,7 +350,7 @@ impl ContextTier {
     }
 
     /// Parse from string.
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "summary" => Some(ContextTier::Summary),
             "overview" => Some(ContextTier::Overview),

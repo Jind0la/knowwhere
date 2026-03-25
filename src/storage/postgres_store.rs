@@ -1029,13 +1029,13 @@ fn memory_row_to_fractal_node(row: MemoryRow) -> FractalNode {
 
     // Parse structured fields from strings stored in the DB
     let memory_type =
-        MemoryType::from_str(&row.memory_type).unwrap_or(MemoryType::Episodic);
-    let source = MemorySource::from_str(&row.source).unwrap_or(MemorySource::Conversation);
+        MemoryType::parse(&row.memory_type).unwrap_or(MemoryType::Episodic);
+    let source = MemorySource::parse(&row.source).unwrap_or(MemorySource::Conversation);
     let sensitivity =
-        Sensitivity::from_str(&row.sensitivity).unwrap_or(Sensitivity::Normal);
-    let status = MemoryStatus::from_str(&row.status).unwrap_or(MemoryStatus::Active);
+        Sensitivity::parse(&row.sensitivity).unwrap_or(Sensitivity::Normal);
+    let status = MemoryStatus::parse(&row.status).unwrap_or(MemoryStatus::Active);
     let conflict_state =
-        ConflictState::from_str(&row.conflict_state).unwrap_or(ConflictState::None);
+        ConflictState::parse(&row.conflict_state).unwrap_or(ConflictState::None);
 
     // Fields not stored per-row — use sensible defaults
     let context_tier = ContextTier::Raw;
@@ -1085,11 +1085,11 @@ fn memory_with_score_to_fractal_node(row: MemoryWithScore) -> Option<FractalNode
     let provenance = row.provenance.clone();
 
     let memory_type =
-        MemoryType::from_str(&row.memory_type).unwrap_or(MemoryType::Episodic);
-    let source = MemorySource::from_str(&row.source).unwrap_or(MemorySource::Conversation);
+        MemoryType::parse(&row.memory_type).unwrap_or(MemoryType::Episodic);
+    let source = MemorySource::parse(&row.source).unwrap_or(MemorySource::Conversation);
     let sensitivity =
-        Sensitivity::from_str(&row.sensitivity).unwrap_or(Sensitivity::Normal);
-    let status = MemoryStatus::from_str(&row.status).unwrap_or(MemoryStatus::Active);
+        Sensitivity::parse(&row.sensitivity).unwrap_or(Sensitivity::Normal);
+    let status = MemoryStatus::parse(&row.status).unwrap_or(MemoryStatus::Active);
 
     Some(FractalNode {
         id: row.id,
