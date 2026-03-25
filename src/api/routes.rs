@@ -13,7 +13,7 @@ use uuid::Uuid;
 use crate::embedding::{EmbeddingProvider, embed_document, embed_query};
 use crate::memory::dream::DreamStatus;
 #[cfg(feature = "postgres-storage")]
-use crate::memory::skills::{CreateSkillResponse, SkillsStore};
+use crate::memory::skills::CreateSkillResponse;
 use crate::memory::types::{ContextTier, MemorySource, MemoryType, Sensitivity};
 use crate::memory::{DreamMode, Event, EventStore, FractalNode, GovernancePolicy, GovernanceValidator, InMemoryEventStore};
 use crate::multimodal::MultimodalData;
