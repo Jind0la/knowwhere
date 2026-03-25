@@ -250,7 +250,7 @@ async fn run() -> anyhow::Result<()> {
             .route("/skills", post(routes::create_skill))
             .route("/skills", get(routes::list_skills))
             .route("/skills/{id}", get(routes::get_skill))
-            .route("/skills/{id}"(routes::update_skill))
+            .route("/skills/{id}", put(routes::update_skill))
             .route("/skills/{id}", delete(routes::delete_skill))
             .route("/skills/{id}/use", post(routes::use_skill))
             .route("/skills/match", get(routes::match_skills));
