@@ -1,6 +1,6 @@
 # KnowWhere Architecture
 
-> Stand: 2. Maerz 2026 — v0.2.0
+> Stand: 25. Maerz 2026 — v0.3.0
 
 ## High-Level Overview
 
