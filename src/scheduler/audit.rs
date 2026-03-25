@@ -16,6 +16,8 @@ use tokio::sync::RwLock;
 use tokio::time::{interval, Duration, Instant};
 
 #[cfg(feature = "postgres-storage")]
+use uuid::Uuid;
+#[cfg(feature = "postgres-storage")]
 use sqlx::PgPool;
 #[cfg(feature = "postgres-storage")]
 use crate::memory::dream::conflict_detection::ConflictGroup;
