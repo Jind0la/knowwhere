@@ -196,7 +196,7 @@ async fn run() -> anyhow::Result<()> {
 
     let api_key = ApiKey(std::env::var("KNOWWHERE_API_KEY").ok());
 
-    let protected = Router::new()
+    let mut protected = Router::new()
         .route("/embed", post(routes::embed_text))
         .route("/store_session", post(routes::store_session))
         .route("/store_external", post(routes::store_external))
@@ -270,7 +270,7 @@ async fn run() -> anyhow::Result<()> {
         None
     };
 
-    let protected = match rate_limit_layer {
+    let mut protected = match rate_limit_layer {
         Some(layer) => protected.layer(layer),
         None => protected,
     }
