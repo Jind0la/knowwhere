@@ -345,8 +345,11 @@ cargo test
 ## Known Issues
 
 - **Rate Limiting**: Requires a reverse proxy (nginx, Cloudflare) that sets `X-Forwarded-For` headers. Enable with `RATE_LIMIT=1` when behind a proxy.
-- **Governance Default**: With `governance_enabled=true` (default), new nodes may be filtered by Stage 2 validation. Use `governance_enabled=false` for testing new memories.
 - **Docker postgres-storage**: The default Docker image does not include `postgres-storage` feature. Build with `docker build --build-arg FEATURES=postgres-storage .` or use the CI-built images for PostgreSQL support.
+
+## Resolved Issues
+
+- **Governance Default (BUG-003)**: Unit tests (2026-03-25) confirmed this was a false alarm. New nodes with default values (confidence=0.5, status=Active, sensitivity=Normal) pass governance validation. See [`docs/BUG-TRACKING.md`](docs/BUG-TRACKING.md) for details.
 
 ## Lesson Learned
 
