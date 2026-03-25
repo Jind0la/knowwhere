@@ -776,7 +776,7 @@ mod worker {
             if let Some(pos) = truncated.rfind(['.', '!', '?', ';', ',', '\n']) {
                 let pos = if truncated.chars().nth(pos) == Some(',') && pos > char_limit / 2 {
                     // Prefer sentence end over mid-clause comma
-                    truncated[..pos].rfind(['.', '!', '?']).map(|p| p).unwrap_or(pos)
+                    truncated[..pos].rfind(['.', '!', '?']).unwrap_or(pos)
                 } else {
                     pos
                 };

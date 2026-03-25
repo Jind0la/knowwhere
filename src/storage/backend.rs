@@ -85,12 +85,12 @@ impl UpdateOperation {
                 }
             }
             UpdateOperation::SetStatus(status) => {
-                node.status = status.clone();
+                node.status = *status;
             }
             UpdateOperation::ApplyAudit { weight, status } => {
                 node.weight = *weight;
                 if let Some(s) = status {
-                    node.status = s.clone();
+                    node.status = *s;
                 }
             }
         }
