@@ -163,11 +163,6 @@ pub fn auth_router() -> Router {
         .route("/login", post(login))
         .route("/refresh", post(refresh))
         .route("/register", post(register))
-        .layer(
-            ServiceBuilder::new()
-                .layer(GovernorLayer::new(auth_governor_config())) // Rate-limit first
-                .layer(RealIpLayer::default()) // Extract real IP (needed by Governor)
-        )
 }
 
 /// Build the auth sub-router with state, for merging into a Router<AppState>.
@@ -179,10 +174,5 @@ pub fn auth_router_with_state<S: Clone + Send + Sync + 'static>(state: S) -> Rou
         .route("/login", post(login))
         .route("/refresh", post(refresh))
         .route("/register", post(register))
-        .layer(
-            ServiceBuilder::new()
-                .layer(GovernorLayer::new(auth_governor_config())) // Rate-limit first
-                .layer(RealIpLayer::default()) // Extract real IP (needed by Governor)
-        )
         .with_state(state)
 }

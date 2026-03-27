@@ -54,9 +54,9 @@ async fn run() -> anyhow::Result<()> {
     init_rate_limiter!(
         default: RuleConfig::new(Duration::seconds(1), 5),
         routes: [
-            ("/auth/login",    RuleConfig::new(Duration::seconds(1), 3)),
-            ("/auth/refresh",  RuleConfig::new(Duration::seconds(1), 3)),
-            ("/auth/register", RuleConfig::new(Duration::seconds(60), 10)),
+            ("/login",    RuleConfig::new(Duration::seconds(1), 3)),
+            ("/refresh",  RuleConfig::new(Duration::seconds(1), 3)),
+            ("/register", RuleConfig::new(Duration::seconds(60), 10)),
         ]
     ).await;
 
@@ -280,7 +280,7 @@ async fn run() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/health", get(routes::health))
         .merge(protected)
-        .merge(auth::auth_router_with_state(state.clone()))
+        .merge(auth::auth_router_with_state(state.clone()).layer(axum::Extension(api_key.clone())))
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
         .fallback_service(ServeDir::new("frontend"))
         .layer(CorsLayer::new().allow_origin(Any).allow_methods(Any).allow_headers(Any))

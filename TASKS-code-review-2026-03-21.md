@@ -338,3 +338,28 @@ Arena löst das Problem "wenn ich einen Node klone, klont er alle Kinder mit". A
 - Auth Security: subtle crate, axum-governor docs
 - Decay Model: Ebbinghaus curve, spaced repetition literature
 - RRF: OpenSearch RRF implementation, TopK hybrid retrieval research
+
+---
+
+## Phase 2 (Connectors) — Status 2026-03-27
+
+⚠️ **Der Phase 2 Plan wurde NICHT vollständig implementiert!**
+
+Der Plan (`.cursor/plans/phase_2_connectors_optimiert.plan.md`) enthält TODO-Checkboxes die auf "completed" gesetzt sind, aber der Code fehlt weitgehend.
+
+**Details:** Siehe [`docs/PHASE-2-STATUS.md`](docs/PHASE-2-STATUS.md)
+
+### Was fehlt:
+- ❌ `POST /webhooks/frigate` Endpoint
+- ❌ `POST /webhooks/homeassistant` Endpoint
+- ❌ `POST /dream/full` Admin Endpoint
+- ❌ Echte Google Drive API Anbindung (nur Placeholder mit Dummy-Daten)
+- ❌ OpenAPI + Integration-Tests
+
+### Was existiert:
+- ✅ `src/api/webhooks.rs` — DedupCache + Secret-Check Infrastruktur
+- ✅ `src/connectors/drive.rs` — Placeholder
+- ✅ `src/connectors/frigate.rs` — Polling-Modus funktioniert
+
+**Empfohlen:** Erst Core-API mit OpenClaw verifizieren, dann entscheiden ob Phase 2 benötigt wird.
+EOF; __hermes_rc=$?; printf '__HERMES_FENCE_a9f7b3__'; exit $__hermes_rc
