@@ -26,6 +26,8 @@ use knowwhere_server::storage::StorageBackend;
 use knowwhere_server::memory::{DreamMode, GovernancePolicy};
 use knowwhere_server::scheduler::{AuditScheduler, ConsolidationScheduler, SchedulerConfig};
 use knowwhere_server::storage::MemoryStore;
+#[cfg(feature = "postgres-storage")]
+use knowwhere_server::storage::PostgresStore;
 use knowwhere_server::vlm::{VlmConfig, VlmWorker};
 
 fn main() {
@@ -60,12 +62,52 @@ async fn run() -> anyhow::Result<()> {
         ]
     ).await;
 
-    let data_dir = std::env::var("KNOWWHERE_DATA_DIR").unwrap_or_else(|_| "./data".into());
-    let store = MemoryStore::with_persistence(&data_dir)
-        .unwrap_or_else(|e| {
-            tracing::warn!("persistence init failed ({e}), using in-memory only");
-            MemoryStore::new()
-        });
+    // ------------------------------------------------------------------
+    // Storage: PostgreSQL (if DATABASE_URL) or MemoryStore (JSON fallback)
+    // ------------------------------------------------------------------
+    #[cfg(feature = "postgres-storage")]
+    let store: Arc<dyn StorageBackend> = if let Ok(database_url) = std::env::var("DATABASE_URL") {
+        match PostgresStore::connect(&database_url).await {
+            Ok(pg_store) => {
+                tracing::info!("storage: PostgreSQL (primary store — data will persist in PostgreSQL)");
+                Arc::new(pg_store)
+            }
+            Err(e) => {
+                tracing::warn!("postgres connection failed ({e}), falling back to MemoryStore");
+                let data_dir = std::env::var("KNOWWHERE_DATA_DIR").unwrap_or_else(|_| "./data".into());
+                Arc::new(
+                    MemoryStore::with_persistence(&data_dir)
+                        .unwrap_or_else(|e| {
+                            tracing::warn!("persistence init failed ({e}), using in-memory only");
+                            MemoryStore::new()
+                        }),
+                )
+            }
+        }
+    } else {
+        tracing::info!("DATABASE_URL not set — using MemoryStore (JSON persistence)");
+        let data_dir = std::env::var("KNOWWHERE_DATA_DIR").unwrap_or_else(|_| "./data".into());
+        Arc::new(
+            MemoryStore::with_persistence(&data_dir)
+                .unwrap_or_else(|e| {
+                    tracing::warn!("persistence init failed ({e}), using in-memory only");
+                    MemoryStore::new()
+                }),
+        )
+    };
+
+    #[cfg(not(feature = "postgres-storage"))]
+    let store: Arc<dyn StorageBackend> = {
+        let data_dir = std::env::var("KNOWWHERE_DATA_DIR").unwrap_or_else(|_| "./data".into());
+        Arc::new(
+            MemoryStore::with_persistence(&data_dir)
+                .unwrap_or_else(|e| {
+                    tracing::warn!("persistence init failed ({e}), using in-memory only");
+                    MemoryStore::new()
+                }),
+        )
+    };
+
     // Concrete store for VLM worker, schedulers, DreamMode, and FrigateConnector.
     let dream_store = store.clone();
     let connector_store = store.clone();
@@ -100,7 +142,7 @@ async fn run() -> anyhow::Result<()> {
                     Ok(events) => {
                         for event in events {
                             if let Err(e) = store_external_event(
-                                &connector_store,
+                                connector_store.as_ref(),
                                 &connector_embedding,
                                 event,
                             )
@@ -144,7 +186,7 @@ async fn run() -> anyhow::Result<()> {
     // -- VLM Background Worker (3-stage fallback: GPT-5-nano → GPT-4o-mini → Grok-4-fast) --
     let vlm_config = VlmConfig::from_env();
     let (vlm_worker, _vlm_join) = if vlm_config.is_configured() {
-        let (h, j) = VlmWorker::spawn(Arc::new(store.clone()), embedding.clone(), vlm_config);
+        let (h, j) = VlmWorker::spawn(store.clone(), embedding.clone(), vlm_config);
         tracing::info!("VLM summarization worker started (OPENAI_API_KEY or GROK_API_KEY detected)");
         (Some(h), Some(j))
     } else {
@@ -178,12 +220,12 @@ async fn run() -> anyhow::Result<()> {
         tracing::info!("Dream Mode scheduler disabled (DREAM_ENABLED=false)");
     }
 
-    // Arc<dyn StorageBackend> for API layer — wrap at the end after all concrete clones taken
-    let store_for_api: Arc<dyn StorageBackend> = Arc::new(store);
+    // Arc<dyn StorageBackend> for API layer — already an Arc<dyn StorageBackend>
+    let store_for_api = store.clone();
 
     let state = routes::AppState {
-        store: store_for_api,
-        dream_store,
+        store: store.clone(),
+        dream_store: store.clone(),
         dream,
         embedding,
         governance_policy: GovernancePolicy::default_policy(),
@@ -317,12 +359,8 @@ async fn run() -> anyhow::Result<()> {
             _ = terminate => {},
         }
 
-        tracing::info!("shutdown signal received, saving state…");
-        if let Err(e) = shutdown_store.save_to_disk().await {
-            tracing::warn!("final save failed: {e}");
-        } else {
-            tracing::info!("state saved to disk");
-        }
+        tracing::info!("shutdown signal received");
+        // Storage backend handles its own persistence (PostgresStore: auto-commit, MemoryStore: auto-save)
     };
 
     axum::serve(listener, app)

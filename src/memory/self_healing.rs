@@ -179,7 +179,7 @@ impl SelfHealingService {
     pub async fn health_check(&self, memory_id: Uuid) -> Result<HealthCheckResult> {
         let row = sqlx::query!(
             r#"
-            SELECT original_pointer
+            SELECT content
             FROM memories
             WHERE id = $1 AND status != 'deleted'
             "#,
@@ -189,9 +189,7 @@ impl SelfHealingService {
         .await
         .context("failed to fetch memory for health check")?;
 
-        let uri = row
-            .and_then(|r| r.original_pointer)
-            .unwrap_or_default();
+        let uri = row.map(|r| r.content).unwrap_or_default();
 
         let path = self.uri_to_path(&uri);
         let pointer_valid = path.exists();
@@ -399,7 +397,7 @@ impl SelfHealingService {
         sqlx::query!(
             r#"
             UPDATE memories
-            SET original_pointer = $1, updated_at = NOW()
+            SET content = $1, updated_at = NOW()
             WHERE id = $2
             "#,
             new_uri,

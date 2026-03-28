@@ -12,10 +12,11 @@ use knowwhere_server::api::{auth, auth::ApiKey, routes};
 use knowwhere_server::embedding::{create_provider, ProviderKind};
 use knowwhere_server::memory::{DreamMode, events::InMemoryEventStore};
 use knowwhere_server::memory::governance::GovernancePolicy;
-use knowwhere_server::storage::MemoryStore;
+use knowwhere_server::storage::{MemoryStore, StorageBackend};
 
 fn test_state() -> routes::AppState {
-    let store = MemoryStore::new();
+    let store: Arc<dyn knowwhere_server::storage::StorageBackend> =
+        Arc::new(MemoryStore::new());
     let dream_store = store.clone();
     let dream = DreamMode::new(dream_store.clone());
     let embedding: Arc<dyn knowwhere_server::embedding::EmbeddingProvider> =
@@ -25,7 +26,7 @@ fn test_state() -> routes::AppState {
                 .expect("OPENAI_API_KEY must be set in environment")),
         );
     routes::AppState {
-        store: Arc::new(store),
+        store: store.clone(),
         dream_store,
         dream,
         embedding,
@@ -480,4 +481,194 @@ async fn embed_text_returns_vector() {
     assert!(embedded.get("vector").is_some());
     let vector = embedded["vector"].as_array().unwrap();
     assert_eq!(vector.len(), 1536); // OpenAI text-embedding-3-small
+}
+
+// =============================================================================
+// PostgreSQL Storage Backend Tests
+// =============================================================================
+
+#[tokio::test]
+#[cfg(feature = "postgres-storage")]
+async fn postgres_store_hybrid_retrieve_bm25_only() {
+    // Isolated test for hybrid_retrieve with BM25-only query (no query_vector).
+    // This test verifies the BM25 fallback path works correctly when only
+    // query_text is provided. Previously this path crashed (HTTP 500) because
+    // of a pgvector/FLOAT4[] type mismatch in list_memories().
+    //
+    // The bug: list_memories() used `embedding as "embedding: _"` which decoded
+    // the pgvector column as Vec<f32>, but pgvector stores vectors in its own
+    // binary format that is NOT compatible with PostgreSQL's float4[].
+    // Fix: cast to float4[] explicitly: `embedding::float4[] as "embedding: _"`
+    use knowwhere_server::storage::{postgres_store::PostgresStore, backend::HybridQuery, StorageBackend};
+    use knowwhere_server::memory::fractal_node::FractalNode;
+    use std::env;
+
+    let database_url = env::var("DATABASE_URL")
+        .expect("DATABASE_URL must be set for this test (run: export DATABASE_URL='postgres://...')");
+
+    let store = PostgresStore::connect(&database_url)
+        .await
+        .expect("failed to connect to PostgreSQL");
+
+    // Insert a test node directly via the StorageBackend trait
+    let test_content = format!("postgres bm25 test content {}", uuid::Uuid::new_v4());
+    let node = FractalNode::new_typed(
+        Some(test_content.clone()),
+        None,
+        vec![0.0; 768], // dummy vector — not used in BM25-only query
+        Default::default(),
+        knowwhere_server::memory::types::MemoryType::Episodic,
+        knowwhere_server::memory::types::MemorySource::Conversation,
+    );
+
+    let node_id = store
+        .insert(node)
+        .await
+        .expect("insert failed");
+
+    // BM25-only query — this exercises the fallback path in hybrid_retrieve
+    // that calls search_bm25() then get() for each result.
+    let query = HybridQuery {
+        query_text: Some("postgres bm25 test content".to_string()),
+        query_vector: None,
+        top_k: 5,
+        max_depth: 0,
+    };
+
+    let results = store
+        .hybrid_retrieve(&query)
+        .await
+        .expect("hybrid_retrieve failed");
+
+    // Verify our inserted node is returned
+    let found = results
+        .iter()
+        .find(|r| r.node.content.as_deref() == Some(&test_content));
+
+    assert!(
+        found.is_some(),
+        "BM25 query should find the inserted node. Results: {} items, first content: {:?}",
+        results.len(),
+        results.first().and_then(|r| r.node.content.as_deref())
+    );
+
+    // Cleanup
+    store
+        .delete(node_id)
+        .await
+        .expect("cleanup delete failed");
+}
+
+#[tokio::test]
+#[cfg(feature = "postgres-storage")]
+async fn postgres_store_hybrid_retrieve_with_vector() {
+    // Test hybrid_retrieve with a real query vector.
+    // Uses the vector search path (HNSW index) combined with BM25 via RRF.
+    use knowwhere_server::storage::postgres_store::PostgresStore;
+    use knowwhere_server::memory::fractal_node::FractalNode;
+    use knowwhere_server::storage::backend::HybridQuery;
+    use std::env;
+
+    let database_url = env::var("DATABASE_URL")
+        .expect("DATABASE_URL must be set for this test");
+
+    let store = PostgresStore::connect(&database_url)
+        .await
+        .expect("failed to connect to PostgreSQL");
+
+    // Insert with a real-ish vector (768-dim, matching nomic-embed-text-v2-moe)
+    let test_content = format!("vector search test node {}", uuid::Uuid::new_v4());
+    let vector: Vec<f32> = (0..768).map(|i| (i as f32) * 0.001).collect();
+    let node = FractalNode::new_typed(
+        Some(test_content.clone()),
+        None,
+        vector.clone(),
+        Default::default(),
+        knowwhere_server::memory::types::MemoryType::Semantic,
+        knowwhere_server::memory::types::MemorySource::Conversation,
+    );
+
+    let node_id = store
+        .insert(node)
+        .await
+        .expect("insert failed");
+
+    // Query with the same vector — should find the node with high similarity
+    let query = HybridQuery {
+        query_text: Some("vector search test".to_string()),
+        query_vector: Some(vector),
+        top_k: 3,
+        max_depth: 0,
+    };
+
+    let results = store
+        .hybrid_retrieve(&query)
+        .await
+        .expect("hybrid_retrieve failed");
+
+    let found = results
+        .iter()
+        .find(|r| r.node.content.as_deref() == Some(&test_content));
+
+    assert!(
+        found.is_some(),
+        "Vector query should find the inserted node. Got {} results.",
+        results.len()
+    );
+
+    // Cleanup
+    store
+        .delete(node_id)
+        .await
+        .expect("cleanup delete failed");
+}
+
+#[tokio::test]
+#[cfg(feature = "postgres-storage")]
+async fn postgres_store_count_matches_active_memories() {
+    // Verify that store.count() correctly returns the number of active memories.
+    // Previously this returned 0 even when active memories existed in the DB,
+    // due to silent query failures from the pgvector type mismatch.
+    use knowwhere_server::storage::postgres_store::PostgresStore;
+    use knowwhere_server::memory::fractal_node::FractalNode;
+    use std::env;
+
+    let database_url = env::var("DATABASE_URL")
+        .expect("DATABASE_URL must be set for this test");
+
+    let store = PostgresStore::connect(&database_url)
+        .await
+        .expect("failed to connect to PostgreSQL");
+
+    // Insert two nodes
+    let node1 = FractalNode::new_typed(
+        Some("count test node 1".to_string()),
+        None,
+        vec![0.1; 768],
+        Default::default(),
+        knowwhere_server::memory::types::MemoryType::Episodic,
+        knowwhere_server::memory::types::MemorySource::Conversation,
+    );
+    let node2 = FractalNode::new_typed(
+        Some("count test node 2".to_string()),
+        None,
+        vec![0.2; 768],
+        Default::default(),
+        knowwhere_server::memory::types::MemoryType::Episodic,
+        knowwhere_server::memory::types::MemorySource::Conversation,
+    );
+
+    let id1 = store.insert(node1).await.expect("insert 1 failed");
+    let id2 = store.insert(node2).await.expect("insert 2 failed");
+
+    let count = StorageBackend::count(&store).await;
+    assert!(
+        count >= 2,
+        "count() should be at least 2, got {}",
+        count
+    );
+
+    // Cleanup
+    store.delete(id1).await.expect("delete 1 failed");
+    store.delete(id2).await.expect("delete 2 failed");
 }

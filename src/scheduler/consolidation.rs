@@ -16,12 +16,12 @@ use uuid::Uuid;
 
 use crate::memory::types::{ContextTier, MemoryStatus};
 use crate::scheduler::SchedulerConfig;
-use crate::storage::{MemoryStore, StorageBackend, UpdateOperation};
+use crate::storage::{StorageBackend, UpdateOperation};
 use crate::vlm::{SummaryContext, VlmJob, VlmWorkerHandle};
 
 /// Consolidation Scheduler state.
 pub struct ConsolidationScheduler {
-    store: MemoryStore,
+    store: Arc<dyn StorageBackend>,
     vlm_worker: Option<VlmWorkerHandle>,
     config: SchedulerConfig,
     /// Track last run so we don't re-process recently consolidated nodes.
@@ -35,7 +35,7 @@ pub struct ConsolidationScheduler {
 impl ConsolidationScheduler {
     /// Create a new ConsolidationScheduler.
     pub fn new(
-        store: MemoryStore,
+        store: Arc<dyn StorageBackend>,
         vlm_worker: Option<VlmWorkerHandle>,
         config: SchedulerConfig,
     ) -> Self {

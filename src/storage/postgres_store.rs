@@ -197,7 +197,7 @@ impl PostgresStore {
                 last_accessed, created_at as "created_at!", updated_at as "updated_at!",
                 deleted_at, metadata as "metadata!", entities as "entities!",
                 COALESCE(tags, ARRAY[]::TEXT[]) as "tags!",
-                embedding as "embedding: _"
+                embedding::float4[] as "embedding: _"
             FROM memories
             WHERE id = $1 AND status != 'deleted'
             "#,
@@ -375,7 +375,7 @@ impl PostgresStore {
                            source_id, provenance, last_accessed,
                            content_preview,
                            COALESCE((1 - (embedding <=> $1::vector))::float, 0.0) AS "similarity: f64",
-                           embedding as "embedding: _"
+                           embedding::float4[] as "embedding: _"
                     FROM memories
                     WHERE status = 'active'
                       AND embedding IS NOT NULL
@@ -406,7 +406,7 @@ impl PostgresStore {
                            last_accessed,
                            content_preview,
                            COALESCE((1 - (embedding <=> $1::vector))::float, 0.0) AS "similarity: f64",
-                           embedding as "embedding: _"
+                           embedding::float4[] as "embedding: _"
                     FROM memories
                     WHERE status = 'active'
                       AND embedding IS NOT NULL
@@ -436,7 +436,7 @@ impl PostgresStore {
                        last_accessed,
                        content_preview,
                        COALESCE((1 - (embedding <=> $1::vector))::float, 0.0) AS "similarity: f64",
-                       embedding as "embedding: _"
+                       embedding::float4[] as "embedding: _"
                 FROM memories
                 WHERE status = 'active'
                   AND embedding IS NOT NULL
@@ -469,7 +469,7 @@ impl PostgresStore {
                 last_accessed, created_at as "created_at!", updated_at as "updated_at!",
                 deleted_at, metadata as "metadata!", entities as "entities!",
                 COALESCE(tags, ARRAY[]::TEXT[]) as "tags!",
-                embedding as "embedding: _"
+                embedding::float4[] as "embedding: _"
             FROM memories
             WHERE status = 'active'
             ORDER BY created_at DESC
@@ -498,7 +498,7 @@ impl PostgresStore {
                 last_accessed, created_at as "created_at!", updated_at as "updated_at!",
                 deleted_at, metadata as "metadata!", entities as "entities!",
                 COALESCE(tags, ARRAY[]::TEXT[]) as "tags!",
-                embedding as "embedding: _"
+                embedding::float4[] as "embedding: _"
             FROM memories
             WHERE status = 'active'
             ORDER BY created_at DESC
@@ -514,7 +514,7 @@ impl PostgresStore {
         let row = if let Some(mt) = memory_type {
             sqlx::query(
                 r#"
-                SELECT COUNT(*)::bigint as "count:i64"
+                SELECT COUNT(*)::bigint as "total:i64"
                 FROM memories
                 WHERE status = 'active' AND memory_type = $1
                 "#,
@@ -525,7 +525,7 @@ impl PostgresStore {
         } else {
             sqlx::query(
                 r#"
-                SELECT COUNT(*)::bigint as "count:i64"
+                SELECT COUNT(*)::bigint as "total:i64"
                 FROM memories
                 WHERE status = 'active'
                 "#,
@@ -533,8 +533,8 @@ impl PostgresStore {
             .fetch_one(&self.pool)
             .await?
         };
-        let count: i64 = row.try_get("count")?;
-        Ok(count)
+        let total: i64 = row.try_get(0)?;
+        Ok(total)
     }
 
     // -------------------------------------------------------------------------
@@ -666,7 +666,7 @@ impl PostgresStore {
                    last_accessed, deleted_at, metadata, entities,
                    COALESCE(tags, ARRAY[]::TEXT[]) as "tags!",
                    content_preview,
-                   embedding as "embedding: _"
+                   embedding::float4[] as "embedding: _"
             FROM fractal_tree
             ORDER BY level
             "#,

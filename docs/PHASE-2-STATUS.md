@@ -5,6 +5,24 @@
 
 ---
 
+## Update: 2026-03-27 — Integration Test durchgeführt
+
+Die OpenClaw-Integration (Phase 1.5) wurde am 2026-03-27 einem Integrationstest unterzogen.
+
+**Ergebnis:**
+- KnowWhere Core-API: ✅ FUNKTIONIERT (90-100% Precision@3 in 30-Node MilaOS-Test)
+- OpenClaw `knowwhere-memory` Hook: ❌ EXISTIERT NICHT — kein JavaScript/TypeScript Code gefunden
+- OpenClaw Workspace: ❌ EXISTIERT NICHT — `~/.openclaw/workspace/` fehlt
+- OpenClaw Plugin Config: ❌ EXISTIERT NICHT — keine `openclaw.json`
+
+**Zwei Bugs gefunden und gefixt (BUG-005, BUG-006):**
+1. Leere `query_text` → 500 statt 400 (OLLAMA lehnt leeren String ab)
+2. Repetitiver Content ("AAAA...") → 500 statt 400 (OLLAMA lehnt repetitive Inputs ab)
+
+**Fazit:** Phase 1.5 ist in der PRD als "abgeschlossen" markiert, aber der Code existiert nicht. Die OpenClaw-Integration muss noch gebaut werden.
+
+---
+
 ## tl;dr
 
 Der ursprüngliche Plan `.cursor/plans/phase_2_connectors_optimiert.plan.md` wurde nach Architektur-Diskussion erstellt, aber die Implementierung wurde **nicht abgeschlossen**. Die TODO-Checkboxen im Plan sind auf "completed" gesetzt, aber der tatsächliche Code fehlt weitgehend.
@@ -100,6 +118,7 @@ OpenClaw Integration funktioniert über Core-API:
 | 2026-03-21 | Plan erstellt mit 3 Meilensteinen |
 | 2026-03-25 | v0.3.0 Released (Core Features complete) |
 | 2026-03-27 | Discovery: Plan ≠ Implementierung. Plan archiviert, dieses Dokument erstellt. |
+| 2026-03-28 | BUG-007 (count=0) + self_healing.rs Fixes. PostgreSQL-Integration jetzt fully functional (3/3 tests passing). |
 
 ---
 

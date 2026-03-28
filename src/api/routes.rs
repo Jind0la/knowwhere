@@ -144,8 +144,8 @@ use crate::storage::{MemoryStore, StorageBackend, HybridQuery};
 pub struct AppState {
     /// Primary storage backend (trait object for flexibility).
     pub store: Arc<dyn StorageBackend>,
-    /// DreamMode needs a concrete MemoryStore for internal operations.
-    pub dream_store: MemoryStore,
+    /// DreamMode and consolidation scheduler need a StorageBackend.
+    pub dream_store: Arc<dyn StorageBackend>,
     pub dream: DreamMode,
     pub embedding: Arc<dyn EmbeddingProvider>,
     /// Active governance policy for Stage 2 retrieval validation.
@@ -286,11 +286,36 @@ pub async fn store_session(
     State(state): State<AppState>,
     Json(req): Json<StoreSessionRequest>,
 ) -> Result<(StatusCode, Json<StoreNodeResponse>), (StatusCode, String)> {
+    // Validate content before embedding to avoid opaque upstream errors
+    let cleaned = clean_for_embedding(&req.content);
+    if cleaned.len() < 4 {
+        return Err((StatusCode::BAD_REQUEST, "content too short or empty after cleaning".into()));
+    }
+    // Reject highly repetitive content — Ollama rejects near-uniform strings
+    {
+        use std::collections::HashMap;
+        let mut freq: HashMap<char, usize> = HashMap::new();
+        let mut total = 0usize;
+        for c in cleaned.chars() {
+            if !c.is_whitespace() {
+                *freq.entry(c).or_insert(0) += 1;
+                total += 1;
+            }
+        }
+        if total > 0 {
+            if let Some(&max_count) = freq.values().max() {
+                let ratio = max_count as f64 / total as f64;
+                if ratio > 0.9 {
+                    return Err((StatusCode::BAD_REQUEST, "content too repetitive for embedding".into()));
+                }
+            }
+        }
+    }
+
     let vector = match req.vector {
         Some(v) if !v.is_empty() => v,
         _ => {
-            let embed_text = clean_for_embedding(&req.content);
-            embed_document(&*state.embedding, &embed_text)
+            embed_document(&*state.embedding, &cleaned)
                 .await
                 .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("auto-embed failed: {e}")))?
         }
@@ -535,6 +560,9 @@ pub async fn retrieve_fractal(
         Some(v) => v.clone(),
         None => {
             if let Some(text) = &req.query_text {
+                if text.trim().is_empty() {
+                    return Err(StatusCode::BAD_REQUEST);
+                }
                 tracing::info!(query_text = %text, "embedding query text");
                 state
                     .embedding

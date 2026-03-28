@@ -31,9 +31,9 @@ use crate::storage::{MemoryStore, StorageBackend, UpdateOperation};
 /// For in-memory store: applies basic weight decay (no external calls).
 /// For postgres store: delegates to the full Dream audit workers.
 pub struct AuditScheduler {
-    store: MemoryStore,
+    store: Arc<dyn StorageBackend>,
     config: SchedulerConfig,
-
+    #[cfg(feature = "postgres-storage")]
     #[cfg(feature = "postgres-storage")]
     trajectory_pool: Option<Arc<PgPool>>,
 
@@ -45,7 +45,7 @@ pub struct AuditScheduler {
 impl AuditScheduler {
     /// Create a new AuditScheduler.
     #[cfg(not(feature = "postgres-storage"))]
-    pub fn new(store: MemoryStore, config: SchedulerConfig) -> Self {
+    pub fn new(store: Arc<dyn StorageBackend>, config: SchedulerConfig) -> Self {
         Self {
             store,
             config,
@@ -57,7 +57,7 @@ impl AuditScheduler {
 
     #[cfg(feature = "postgres-storage")]
     pub fn new(
-        store: MemoryStore,
+        store: Arc<dyn StorageBackend>,
         trajectory_pool: Option<Arc<PgPool>>,
         config: SchedulerConfig,
     ) -> Self {

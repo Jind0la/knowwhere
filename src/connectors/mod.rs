@@ -6,6 +6,8 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use serde_json::Value;
+
+use crate::storage::StorageBackend;
 use uuid::Uuid;
 
 use crate::embedding::EmbeddingProvider;
@@ -22,7 +24,7 @@ pub struct ExternalEvent {
 /// Shared helper: embeds + stores an ExternalEvent as a FractalNode.
 /// Used by both the HTTP route and the connector manager.
 pub async fn store_external_event(
-    store: &MemoryStore,
+    store: &dyn StorageBackend,
     embedding: &Arc<dyn EmbeddingProvider>,
     event: ExternalEvent,
 ) -> Result<Uuid> {
@@ -53,7 +55,7 @@ pub async fn store_external_event(
 /// Only handles events WITHOUT multimodal data (those go through embed() individually).
 /// For events with multimodal data, use store_external_event individually.
 pub async fn store_external_events_batch(
-    store: &MemoryStore,
+    store: &dyn StorageBackend,
     embedding: &Arc<dyn EmbeddingProvider>,
     events: Vec<ExternalEvent>,
 ) -> Result<Vec<Uuid>> {

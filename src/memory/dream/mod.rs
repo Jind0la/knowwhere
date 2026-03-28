@@ -49,7 +49,7 @@ use uuid::Uuid;
 
 use crate::memory::fractal_node::cosine_similarity;
 use crate::memory::FractalNode;
-use crate::storage::{MemoryStore, StorageBackend, UpdateOperation};
+use crate::storage::{StorageBackend, UpdateOperation};
 
 const SIMILARITY_THRESHOLD: f32 = 0.85;
 const BOOST_FACTOR: f64 = 1.1;
@@ -80,15 +80,32 @@ impl Default for DreamStatus {
     }
 }
 
-#[derive(Debug, Clone)]
 pub struct DreamMode {
-    store: MemoryStore,
+    store: Arc<dyn StorageBackend>,
     status: Arc<RwLock<DreamStatus>>,
     last_micro_dream: Arc<RwLock<Instant>>,
 }
 
+impl std::fmt::Debug for DreamMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DreamMode")
+            .field("store", &"<dyn StorageBackend>")
+            .finish()
+    }
+}
+
+impl Clone for DreamMode {
+    fn clone(&self) -> Self {
+        Self {
+            store: self.store.clone(),
+            status: self.status.clone(),
+            last_micro_dream: self.last_micro_dream.clone(),
+        }
+    }
+}
+
 impl DreamMode {
-    pub fn new(store: MemoryStore) -> Self {
+    pub fn new(store: Arc<dyn StorageBackend>) -> Self {
         Self {
             store,
             status: Arc::new(RwLock::new(DreamStatus::default())),
