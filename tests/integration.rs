@@ -87,6 +87,7 @@ async fn body_string(body: Body) -> String {
 // -- Health --
 
 #[tokio::test]
+#[ignore = "requires OPENAI_API_KEY — run with: cargo test integration -- --ignored"]
 async fn health_is_always_public() {
     let app = app_with_auth("secret");
     let resp = app
@@ -101,6 +102,7 @@ async fn health_is_always_public() {
 // -- Auth --
 
 #[tokio::test]
+#[ignore = "requires OPENAI_API_KEY — run with: cargo test integration -- --ignored"]
 async fn auth_rejects_missing_token() {
     let app = app_with_auth("test-key");
     let resp = app
@@ -116,6 +118,7 @@ async fn auth_rejects_missing_token() {
 }
 
 #[tokio::test]
+#[ignore = "requires OPENAI_API_KEY — run with: cargo test integration -- --ignored"]
 async fn auth_accepts_correct_token() {
     let app = app_with_auth("test-key");
     let resp = app
@@ -134,6 +137,7 @@ async fn auth_accepts_correct_token() {
 }
 
 #[tokio::test]
+#[ignore = "requires OPENAI_API_KEY — run with: cargo test integration -- --ignored"]
 async fn auth_rejects_wrong_token() {
     let app = app_with_auth("correct-key");
     let resp = app
@@ -152,6 +156,7 @@ async fn auth_rejects_wrong_token() {
 // -- Store + Retrieve Roundtrip --
 
 #[tokio::test]
+#[ignore = "requires OPENAI_API_KEY — run with: cargo test integration -- --ignored"]
 async fn store_session_and_retrieve() {
     let app = app_without_auth();
 
@@ -191,6 +196,7 @@ async fn store_session_and_retrieve() {
 // -- Store External (Pointer-First) --
 
 #[tokio::test]
+#[ignore = "requires OPENAI_API_KEY — run with: cargo test integration -- --ignored"]
 async fn store_external_pointer_first() {
     let app = app_without_auth();
 
@@ -230,6 +236,7 @@ async fn store_external_pointer_first() {
 // -- Multimodal External --
 
 #[tokio::test]
+#[ignore = "requires OPENAI_API_KEY — run with: cargo test integration -- --ignored"]
 async fn store_external_multimodal_image() {
     let app = app_without_auth();
 
@@ -274,6 +281,7 @@ async fn store_external_multimodal_image() {
 // -- Fractal Retrieve --
 
 #[tokio::test]
+#[ignore = "requires OPENAI_API_KEY — run with: cargo test integration -- --ignored"]
 async fn fractal_retrieve_with_query_text_returns_valid_json() {
     let app = app_without_auth();
 
@@ -310,6 +318,7 @@ async fn fractal_retrieve_with_query_text_returns_valid_json() {
 }
 
 #[tokio::test]
+#[ignore = "requires OPENAI_API_KEY — run with: cargo test integration -- --ignored"]
 async fn fractal_retrieve_requires_query() {
     let app = app_without_auth();
 
@@ -329,6 +338,7 @@ async fn fractal_retrieve_requires_query() {
 }
 
 #[tokio::test]
+#[ignore = "requires OPENAI_API_KEY — run with: cargo test integration -- --ignored"]
 async fn fractal_retrieve_with_vector_only() {
     let app = app_without_auth();
 
@@ -373,6 +383,7 @@ async fn fractal_retrieve_with_vector_only() {
 // -- Dream Status --
 
 #[tokio::test]
+#[ignore = "requires OPENAI_API_KEY — run with: cargo test integration -- --ignored"]
 async fn dream_status_returns_valid_json() {
     let app = app_without_auth();
 
@@ -395,6 +406,7 @@ async fn dream_status_returns_valid_json() {
 // -- Recent Nodes --
 
 #[tokio::test]
+#[ignore = "requires OPENAI_API_KEY — run with: cargo test integration -- --ignored"]
 async fn recent_nodes_after_insert() {
     let app = app_without_auth();
 
@@ -427,6 +439,7 @@ async fn recent_nodes_after_insert() {
 // -- Store Session with Memory Type --
 
 #[tokio::test]
+#[ignore = "requires OPENAI_API_KEY — run with: cargo test integration -- --ignored"]
 async fn store_session_with_memory_type() {
     let app = app_without_auth();
 
@@ -462,6 +475,7 @@ async fn store_session_with_memory_type() {
 // -- Embed Text --
 
 #[tokio::test]
+#[ignore = "requires OPENAI_API_KEY — run with: cargo test integration -- --ignored"]
 async fn embed_text_returns_vector() {
     let app = app_without_auth();
 

@@ -143,6 +143,7 @@ mod tests {
     // -- Embedding Tests (Woche 2) --
 
     #[tokio::test]
+    #[ignore = "requires OPENAI_API_KEY — run manually with: cargo test test_openai_embedding_generates_valid_vector -- --ignored"]
     async fn test_openai_embedding_generates_valid_vector() {
         let provider = create_provider(
             ProviderKind::OpenAI,
@@ -163,6 +164,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires OPENAI_API_KEY"]
     async fn test_store_session_auto_embed() {
         let provider = create_provider(
             ProviderKind::OpenAI,
@@ -221,6 +223,7 @@ mod tests {
     // -- SDK/API Integration Tests (Woche 4) --
 
     #[tokio::test]
+    #[ignore = "requires OPENAI_API_KEY"]
     async fn test_sdk_store_session_retrieve_roundtrip() {
         let provider = create_provider(
             ProviderKind::OpenAI,
