@@ -61,7 +61,12 @@ knowwhere/
 │   │   ├── mod.rs
 │   │   ├── fractal_node.rs   # FractalNode, NodeType, Relation, zoom_retrieve
 │   │   ├── tiered.rs        # TieredCompactionWorker (VLM-based, async)
-│   │   └── dream.rs         # DreamMode (micro-dream clustering)
+│   │   ├── dream/           # DreamMode (consolidation, audit, conflict, dedup, energy)
+│   │   ├── governance.rs    # Governance Policy Layer
+│   │   ├── namespaces.rs    # Directory namespace system
+│   │   ├── skills.rs        # Skills management
+│   │   ├── self_healing.rs # Self-healing + content hashing
+│   │   └── types.rs         # MemoryType, NodeType, etc.
 │   ├── embedding/
 │   │   ├── mod.rs            # ProviderKind, create_provider
 │   │   └── provider.rs       # Grok, OpenAI, LocalOllama + task prefixes
@@ -73,6 +78,11 @@ knowwhere/
 │   ├── connectors/
 │   │   ├── mod.rs
 │   │   └── frigate.rs        # Frigate NVR poller (pointer-first)
+│   ├── scheduler/
+│   │   ├── mod.rs            # SchedulerConfig, SchedulerHandle
+│   │   ├── consolidation.rs  # ConsolidationScheduler
+│   │   ├── audit.rs          # AuditScheduler
+│   │   └── timers.rs         # Interval timer utilities
 │   ├── vlm/
 │   │   └── mod.rs           # VlmWorker, VlmWorkerHandle, VlmClient, SummaryContext
 │   └── multimodal.rs         # MultimodalData (image/audio/sensor)
@@ -173,17 +183,17 @@ Before embedding, content passes through `clean_for_embedding()` which:
 
 ## Agent Integration Pattern
 
-### OpenClaw Plugin (`knowwhere-memory`)
+### OpenClaw Integration
 
-The plugin registers three hooks:
+KnowWhere integrates with OpenClaw via the REST API — no plugin required:
 
-| Hook                | Direction | What It Does                                          |
-|---------------------|-----------|-------------------------------------------------------|
-| `message_received`  | Inbound   | Stores user message as Session node (`user:<name>`)   |
-| `llm_output`        | Outbound  | Stores AI response as Session node (`ai:<model>`)     |
-| `before_prompt_build` | Query   | Embeds prompt → hybrid retrieval → injects context    |
+| Hook | Integration | What It Does |
+|------|-------------|--------------|
+| `message_received` | `POST /store_session` | Stores user message as Session node (`user:<name>`) |
+| `llm_output` | `POST /store_session` | Stores AI response as Session node (`ai:<model>`) |
+| `before_prompt_build` | `POST /embed` + `POST /retrieve_fractal` | Embeds prompt → hybrid retrieval → injects context |
 
-Additionally, an internal hook (`handler.js`) monitors server health and notifies users when KnowWhere goes offline/online.
+For OpenClaw v2026.3.22+, use the `before_prompt_build` lifecycle hook to inject memory context via `prependContext` or `systemPrompt`. See `docs/PHASE-2-STATUS.md` for integration status.
 
 ### Generic Integration Pattern
 

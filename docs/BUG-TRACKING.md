@@ -274,7 +274,7 @@ curl -X POST http://localhost:3737/store_session \
 
 ---
 
-## BUG-007: cargo test — 3 OpenAI-Tests scheitern ohne API Key 🟡 KNOWN
+## BUG-008: cargo test — 3 OpenAI-Tests scheitern ohne API Key 🟡 KNOWN
 
 **Beschreibung:**
 3 Integration-Tests in `src/memory/tests.rs` scheitern wenn `OPENAI_API_KEY` nicht gesetzt ist:

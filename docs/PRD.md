@@ -144,7 +144,7 @@ results = client.retrieve_fractal("Welche Design-Entscheidung?")
 | Phase 0 (MVP)          | Sessions, Text-Pointers, REST API, USearch        | ✓ Abgeschlossen |
 | Phase 0.5 (Hybrid)     | BM25, RRF, nomic-v2-moe, ScoredNode, Persistence | ✓ Abgeschlossen |
 | Phase 1 (Dream)        | Dream Mode + Audio/Sensoren                       | ✓ Micro-Dream  |
-| Phase 1.5 (Integration)| OpenClaw Plugin (voller Memory Loop)              | ⚠️ Geplant, Code nicht vorhanden (Stand 2026-03-27) |
+| Phase 1.5 (Integration)| OpenClaw Plugin (voller Memory Loop)              | ⚠️ In Planung — Code fehlt (Stand 2026-03-27), OpenClaw-Integration über Core-API möglich |
 | Phase 1.7 (Import)     | Memory-Import aus Host-Systemen (OpenClaw done)   | ✓ Abgeschlossen |
 | Phase 2 (Connectors)   | Webhooks fuer Drive, Frigate, Home Assistant       | In Planung   |
 | Phase 2.5 (Discovery)  | Auto-Discovery + Auto-Import von Host-Memories    | In Planung   |

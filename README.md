@@ -68,7 +68,7 @@ docker run -d --name knowwhere -p 3000:3000 \
   knowwhere-server:postgres
 ```
 
-Note: `postgres-storage` feature enables PostgreSQL persistence with full-text search, deduplication, and conflict detection. Without it, KnowWhere runs with in-memory storage (data lost on container restart). Schema: `docs/postgresql_schema.sql`.
+Note: `postgres-storage` feature enables PostgreSQL persistence with full-text search, deduplication, and conflict detection. Without it, KnowWhere runs with in-memory storage (data lost on container restart). Schema migrations are in `migrations/` (run automatically on startup).
 
 ## Core Concepts
 
@@ -210,19 +210,17 @@ Our first integration imported 100 nodes from OpenClaw covering personal info, a
 
 ## Agent Integration (OpenClaw)
 
-KnowWhere ships with an OpenClaw plugin (`knowwhere-memory`) that provides a complete memory loop:
+KnowWhere integrates with OpenClaw via the Core REST API (no plugin required):
 
-| Hook              | Purpose                                      |
-|-------------------|----------------------------------------------|
-| `message_received`| Stores every incoming user message            |
-| `llm_output`      | Stores every AI response (with model info)    |
-| `before_prompt_build` | Retrieves and injects relevant context    |
+| Hook | Integration | What It Does |
+|------|-------------|--------------|
+| `message_received` | `POST /store_session` | Stores every incoming user message |
+| `llm_output` | `POST /store_session` | Stores every AI response (with model info) |
+| `before_prompt_build` | `POST /embed` + `POST /retrieve_fractal` | Retrieves and injects relevant context |
 
-The plugin also handles health checks, self-reference filtering, and score-based relevance gating.
+### Integration Configuration
 
-### Plugin Configuration
-
-In `openclaw.json`:
+In `openclaw.json` (or as environment variables):
 ```json
 {
   "plugins": {
@@ -239,6 +237,8 @@ In `openclaw.json`:
   }
 }
 ```
+
+For OpenClaw v2026.3.22+, use the `before_prompt_build` lifecycle hook to inject memory context via `prependContext` or `systemPrompt`. See `docs/PHASE-2-STATUS.md` for details on the integration status.
 
 ## Python SDK
 
@@ -363,7 +363,7 @@ Contributions are welcome! Please open an issue or pull request on [GitHub](http
 
 > **Beta Notice**
 >
-> KnowWhere is currently in **Beta (v0.2.0)**. We are actively looking for early testers and feedback.
+> KnowWhere is currently in **Beta (v0.3.0)**. We are actively looking for early testers and feedback.
 > Reach out to **@NimarMoradbakhti** on X or via email to get involved!
 
 ## License
