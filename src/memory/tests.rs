@@ -133,6 +133,9 @@ mod tests {
         store.insert(n3).await.unwrap();
 
         let query = vec![1.0, 0.0];
+        #[cfg(feature = "postgres-storage")]
+        let results = store.retrieve_fractal(&query, 2, 0, 0.0, None).await;
+        #[cfg(not(feature = "postgres-storage"))]
         let results = store.retrieve_fractal(&query, 2, 0).await;
 
         assert_eq!(results.len(), 2);
@@ -207,6 +210,9 @@ mod tests {
         assert!(store.count().await >= 50, "should exceed USearch threshold");
 
         let query = vec![1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        #[cfg(feature = "postgres-storage")]
+        let results = store.retrieve_fractal(&query, 5, 0, 0.0, None).await;
+        #[cfg(not(feature = "postgres-storage"))]
         let results = store.retrieve_fractal(&query, 5, 0).await;
 
         assert!(!results.is_empty(), "should return results");
@@ -532,6 +538,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(feature = "postgres-storage")]
     async fn test_hybrid_retrieval_keyword_wins() {
         let store = MemoryStore::new();
 
@@ -556,6 +563,7 @@ mod tests {
             &query_vec,
             5,
             0,
+            None,
         ).await;
 
         assert!(!results.is_empty());
@@ -586,6 +594,9 @@ mod tests {
         store.insert(n2).await.unwrap();
 
         let query_vec = vec![1.0, 0.0, 0.0, 0.0];
+        #[cfg(feature = "postgres-storage")]
+        let results = store.hybrid_retrieve(None, &query_vec, 2, 0, None).await;
+        #[cfg(not(feature = "postgres-storage"))]
         let results = store.hybrid_retrieve(None, &query_vec, 2, 0).await;
 
         assert!(!results.is_empty());
