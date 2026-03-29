@@ -210,27 +210,37 @@ Our first integration imported 100 nodes from OpenClaw covering personal info, a
 
 ## Agent Integration (OpenClaw)
 
-KnowWhere integrates with OpenClaw via the Core REST API (no plugin required):
+KnowWhere integrates with OpenClaw via the official `knowwhere` plugin. The plugin is pre-installed at `~/.openclaw/extensions/knowwhere/` and handles all memory operations automatically.
 
-| Hook | Integration | What It Does |
-|------|-------------|--------------|
-| `message_received` | `POST /store_session` | Stores every incoming user message |
-| `llm_output` | `POST /store_session` | Stores every AI response (with model info) |
-| `before_prompt_build` | `POST /embed` + `POST /retrieve_fractal` | Retrieves and injects relevant context |
+### Plugin Hooks
 
-### Integration Configuration
+| Hook | What It Does |
+|------|-------------|
+| `before_prompt_build` | Retrieves relevant memories and injects them as `prependContext` before every LLM call |
+| `message_received` | Stores every incoming user message (Gateway mode: Telegram, Discord, etc.) |
+| `gateway_start` | Imports all session messages from the last 7 days on startup |
+| `before_reset` | Saves the session before `/reset` wipes it |
+| `session_start` / `session_end` | Tracks session-to-file mapping for session-level storage |
+| `message_sent` | Stores agent responses after sending (Gateway mode) |
 
-In `openclaw.json` (or as environment variables):
+### Plugin Configuration
+
+In `~/.openclaw/openclaw.json`:
 ```json
 {
   "plugins": {
+    "allow": ["knowwhere"],
+    "slots": { "memory": "knowwhere" },
     "entries": {
-      "knowwhere-memory": {
+      "knowwhere": {
         "enabled": true,
         "config": {
-          "url": "http://127.0.0.1:3737",
+          "endpoint": "http://127.0.0.1:3737",
+          "apiKey": "",
+          "autoRecall": true,
+          "autoCapture": true,
           "topK": 5,
-          "maxDepth": 3
+          "importLookbackDays": 7
         }
       }
     }
@@ -238,7 +248,7 @@ In `openclaw.json` (or as environment variables):
 }
 ```
 
-For OpenClaw v2026.3.22+, use the `before_prompt_build` lifecycle hook to inject memory context via `prependContext` or `systemPrompt`. See `docs/PHASE-2-STATUS.md` for details on the integration status.
+See `docs/PHASE-2-STATUS.md` for the full E2E test results.
 
 ## Python SDK
 

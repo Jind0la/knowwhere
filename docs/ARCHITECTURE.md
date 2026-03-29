@@ -185,15 +185,18 @@ Before embedding, content passes through `clean_for_embedding()` which:
 
 ### OpenClaw Integration
 
-KnowWhere integrates with OpenClaw via the REST API — no plugin required:
+KnowWhere integrates with OpenClaw via the official `knowwhere` plugin (`~/.openclaw/extensions/knowwhere/`):
 
-| Hook | Integration | What It Does |
-|------|-------------|--------------|
-| `message_received` | `POST /store_session` | Stores user message as Session node (`user:<name>`) |
-| `llm_output` | `POST /store_session` | Stores AI response as Session node (`ai:<model>`) |
-| `before_prompt_build` | `POST /embed` + `POST /retrieve_fractal` | Embeds prompt → hybrid retrieval → injects context |
+| Hook | What It Does |
+|------|-------------|
+| `before_prompt_build` | Retrieves relevant memories → injects as `prependContext` before every LLM call |
+| `message_received` | Stores every incoming user message (Gateway mode) |
+| `gateway_start` | Imports all sessions from the last 7 days on startup |
+| `before_reset` | Saves session before `/reset` wipes it |
+| `session_start` / `session_end` | Session lifecycle tracking |
+| `message_sent` | Stores agent responses after sending |
 
-For OpenClaw v2026.3.22+, use the `before_prompt_build` lifecycle hook to inject memory context via `prependContext` or `systemPrompt`. See `docs/PHASE-2-STATUS.md` for integration status.
+See `docs/PHASE-2-STATUS.md` for E2E test results.
 
 ### Generic Integration Pattern
 
