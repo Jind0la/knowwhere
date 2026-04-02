@@ -775,13 +775,20 @@ fn content_contradicts(a: &str, b: &str) -> bool {
 
     // Patterns of contradiction: (pattern_in_a, pattern_in_b)
     // Both directions are checked, so (a, b) covers a→b and b→a
+    // Also includes asymmetric cases: one string negates, other is bare affirmative
     let contradictions = [
         ("not ", "not "),
+        ("not ", ""), // "not X" vs "X"
         ("never ", "never "),
+        ("never ", ""), // "never X" vs "X"
         ("no ", "no "),
+        ("no ", ""), // "no X" vs "X"
         ("doesn't ", "doesn't "),
+        ("doesn't ", ""), // "doesn't visit" vs "visits"
         ("isn't ", "isn't "),
+        ("isn't ", ""), // "isn't reliable" vs "is reliable"
         ("won't ", "won't "),
+        ("won't ", ""), // "won't happen" vs "happens"
         ("cannot ", "cannot "),
         ("unable to ", "able to "),
         ("without ", "with "),

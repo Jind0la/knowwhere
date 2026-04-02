@@ -28,8 +28,8 @@ const L1_MAX_TOKENS: usize = 300;  // ~one paragraph
 ///
 /// # Compaction Chain
 ///
-/// ```
-/// Raw (L2) ──parent_tier_id──► Overview (L1) ──parent_tier_id──► Summary (L0)
+/// ```text
+/// Raw (L2) --parent_tier_id--> Overview (L1) --parent_tier_id--> Summary (L0)
 /// content                        overview_content                    summary_content
 /// ```
 ///

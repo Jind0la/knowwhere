@@ -1,0 +1,16 @@
+{
+  "name": "@nimar/knowwhere",
+  "version": "0.3.0",
+  "description": "KnowWhere fractal memory plugin for OpenClaw \u2014 retrieves and stores session context across sessions",
+  "type": "module",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "openclaw": {
+    "extensions": [
+      "./index.js"
+    ]
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.3.24"
+  }
+}

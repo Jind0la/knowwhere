@@ -212,6 +212,8 @@ Our first integration imported 100 nodes from OpenClaw covering personal info, a
 
 KnowWhere integrates with OpenClaw via the official `knowwhere` plugin. The plugin is pre-installed at `~/.openclaw/extensions/knowwhere/` and handles all memory operations automatically.
 
+**Plugin source code:** [`openclaw-plugin/`](openclaw-plugin/) — fork or contribute there.
+
 ### Plugin Hooks
 
 | Hook | What It Does |
