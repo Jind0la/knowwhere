@@ -297,7 +297,15 @@ impl EmbeddingProvider for LocalOllamaProvider {
         try_join_all(futures).await
     }
 
-    fn dimension(&self) -> usize { 768 }
+    fn dimension(&self) -> usize {
+        // arctic-embed2 returns 1024-dim by default (supports MRL reduction)
+        // granite-embedding:278m returns 768-dim
+        if self.model.contains("arctic") {
+            1024
+        } else {
+            768
+        }
+    }
     fn name(&self) -> &str { "local-ollama" }
 }
 
