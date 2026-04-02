@@ -1,11 +1,15 @@
 # Build args for features
 # Default: no features (in-memory only)
-# To enable PostgreSQL: docker build --build-arg FEATURES=postgres-storage -t knowwhere-server:postgres .
+# To enable PostgreSQL + pgvector: docker build --build-arg FEATURES=postgres-storage -t knowwhere-server:postgres .
+# IMPORTANT: When using postgres-storage feature, you must also run a PostgreSQL server
+# with the pgvector extension. Use the docker-compose.yml which provides pgvector/pgvector:pg16.
+# The knowwhere-server binary is a client — it connects to an external Postgres instance.
 ARG FEATURES=
 
 FROM rust:1.85 AS builder
 
 # Install PostgreSQL client library only if postgres-storage feature is enabled
+# (needed for sqlx to compile against libpq)
 RUN case "$FEATURES" in *postgres*) apt-get update && apt-get install -y libpq-dev && rm -rf /var/lib/apt/lists/* ;; esac
 
 WORKDIR /app

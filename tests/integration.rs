@@ -14,17 +14,25 @@ use knowwhere_server::memory::{DreamMode, events::InMemoryEventStore};
 use knowwhere_server::memory::governance::GovernancePolicy;
 use knowwhere_server::storage::{MemoryStore, StorageBackend};
 
+fn embedding_provider() -> Arc<dyn knowwhere_server::embedding::EmbeddingProvider> {
+    match std::env::var("OPENAI_API_KEY") {
+        Ok(key) => {
+            eprintln!("[test] Using OpenAI provider");
+            create_provider(ProviderKind::OpenAI, Some(key))
+        }
+        Err(_) => {
+            eprintln!("[test] OPENAI_API_KEY not set — falling back to LocalOllama");
+            create_provider(ProviderKind::LocalOllama, None)
+        }
+    }
+}
+
 fn test_state() -> routes::AppState {
     let store: Arc<dyn knowwhere_server::storage::StorageBackend> =
         Arc::new(MemoryStore::new());
     let dream_store = store.clone();
     let dream = DreamMode::new(dream_store.clone());
-    let embedding: Arc<dyn knowwhere_server::embedding::EmbeddingProvider> =
-        create_provider(
-            ProviderKind::OpenAI,
-            Some(std::env::var("OPENAI_API_KEY")
-                .expect("OPENAI_API_KEY must be set in environment")),
-        );
+    let embedding = embedding_provider();
     routes::AppState {
         store: store.clone(),
         dream_store,
@@ -87,7 +95,6 @@ async fn body_string(body: Body) -> String {
 // -- Health --
 
 #[tokio::test]
-#[ignore = "requires OPENAI_API_KEY — run with: cargo test integration -- --ignored"]
 async fn health_is_always_public() {
     let app = app_with_auth("secret");
     let resp = app
@@ -102,7 +109,6 @@ async fn health_is_always_public() {
 // -- Auth --
 
 #[tokio::test]
-#[ignore = "requires OPENAI_API_KEY — run with: cargo test integration -- --ignored"]
 async fn auth_rejects_missing_token() {
     let app = app_with_auth("test-key");
     let resp = app
@@ -118,7 +124,6 @@ async fn auth_rejects_missing_token() {
 }
 
 #[tokio::test]
-#[ignore = "requires OPENAI_API_KEY — run with: cargo test integration -- --ignored"]
 async fn auth_accepts_correct_token() {
     let app = app_with_auth("test-key");
     let resp = app
@@ -133,11 +138,11 @@ async fn auth_accepts_correct_token() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     let body = body_string(resp.into_body()).await;
-    assert!(body.contains("\"provider\":\"openai\""));
+    // Provider field depends on which embedding backend is active
+    assert!(body.contains("\"provider\":") && (body.contains("openai") || body.contains("ollama")));
 }
 
 #[tokio::test]
-#[ignore = "requires OPENAI_API_KEY — run with: cargo test integration -- --ignored"]
 async fn auth_rejects_wrong_token() {
     let app = app_with_auth("correct-key");
     let resp = app
@@ -156,7 +161,6 @@ async fn auth_rejects_wrong_token() {
 // -- Store + Retrieve Roundtrip --
 
 #[tokio::test]
-#[ignore = "requires OPENAI_API_KEY — run with: cargo test integration -- --ignored"]
 async fn store_session_and_retrieve() {
     let app = app_without_auth();
 
@@ -196,7 +200,6 @@ async fn store_session_and_retrieve() {
 // -- Store External (Pointer-First) --
 
 #[tokio::test]
-#[ignore = "requires OPENAI_API_KEY — run with: cargo test integration -- --ignored"]
 async fn store_external_pointer_first() {
     let app = app_without_auth();
 
@@ -236,7 +239,6 @@ async fn store_external_pointer_first() {
 // -- Multimodal External --
 
 #[tokio::test]
-#[ignore = "requires OPENAI_API_KEY — run with: cargo test integration -- --ignored"]
 async fn store_external_multimodal_image() {
     let app = app_without_auth();
 
@@ -281,7 +283,6 @@ async fn store_external_multimodal_image() {
 // -- Fractal Retrieve --
 
 #[tokio::test]
-#[ignore = "requires OPENAI_API_KEY — run with: cargo test integration -- --ignored"]
 async fn fractal_retrieve_with_query_text_returns_valid_json() {
     let app = app_without_auth();
 
@@ -318,7 +319,6 @@ async fn fractal_retrieve_with_query_text_returns_valid_json() {
 }
 
 #[tokio::test]
-#[ignore = "requires OPENAI_API_KEY — run with: cargo test integration -- --ignored"]
 async fn fractal_retrieve_requires_query() {
     let app = app_without_auth();
 
@@ -338,7 +338,6 @@ async fn fractal_retrieve_requires_query() {
 }
 
 #[tokio::test]
-#[ignore = "requires OPENAI_API_KEY — run with: cargo test integration -- --ignored"]
 async fn fractal_retrieve_with_vector_only() {
     let app = app_without_auth();
 
@@ -353,9 +352,9 @@ async fn fractal_retrieve_with_vector_only() {
         .await
         .unwrap();
 
-    // Query with explicit 1536-dim vector (OpenAI compatible)
+    // Query with explicit 768-dim vector (Ollama nomic-embed-text-v2-moe compatible)
     // Using a uniform vector — cosine similarity with itself should be 1.0
-    let vector: Vec<f32> = vec![0.1; 1536];
+    let vector: Vec<f32> = vec![0.1; 768];
     let query = serde_json::json!({
         "query_vector": vector,
         "top_k": 5,
@@ -383,7 +382,6 @@ async fn fractal_retrieve_with_vector_only() {
 // -- Dream Status --
 
 #[tokio::test]
-#[ignore = "requires OPENAI_API_KEY — run with: cargo test integration -- --ignored"]
 async fn dream_status_returns_valid_json() {
     let app = app_without_auth();
 
@@ -406,7 +404,6 @@ async fn dream_status_returns_valid_json() {
 // -- Recent Nodes --
 
 #[tokio::test]
-#[ignore = "requires OPENAI_API_KEY — run with: cargo test integration -- --ignored"]
 async fn recent_nodes_after_insert() {
     let app = app_without_auth();
 
@@ -439,7 +436,6 @@ async fn recent_nodes_after_insert() {
 // -- Store Session with Memory Type --
 
 #[tokio::test]
-#[ignore = "requires OPENAI_API_KEY — run with: cargo test integration -- --ignored"]
 async fn store_session_with_memory_type() {
     let app = app_without_auth();
 
@@ -475,7 +471,6 @@ async fn store_session_with_memory_type() {
 // -- Embed Text --
 
 #[tokio::test]
-#[ignore = "requires OPENAI_API_KEY — run with: cargo test integration -- --ignored"]
 async fn embed_text_returns_vector() {
     let app = app_without_auth();
 
@@ -494,7 +489,8 @@ async fn embed_text_returns_vector() {
     let embedded: serde_json::Value = serde_json::from_str(&body).unwrap();
     assert!(embedded.get("vector").is_some());
     let vector = embedded["vector"].as_array().unwrap();
-    assert_eq!(vector.len(), 1536); // OpenAI text-embedding-3-small
+    // OpenAI: 1536-dim, Ollama nomic: 768-dim — accept both
+    assert!(vector.len() == 1536 || vector.len() == 768);
 }
 
 // =============================================================================

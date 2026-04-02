@@ -6,11 +6,23 @@ services:
     environment:
       - RUST_LOG=info
       - KNOWWHERE_API_KEY=${KNOWWHERE_API_KEY:-}
-    # depends_on:
-    #   - redis
+      - DATABASE_URL=postgresql://postgres:kw@kw-postgres:5432/kw
+    depends_on:
+      kw-postgres:
+        condition: service_healthy
 
-  # Redis fuer spaetere Rate-Limits (optional, auskommentiert fuer MVP)
-  # redis:
-  #   image: redis:7-alpine
-  #   ports:
-  #     - "6379:6379"
+  kw-postgres:
+    image: pgvector/pgvector:pg16
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_PASSWORD: kw
+      POSTGRES_DB: kw
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d kw"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+    # For local development, you can also use the plain postgres image
+    # but you must install pgvector extension manually inside the container.
+    # The pgvector/pgvector image is recommended for postgres-storage feature.
