@@ -426,6 +426,43 @@ cargo test --features postgres-storage --doc
 
 ---
 
+## BUG-011: DREAM_ENABLED Logik invertiert — Scheduler startet nicht 🟢 FIXED 2026-04-02
+
+**Beschreibung:** `SchedulerConfig::from_env()` in `src/scheduler/mod.rs` hatte die `enabled` Logik invertiert. Ohne `DREAM_ENABLED` env var war `enabled = false` statt `enabled = true`.
+
+**Root Cause:**
+```rust
+// VORHER (kaputt):
+enabled: !std::env::var("DREAM_ENABLED")
+    .map(|v| v.eq_ignore_ascii_case("false"))
+    .unwrap_or(false),  // ← falsch!
+
+// NACHHER (korrekt):
+enabled: std::env::var("DREAM_ENABLED")
+    .map(|v| !v.eq_ignore_ascii_case("false"))
+    .unwrap_or(true),  // ← Default: Dream Mode enabled
+```
+
+**Symptome:**
+- Dream Mode Scheduler startet nicht obwohl alle anderen Komponenten laufen
+- Keine automatische Kompaktierung, kein Energy Decay, keine Deduplizierung
+- Log zeigte: `"Dream Mode scheduler disabled (DREAM_ENABLED=false)"` obwohl keine Env-Var gesetzt war
+
+**Files geändert:** `src/scheduler/mod.rs`
+
+**Verification:**
+```bash
+# Ohne DREAM_ENABLED env var:
+cargo test --features postgres-storage --lib
+# Alle Tests PASS
+
+# Server startet mit Dream Mode:
+cargo run --features postgres-storage
+# Log: "Dream Mode scheduler started"
+```
+
+---
+
 ## Offene Bugs
 
-Keine offenen Bugs — BUG-005, BUG-006, BUG-007, BUG-009 und BUG-010 sind alle gefixt.
+Keine offenen Bugs — BUG-005, BUG-006, BUG-007, BUG-009, BUG-010 und BUG-011 sind alle gefixt.

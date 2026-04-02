@@ -79,9 +79,9 @@ impl SchedulerConfig {
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(50),
 
-            enabled: !std::env::var("DREAM_ENABLED")
-                .map(|v| v.eq_ignore_ascii_case("false"))
-                .unwrap_or(false),
+            enabled: std::env::var("DREAM_ENABLED")
+                .map(|v| !v.eq_ignore_ascii_case("false"))
+                .unwrap_or(true), // Default: Dream Mode enabled
 
             audit_interval_ms: std::env::var("DREAM_AUDIT_INTERVAL_MS")
                 .ok()
