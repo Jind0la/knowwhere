@@ -18,6 +18,7 @@ use crate::memory::types::{ContextTier, MemorySource, MemoryType, Sensitivity};
 use crate::memory::{DreamMode, Event, EventStore, FractalNode, GovernancePolicy, GovernanceValidator, InMemoryEventStore};
 use crate::multimodal::MultimodalData;
 use crate::vlm::{SummaryContext, VlmJob, VlmWorkerStatus};
+use crate::api::webhooks::{check_webhook_secret, DedupCache};
 
 #[derive(Serialize, ToSchema)]
 pub struct ScoredNode {
@@ -160,6 +161,8 @@ pub struct AppState {
     pub vlm_worker: Option<crate::vlm::VlmWorkerHandle>,
     /// Consolidation scheduler for querying cycle_count in /dream/status.
     pub consolidation: Option<std::sync::Arc<crate::scheduler::ConsolidationScheduler>>,
+    /// Dedup cache for Frigate webhook events.
+    pub frigate_dedup: DedupCache,
 }
 
 impl std::fmt::Debug for AppState {
@@ -2471,4 +2474,141 @@ pub async fn vlm_enqueue(
         job_id,
         queue_depth: status.queue_depth,
     })))
+}
+
+// -- Frigate Webhook --
+
+use crate::connectors::store_external_event;
+use crate::connectors::ExternalEvent;
+
+/// Frigate event payload from webhook POST body.
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct FrigateWebhookEvent {
+    /// Unique event ID from Frigate (used for deduplication).
+    pub id: String,
+    /// Camera name that captured the event.
+    #[serde(default)]
+    pub camera: String,
+    /// Detected label (e.g., "person", "car").
+    #[serde(default)]
+    pub label: String,
+    /// Confidence/top score of the detection.
+    #[serde(default)]
+    pub top_score: f64,
+    /// Pointer to the snapshot image.
+    #[serde(default)]
+    pub snapshot_path: Option<String>,
+    /// Pointer to the clip video.
+    #[serde(default)]
+    pub clip_path: Option<String>,
+}
+
+impl FrigateWebhookEvent {
+    /// Build a pointer URI for this event.
+    fn pointer(&self) -> String {
+        format!("frigate://cameras/{}/events/{}", self.camera, self.id)
+    }
+
+    /// Build multimodal data if snapshot or clip is available.
+    fn multimodal(&self) -> Option<MultimodalData> {
+        if let Some(ref path) = self.snapshot_path {
+            return Some(MultimodalData::Image {
+                pointer: path.clone(),
+                embedding: vec![],
+            });
+        }
+        if let Some(ref path) = self.clip_path {
+            // Frigate clip path — treat as Image for now (could be Audio/Video later)
+            return Some(MultimodalData::Image {
+                pointer: path.clone(),
+                embedding: vec![],
+            });
+        }
+        None
+    }
+
+    /// Convert to an ExternalEvent for storage.
+    fn to_external_event(self) -> ExternalEvent {
+        use serde_json::json;
+        // IMPORTANT: borrow methods first (pointer, multimodal), then move fields
+        let pointer = self.pointer();
+        let multimodal = self.multimodal();
+        let camera = self.camera;
+        let label = self.label;
+        let top_score = self.top_score;
+        ExternalEvent {
+            pointer,
+            metadata: std::collections::HashMap::from([
+                ("source".to_string(), json!("frigate")),
+                ("camera".to_string(), json!(camera)),
+                ("label".to_string(), json!(label)),
+                ("score".to_string(), json!(top_score)),
+            ]),
+            multimodal,
+        }
+    }
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct WebhookResponse {
+    pub status: String,
+    pub event_id: String,
+}
+
+#[utoipa::path(
+    post,
+    path = "/webhooks/frigate",
+    tag = "webhooks",
+    params(
+        ("secret" = Option<String>, Query, description = "Webhook secret (alternative to X-Webhook-Secret header)")
+    ),
+    request_body = FrigateWebhookEvent,
+    responses(
+        (status = 200, description = "Event stored", body = WebhookResponse),
+        (status = 401, description = "Unauthorized — invalid or missing secret", body = String),
+        (status = 409, description = "Duplicate event — already processed", body = String),
+        (status = 500, description = "Internal error", body = String)
+    )
+)]
+pub async fn webhook_frigate(
+    State(state): State<AppState>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+    headers: axum::http::HeaderMap,
+    Json(payload): Json<FrigateWebhookEvent>,
+) -> Result<Json<WebhookResponse>, (StatusCode, String)> {
+    // 1. Authenticate via secret
+    let webhook_secret = std::env::var("FRIGATE_WEBHOOK_SECRET").ok();
+    let header_secret = headers
+        .get("X-Webhook-Secret")
+        .and_then(|v| v.to_str().ok());
+    let query_secret = params.get("secret").map(|s| s.as_str());
+
+    if !check_webhook_secret(webhook_secret.as_deref(), header_secret, query_secret) {
+        tracing::warn!("frigate webhook: unauthorized (bad secret)");
+        return Err((StatusCode::UNAUTHORIZED, "invalid or missing webhook secret".into()));
+    }
+
+    // 2. Deduplicate by event_id
+    let event_id = payload.id.clone();
+    let dedup_key = format!("frigate:{}", event_id);
+    if state.frigate_dedup.seen_or_insert(&dedup_key).await {
+        tracing::debug!(event_id = %event_id, "frigate webhook: duplicate event");
+        return Err((StatusCode::CONFLICT, format!("event {} already processed", event_id)));
+    }
+
+    // 3. Build external event and store
+    let event = payload.to_external_event();
+    match store_external_event(state.store.as_ref(), &state.embedding, event).await {
+        Ok(id) => {
+            tracing::info!(event_id = %event_id, node_id = %id, "frigate webhook event stored");
+            Ok(Json(WebhookResponse {
+                status: "stored".into(),
+                event_id,
+            }))
+        }
+        Err(e) => {
+            tracing::error!(event_id = %event_id, error = %e, "frigate webhook: failed to store");
+            Err((StatusCode::INTERNAL_SERVER_ERROR, format!("store failed: {e}")))
+        }
+    }
 }

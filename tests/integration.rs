@@ -8,7 +8,7 @@ use axum::Router;
 use http_body_util::BodyExt;
 use tower::ServiceExt;
 
-use knowwhere_server::api::{auth, auth::ApiKey, routes};
+use knowwhere_server::api::{auth, auth::ApiKey, routes, webhooks::DedupCache};
 use knowwhere_server::embedding::{EmbeddingProvider, LocalOllamaProvider};
 use knowwhere_server::memory::{DreamMode, events::InMemoryEventStore};
 use knowwhere_server::memory::governance::GovernancePolicy;
@@ -38,6 +38,7 @@ fn test_state() -> routes::AppState {
         trajectory_pool: None,
         vlm_worker: None,
         consolidation: None,
+        frigate_dedup: DedupCache::new(),
     }
 }
 
@@ -678,4 +679,174 @@ async fn postgres_store_count_matches_active_memories() {
     // Cleanup
     store.delete(id1).await.expect("delete 1 failed");
     store.delete(id2).await.expect("delete 2 failed");
+}
+
+// -- Frigate Webhook Tests --
+
+fn app_with_webhook() -> Router {
+    let state = test_state();
+
+    Router::new()
+        .route("/health", get(routes::health))
+        .route("/webhooks/frigate", post(routes::webhook_frigate))
+        .with_state(state)
+}
+
+#[tokio::test]
+async fn webhook_frigate_unauthorized_without_secret() {
+    // Set FRIGATE_WEBHOOK_SECRET env var
+    std::env::set_var("FRIGATE_WEBHOOK_SECRET", "test-secret");
+
+    let app = app_with_webhook();
+    let body = serde_json::json!({
+        "id": "evt-001",
+        "camera": "front_door",
+        "label": "person",
+        "top_score": 0.95
+    });
+
+    let resp = app
+        .oneshot(
+            Request::post("/webhooks/frigate")
+                .header("Content-Type", "application/json")
+                .body(Body::from(serde_json::to_string(&body).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    // Without secret header, should be 401
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+    std::env::remove_var("FRIGATE_WEBHOOK_SECRET");
+}
+
+#[tokio::test]
+async fn webhook_frigate_unauthorized_with_wrong_secret() {
+    std::env::set_var("FRIGATE_WEBHOOK_SECRET", "test-secret");
+
+    let app = app_with_webhook();
+    let body = serde_json::json!({
+        "id": "evt-002",
+        "camera": "front_door",
+        "label": "person",
+        "top_score": 0.95
+    });
+
+    let resp = app
+        .oneshot(
+            Request::post("/webhooks/frigate")
+                .header("Content-Type", "application/json")
+                .header("X-Webhook-Secret", "wrong-secret")
+                .body(Body::from(serde_json::to_string(&body).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+    std::env::remove_var("FRIGATE_WEBHOOK_SECRET");
+}
+
+#[tokio::test]
+async fn webhook_frigate_success_with_valid_secret() {
+    std::env::set_var("FRIGATE_WEBHOOK_SECRET", "test-secret");
+
+    let app = app_with_webhook();
+    let body = serde_json::json!({
+        "id": "evt-003",
+        "camera": "front_door",
+        "label": "person",
+        "top_score": 0.95,
+        "snapshot_path": "/snapshots/evt-003.jpg"
+    });
+
+    let resp = app
+        .oneshot(
+            Request::post("/webhooks/frigate")
+                .header("Content-Type", "application/json")
+                .header("X-Webhook-Secret", "test-secret")
+                .body(Body::from(serde_json::to_string(&body).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let body_str = body_string(resp.into_body()).await;
+    let response: serde_json::Value = serde_json::from_str(&body_str).unwrap();
+    assert_eq!(response["status"], "stored");
+    assert_eq!(response["event_id"], "evt-003");
+
+    std::env::remove_var("FRIGATE_WEBHOOK_SECRET");
+}
+
+#[tokio::test]
+async fn webhook_frigate_duplicate_event_returns_409() {
+    std::env::set_var("FRIGATE_WEBHOOK_SECRET", "test-secret");
+
+    let app = app_with_webhook();
+    let body = serde_json::json!({
+        "id": "evt-004-duplicate",
+        "camera": "backyard",
+        "label": "car",
+        "top_score": 0.88
+    });
+
+    // First request should succeed
+    let resp = app
+        .oneshot(
+            Request::post("/webhooks/frigate")
+                .header("Content-Type", "application/json")
+                .header("X-Webhook-Secret", "test-secret")
+                .body(Body::from(serde_json::to_string(&body).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // Second request with same event ID should return 409
+    let resp = app
+        .oneshot(
+            Request::post("/webhooks/frigate")
+                .header("Content-Type", "application/json")
+                .header("X-Webhook-Secret", "test-secret")
+                .body(Body::from(serde_json::to_string(&body).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
+
+    std::env::remove_var("FRIGATE_WEBHOOK_SECRET");
+}
+
+#[tokio::test]
+async fn webhook_frigate_success_with_query_secret() {
+    std::env::set_var("FRIGATE_WEBHOOK_SECRET", "test-secret");
+
+    let app = app_with_webhook();
+    let body = serde_json::json!({
+        "id": "evt-005",
+        "camera": "garage",
+        "label": "dog",
+        "top_score": 0.72
+    });
+
+    let resp = app
+        .oneshot(
+            Request::post("/webhooks/frigate?secret=test-secret")
+                .header("Content-Type", "application/json")
+                .body(Body::from(serde_json::to_string(&body).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    std::env::remove_var("FRIGATE_WEBHOOK_SECRET");
 }

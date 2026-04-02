@@ -16,7 +16,7 @@ use utoipa_swagger_ui::SwaggerUi;
 #[cfg(feature = "postgres-storage")]
 use sqlx::postgres::PgPoolOptions;
 
-use knowwhere_server::api::{auth, auth::ApiKey, docs::ApiDoc, routes};
+use knowwhere_server::api::{auth, auth::ApiKey, docs::ApiDoc, routes, webhooks::DedupCache};
 use lazy_limit::{init_rate_limiter, Duration, RuleConfig};
 use knowwhere_server::connectors::frigate::FrigateConnector;
 use knowwhere_server::connectors::store_external_event;
@@ -256,6 +256,7 @@ async fn run() -> anyhow::Result<()> {
         trajectory_pool,
         vlm_worker,
         consolidation: consolidation_scheduler,
+        frigate_dedup: DedupCache::new(),
     };
 
     let api_key = ApiKey(std::env::var("KNOWWHERE_API_KEY").ok());
@@ -278,7 +279,9 @@ async fn run() -> anyhow::Result<()> {
         .route("/events", get(routes::list_events))
         // -- Governance routes --
         .route("/governance/policy", get(routes::get_governance_policy))
-        .route("/governance/policy", post(routes::update_governance_policy));
+        .route("/governance/policy", post(routes::update_governance_policy))
+        // -- Webhook routes --
+        .route("/webhooks/frigate", post(routes::webhook_frigate));
 
     #[cfg(feature = "postgres-storage")]
     {
