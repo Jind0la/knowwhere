@@ -352,6 +352,48 @@ cargo run
 cargo test
 ```
 
+## Building
+
+### Feature Flags
+
+| Feature | Effect |
+|---------|--------|
+| *(default, no flag)* | In-memory storage, Ollama embeddings only |
+| `postgres-storage` | PostgreSQL persistence (dedup, conflict detection, full-text search) |
+| `openai-provider` | Enable OpenAI `text-embedding-3-small` provider (1536-dim) |
+| `grok-provider` | Enable xAI Grok embedding provider (1536-dim) |
+
+At most one cloud embedding provider should be enabled at a time. Ollama is always compiled in.
+
+**Build examples:**
+```bash
+# Default (Ollama only, in-memory) — the tested default setup
+cargo build
+
+# With PostgreSQL persistence
+cargo build --features postgres-storage
+
+# With OpenAI cloud embeddings
+cargo build --features openai-provider
+
+# All features
+cargo build --features "postgres-storage,openai-provider"
+```
+
+**Running tests:**
+```bash
+# In-memory tests (always works)
+cargo test --lib
+cargo test --test integration
+
+# PostgreSQL tests (requires DATABASE_URL at runtime, but NOT at compile time)
+DATABASE_URL="postgres://postgres:password@localhost:5433/kw" \
+  SQLX_OFFLINE=true \
+  cargo test --features postgres-storage --test integration
+```
+
+Note: The `postgres-storage` feature compiles offline using the query cache in `.sqlx/`. You only need a running PostgreSQL database when **running** tests, not when **compiling** them.
+
 ## Known Issues
 
 - **Rate Limiting**: Requires a reverse proxy (nginx, Cloudflare) that sets `X-Forwarded-For` headers. Enable with `RATE_LIMIT=1` when behind a proxy.
