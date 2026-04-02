@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO skill_memories (skill_id, memory_id, relation_type)\n            VALUES ($1, $2, $3)\n            ON CONFLICT (skill_id, memory_id) DO UPDATE SET relation_type = EXCLUDED.relation_type\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ba22955c2cfbe9ffb35f5bf83f330929ea3d3b326b5d514efc868966f20fe322"
+}

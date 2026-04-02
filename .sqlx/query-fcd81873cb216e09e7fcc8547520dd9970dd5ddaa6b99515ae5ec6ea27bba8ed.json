@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT content\n            FROM memories\n            WHERE id = $1 AND status != 'deleted'\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "content",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "fcd81873cb216e09e7fcc8547520dd9970dd5ddaa6b99515ae5ec6ea27bba8ed"
+}

@@ -1,0 +1,82 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT id as \"id!\", from_node_id as \"from_node_id!\", to_node_id as \"to_node_id!\",\n                   edge_type as \"edge_type!\", strength as \"strength!\",\n                   confidence as \"confidence!\", causality as \"causality!\",\n                   bidirectional as \"bidirectional!\",\n                   reason, created_at as \"created_at!\", metadata\n            FROM knowledge_edges\n            WHERE from_node_id = $1 OR to_node_id = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "from_node_id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "to_node_id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "edge_type!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "strength!",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 5,
+        "name": "confidence!",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 6,
+        "name": "causality!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 7,
+        "name": "bidirectional!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 8,
+        "name": "reason",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "metadata",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "9826b90fb9ef8dcfd5f2347ea662569b8bba96eceb9aafd984f51c6f93633412"
+}

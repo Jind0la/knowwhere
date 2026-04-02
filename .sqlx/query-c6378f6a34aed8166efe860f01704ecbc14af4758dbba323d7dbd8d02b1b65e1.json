@@ -1,0 +1,82 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT id as \"id!\", consolidation_date,\n                   session_id, conversation_id,\n                   memories_processed as \"memories_processed!\",\n                   new_memories_created as \"new_memories_created!\",\n                   edges_created as \"edges_created!\",\n                   processing_time_ms as \"processing_time_ms!\",\n                   status as \"status!\",\n                   error_message, created_at as \"created_at!\"\n            FROM consolidation_history\n            ORDER BY created_at DESC\n            LIMIT $1::bigint\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "consolidation_date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 2,
+        "name": "session_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "conversation_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "memories_processed!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "new_memories_created!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "edges_created!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "processing_time_ms!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
+        "name": "status!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 9,
+        "name": "error_message",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "created_at!",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "c6378f6a34aed8166efe860f01704ecbc14af4758dbba323d7dbd8d02b1b65e1"
+}

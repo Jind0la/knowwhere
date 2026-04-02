@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO memories (\n                id, memory_type, content, embedding, entities, tags,\n                provenance, source, source_id, importance, confidence,\n                sensitivity, status, access_count, created_at, updated_at\n            )\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'active', 0, NOW(), NOW())\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Varchar",
+        "Text",
+        {
+          "Custom": {
+            "name": "vector",
+            "kind": "Simple"
+          }
+        },
+        "Jsonb",
+        "TextArray",
+        "Jsonb",
+        "Varchar",
+        "Varchar",
+        "Int4",
+        "Float8",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4ef8dba2c54677f25cb3e84e81ee1cd37dbed66c9efa5fd92a1aece1a0e58620"
+}

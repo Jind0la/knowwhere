@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE agent_skills\n            SET skill_name = $2,\n                category = $3,\n                proficiency = $4,\n                components = $5,\n                prerequisites = $6,\n                metadata = $7,\n                updated_at = NOW()\n            WHERE id = $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Varchar",
+        "Int4",
+        "TextArray",
+        "TextArray",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "66f363f735e5839476496a8f56334dde79b8bb84854304c9854292711dfa5fea"
+}

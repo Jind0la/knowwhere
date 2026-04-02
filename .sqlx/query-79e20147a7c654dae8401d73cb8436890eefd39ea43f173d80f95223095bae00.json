@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO memory_namespaces (id, path, depth, description)\n            VALUES ($1, 'agent/skills', 2, 'Agent capabilities and skills')\n            ON CONFLICT (path) DO NOTHING\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "79e20147a7c654dae8401d73cb8436890eefd39ea43f173d80f95223095bae00"
+}

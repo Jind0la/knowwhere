@@ -1,0 +1,50 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT id as \"id!\", path as \"path!\", depth as \"depth!\",\n                   parent_id, description, memory_type_hint\n            FROM memory_namespaces\n            ORDER BY path ASC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "path!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "depth!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "parent_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "memory_type_hint",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "8ff5138a8a4e8a1fb6cdad26e7027bb340f5fc07677fcfcc5869f438ebd8e62a"
+}

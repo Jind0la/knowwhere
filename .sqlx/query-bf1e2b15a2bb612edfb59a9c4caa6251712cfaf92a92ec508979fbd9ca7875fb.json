@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO self_healing_log (memory_id, broken_uri, repair_status, new_uri)\n            VALUES ($1, $2, $3, $4)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bf1e2b15a2bb612edfb59a9c4caa6251712cfaf92a92ec508979fbd9ca7875fb"
+}

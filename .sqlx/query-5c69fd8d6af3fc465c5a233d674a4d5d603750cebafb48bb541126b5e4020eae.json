@@ -1,0 +1,82 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT id, memory_type, content, importance, confidence, entities, tags,\n                   provenance, source, summary_content, overview_content\n            FROM memories\n            WHERE id = ANY($1) AND status = 'active'\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "memory_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "content",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "importance",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "confidence",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 5,
+        "name": "entities",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 6,
+        "name": "tags",
+        "type_info": "TextArray"
+      },
+      {
+        "ordinal": 7,
+        "name": "provenance",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 8,
+        "name": "source",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 9,
+        "name": "summary_content",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "overview_content",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "5c69fd8d6af3fc465c5a233d674a4d5d603750cebafb48bb541126b5e4020eae"
+}

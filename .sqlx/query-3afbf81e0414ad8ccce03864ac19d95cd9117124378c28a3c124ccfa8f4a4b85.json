@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE memories\n            SET energy = LEAST(100, energy + $2),\n                last_energy_update = NOW()\n            WHERE id = $1 AND status = 'active'\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3afbf81e0414ad8ccce03864ac19d95cd9117124378c28a3c124ccfa8f4a4b85"
+}

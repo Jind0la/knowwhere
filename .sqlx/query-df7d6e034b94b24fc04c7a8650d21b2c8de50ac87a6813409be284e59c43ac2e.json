@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE memories\n            SET conflict_state = 'resolved', updated_at = NOW()\n            WHERE id = $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "df7d6e034b94b24fc04c7a8650d21b2c8de50ac87a6813409be284e59c43ac2e"
+}

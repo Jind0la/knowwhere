@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO retrieval_runs (\n                id, query_text, embedding, run_at,\n                total_candidates, retrieved_count, execution_time_ms, max_depth_used, metadata\n            )\n            VALUES ($1, $2, $3, NOW(), $4, $5, $6, $7, $8)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        {
+          "Custom": {
+            "name": "vector",
+            "kind": "Simple"
+          }
+        },
+        "Int4",
+        "Int4",
+        "Int4",
+        "Int4",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "107027785418467ccf907e27caac3a49ad5377a2df8a088eb7a9b60e79162e56"
+}

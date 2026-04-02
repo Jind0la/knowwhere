@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO consolidation_history (\n                id, consolidation_date, session_id, conversation_id,\n                memories_processed, new_memories_created, edges_created,\n                processing_time_ms, status, error_message, created_at\n            )\n            VALUES ($1, CURRENT_DATE, $2, $3, $4, $5, $6, $7, $8, $9, NOW())\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Varchar",
+        "Varchar",
+        "Int4",
+        "Int4",
+        "Int4",
+        "Int4",
+        "Varchar",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "20970a44d1188949ed70b0c7d8ea018fff5897a4cc1867096bb524b88a238059"
+}

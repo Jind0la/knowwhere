@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                INSERT INTO retrieval_trajectory (\n                    run_id, step_index, step_type, memory_id,\n                    score_before, score_after, rank, decision, filter_reason\n                )\n                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4",
+        "Varchar",
+        "Uuid",
+        "Float8",
+        "Float8",
+        "Int4",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9050190cc101a3d2bf365fa14e82ec3e3fb555c8224a905c7838875255ae3610"
+}

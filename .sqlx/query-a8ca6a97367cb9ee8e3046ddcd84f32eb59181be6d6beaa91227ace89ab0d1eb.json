@@ -1,0 +1,50 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT id, conflicting_memory_ids, conflict_type, description, detected_at, state\n            FROM memory_conflicts\n            WHERE state = 'pending'\n            ORDER BY detected_at DESC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "conflicting_memory_ids",
+        "type_info": "UuidArray"
+      },
+      {
+        "ordinal": 2,
+        "name": "conflict_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "detected_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "state",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "a8ca6a97367cb9ee8e3046ddcd84f32eb59181be6d6beaa91227ace89ab0d1eb"
+}

@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT id as \"id!\", conflicts_found as \"conflicts_found!\",\n                   conflicts_resolved as \"conflicts_resolved!\", run_at as \"run_at!\"\n            FROM conflict_detection_runs\n            ORDER BY run_at DESC\n            LIMIT $1::bigint\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "conflicts_found!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "conflicts_resolved!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "run_at!",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "70d6cbf5ac66d4a83b838831ffc9d4720646e139a9266f05cdf85f3d4e611b76"
+}

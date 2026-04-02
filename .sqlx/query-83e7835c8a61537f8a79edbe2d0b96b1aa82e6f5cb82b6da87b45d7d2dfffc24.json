@@ -1,0 +1,27 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO memory_namespaces (id, path, depth, parent_id, description, memory_type_hint)\n            VALUES ($1, $2, $3, $4, $5, $6)\n            ON CONFLICT (path) DO UPDATE SET\n                description = EXCLUDED.description,\n                memory_type_hint = EXCLUDED.memory_type_hint\n            RETURNING id\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Int4",
+        "Uuid",
+        "Text",
+        "Varchar"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "83e7835c8a61537f8a79edbe2d0b96b1aa82e6f5cb82b6da87b45d7d2dfffc24"
+}

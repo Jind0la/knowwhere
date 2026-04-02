@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH neighbors AS (\n                SELECT\n                    m.id as source_id,\n                    m2.id as neighbor_id,\n                    (1.0 - (m.embedding <=> m2.embedding))::float4 as similarity\n                FROM memories m\n                CROSS JOIN LATERAL (\n                    SELECT id, embedding\n                    FROM memories m2\n                    WHERE m2.id != m.id\n                      AND m2.status = 'active'\n                      AND m2.embedding IS NOT NULL\n                    ORDER BY m.embedding <=> m2.embedding\n                    LIMIT 5\n                ) m2\n                WHERE m.status = 'active'\n                  AND m.embedding IS NOT NULL\n            )\n            SELECT source_id as \"id_a!\", neighbor_id as \"id_b!\", similarity as \"similarity!\"\n            FROM neighbors\n            WHERE similarity > $1::float4\n            ORDER BY similarity DESC\n            LIMIT 1000\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id_a!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "id_b!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "similarity!",
+        "type_info": "Float4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Float4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "48b3744e9945536bd73151db1ab0c536dc09fab14db10760ce2f7ecc2a87b506"
+}

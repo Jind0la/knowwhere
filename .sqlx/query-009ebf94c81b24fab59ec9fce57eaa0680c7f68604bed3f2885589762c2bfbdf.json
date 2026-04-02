@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT id, COALESCE(ts_rank(to_tsvector('english', content), plainto_tsquery('english', $1)), 0.0)::float8 AS \"rank!\"\n            FROM memories\n            WHERE status = 'active'\n              AND to_tsvector('english', content) @@ plainto_tsquery('english', $1)\n            ORDER BY ts_rank(to_tsvector('english', content), plainto_tsquery('english', $1)) DESC\n            LIMIT $2::bigint\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "rank!",
+        "type_info": "Float8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "009ebf94c81b24fab59ec9fce57eaa0680c7f68604bed3f2885589762c2bfbdf"
+}

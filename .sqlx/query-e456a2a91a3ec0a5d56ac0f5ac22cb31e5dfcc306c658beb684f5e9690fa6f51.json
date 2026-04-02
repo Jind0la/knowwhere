@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                UPDATE memories\n                SET status = 'superseded',\n                    superseded_by = $1,\n                    conflict_state = 'resolved',\n                    updated_at = NOW()\n                WHERE id = $2\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e456a2a91a3ec0a5d56ac0f5ac22cb31e5dfcc306c658beb684f5e9690fa6f51"
+}

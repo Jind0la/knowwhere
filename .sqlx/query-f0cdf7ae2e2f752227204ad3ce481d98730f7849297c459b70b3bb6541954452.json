@@ -1,0 +1,82 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT id as \"id!\", run_id as \"run_id!\", step_index as \"step_index!\",\n                   step_type as \"step_type!\",\n                   memory_id, score_before, score_after, rank, decision, filter_reason,\n                   created_at as \"created_at!\"\n            FROM retrieval_trajectory\n            WHERE run_id = $1\n            ORDER BY step_index\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "run_id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "step_index!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "step_type!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "memory_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 5,
+        "name": "score_before",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 6,
+        "name": "score_after",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 7,
+        "name": "rank",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
+        "name": "decision",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "filter_reason",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "created_at!",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "f0cdf7ae2e2f752227204ad3ce481d98730f7849297c459b70b3bb6541954452"
+}

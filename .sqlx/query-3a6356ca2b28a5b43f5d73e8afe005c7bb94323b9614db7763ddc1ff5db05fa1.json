@@ -1,0 +1,74 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    SELECT id as \"id!\", skill_name as \"skill_name!\",\n                           category as \"category!\", proficiency as \"proficiency!\",\n                           last_used, success_rate,\n                           COALESCE(components, ARRAY[]::TEXT[]) as components,\n                           COALESCE(prerequisites, ARRAY[]::TEXT[]) as prerequisites,\n                           namespace_id, metadata\n                    FROM agent_skills\n                    ORDER BY proficiency DESC, skill_name ASC\n                    ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "skill_name!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "category!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "proficiency!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "last_used",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "success_rate",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 6,
+        "name": "components",
+        "type_info": "TextArray"
+      },
+      {
+        "ordinal": 7,
+        "name": "prerequisites",
+        "type_info": "TextArray"
+      },
+      {
+        "ordinal": 8,
+        "name": "namespace_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 9,
+        "name": "metadata",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      null,
+      null,
+      true,
+      true
+    ]
+  },
+  "hash": "3a6356ca2b28a5b43f5d73e8afe005c7bb94323b9614db7763ddc1ff5db05fa1"
+}

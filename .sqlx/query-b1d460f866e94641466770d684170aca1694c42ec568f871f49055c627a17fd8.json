@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    INSERT INTO memory_conflicts (id, conflicting_memory_ids, conflict_type, description, detected_at, state)\n                    VALUES ($1, $2, $3, $4, NOW(), 'pending')\n                    ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray",
+        "Varchar",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b1d460f866e94641466770d684170aca1694c42ec568f871f49055c627a17fd8"
+}

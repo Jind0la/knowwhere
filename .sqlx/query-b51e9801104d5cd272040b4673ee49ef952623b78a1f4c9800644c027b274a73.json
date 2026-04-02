@@ -1,0 +1,189 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT id as \"id!\", memory_type as \"memory_type!\",\n                   content as \"content!\", importance as \"importance!\",\n                   confidence as \"confidence!\", sensitivity as \"sensitivity!\",\n                   status as \"status!\", conflict_state as \"conflict_state!\",\n                   source as \"source!\", depth as \"depth!\",\n                   access_count as \"access_count!\",\n                   created_at as \"created_at!\", updated_at as \"updated_at!\",\n                   superseded_by, source_id, provenance as \"provenance!\", parent_id,\n                   last_accessed, deleted_at, metadata as \"metadata!\", entities as \"entities!\",\n                   COALESCE(tags, ARRAY[]::TEXT[])::TEXT[] as \"tags!\",\n                   content_preview,\n                   context_tier::text AS \"context_tier!\",\n                   parent_tier_id,\n                   summary_content, overview_content,\n                   embedding as \"embedding: _\"\n            FROM memories\n            WHERE id = $1 AND status = 'active'\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "memory_type!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "content!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "importance!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "confidence!",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 5,
+        "name": "sensitivity!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "status!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "conflict_state!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "source!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 9,
+        "name": "depth!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 10,
+        "name": "access_count!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 11,
+        "name": "created_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 12,
+        "name": "updated_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 13,
+        "name": "superseded_by",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 14,
+        "name": "source_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 15,
+        "name": "provenance!",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 16,
+        "name": "parent_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 17,
+        "name": "last_accessed",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 18,
+        "name": "deleted_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 19,
+        "name": "metadata!",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 20,
+        "name": "entities!",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 21,
+        "name": "tags!",
+        "type_info": "TextArray"
+      },
+      {
+        "ordinal": 22,
+        "name": "content_preview",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 23,
+        "name": "context_tier!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 24,
+        "name": "parent_tier_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 25,
+        "name": "summary_content",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 26,
+        "name": "overview_content",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 27,
+        "name": "embedding: _",
+        "type_info": {
+          "Custom": {
+            "name": "vector",
+            "kind": "Simple"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      null,
+      true,
+      null,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "b51e9801104d5cd272040b4673ee49ef952623b78a1f4c9800644c027b274a73"
+}

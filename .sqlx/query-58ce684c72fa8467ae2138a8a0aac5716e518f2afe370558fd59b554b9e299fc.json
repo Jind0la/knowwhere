@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO memories (\n                id, memory_type, content, embedding,\n                importance, confidence, sensitivity, status,\n                provenance, source, entities, tags,\n                energy, last_energy_update,\n                summary_content, overview_content,\n                created_at, updated_at\n            )\n            VALUES (\n                $1, 'semantic', $2, NULL,\n                $3, $4, 'normal', 'active',\n                $5, 'consolidation', $6, $7,\n                50, NOW(),\n                NULL, NULL,\n                NOW(), NOW()\n            )\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Int4",
+        "Float8",
+        "Jsonb",
+        "Jsonb",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "58ce684c72fa8467ae2138a8a0aac5716e518f2afe370558fd59b554b9e299fc"
+}

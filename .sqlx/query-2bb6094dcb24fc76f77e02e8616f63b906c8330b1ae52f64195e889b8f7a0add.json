@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO audit_log (id, run_id, issue_type, memory_id, severity, description, action_taken, created_at)\n            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Varchar",
+        "Uuid",
+        "Varchar",
+        "Text",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2bb6094dcb24fc76f77e02e8616f63b906c8330b1ae52f64195e889b8f7a0add"
+}

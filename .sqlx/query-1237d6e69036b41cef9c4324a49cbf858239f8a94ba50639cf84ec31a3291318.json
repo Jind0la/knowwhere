@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                INSERT INTO conflict_detection_runs (id, conflicts_found, conflicts_resolved, run_at)\n                VALUES ($1, $2, 0, NOW())\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1237d6e69036b41cef9c4324a49cbf858239f8a94ba50639cf84ec31a3291318"
+}

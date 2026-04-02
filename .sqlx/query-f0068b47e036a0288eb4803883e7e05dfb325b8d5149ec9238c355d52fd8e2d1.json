@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO knowledge_edges\n                (id, from_node_id, to_node_id, edge_type, strength, confidence, bidirectional, reason, created_at)\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())\n            ON CONFLICT (from_node_id, to_node_id, edge_type) DO NOTHING\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Varchar",
+        "Float8",
+        "Float8",
+        "Bool",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f0068b47e036a0288eb4803883e7e05dfb325b8d5149ec9238c355d52fd8e2d1"
+}

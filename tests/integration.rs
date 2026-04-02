@@ -12,7 +12,7 @@ use knowwhere_server::api::{auth, auth::ApiKey, routes};
 use knowwhere_server::embedding::{EmbeddingProvider, LocalOllamaProvider};
 use knowwhere_server::memory::{DreamMode, events::InMemoryEventStore};
 use knowwhere_server::memory::governance::GovernancePolicy;
-use knowwhere_server::storage::MemoryStore;
+use knowwhere_server::storage::{MemoryStore, StorageBackend};
 
 /// Creates the embedding provider for tests.
 /// Always uses LocalOllama — tests are designed and validated against Ollama embeddings.

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                        UPDATE memories SET conflict_state = 'pending' WHERE id = $1\n                        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "811af706b1b94bab360a89706a6dd2357bc1002e55d054fb9eb6b5a4e0d96e2d"
+}

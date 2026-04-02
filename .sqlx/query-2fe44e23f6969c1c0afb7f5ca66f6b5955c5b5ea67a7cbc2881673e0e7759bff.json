@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE memories\n            SET energy = GREATEST(0, CAST(\n                (energy::double precision) * EXP((-($1::double precision)) * EXTRACT(EPOCH FROM (NOW() - (last_energy_update)::timestamptz)) / 3600.0)\n                AS INTEGER\n            )),\n            last_energy_update = NOW()\n            WHERE status = 'active'\n              AND energy > 0\n              AND last_energy_update < NOW()\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2fe44e23f6969c1c0afb7f5ca66f6b5955c5b5ea67a7cbc2881673e0e7759bff"
+}

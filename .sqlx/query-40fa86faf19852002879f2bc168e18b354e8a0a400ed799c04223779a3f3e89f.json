@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE memory_conflicts\n            SET state = 'resolved'\n            WHERE id = $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "40fa86faf19852002879f2bc168e18b354e8a0a400ed799c04223779a3f3e89f"
+}

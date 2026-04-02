@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT id as \"id!\", pairs_found as \"pairs_found!\",\n                   pairs_merged as \"pairs_merged!\",\n                   run_at as \"run_at!\"\n            FROM deduplication_runs\n            ORDER BY run_at DESC\n            LIMIT $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "pairs_found!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "pairs_merged!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "run_at!",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "ec74383ece62262882d54d49ce2bd40ad72c890df3973d2a959948f4735cf51e"
+}

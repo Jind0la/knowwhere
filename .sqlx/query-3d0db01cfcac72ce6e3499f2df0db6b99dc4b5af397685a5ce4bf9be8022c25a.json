@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT id, content\n            FROM memories\n            WHERE source_id = $1\n              AND context_tier = 'raw'\n              AND status = 'active'\n              AND char_length(content) > $2\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "content",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "3d0db01cfcac72ce6e3499f2df0db6b99dc4b5af397685a5ce4bf9be8022c25a"
+}

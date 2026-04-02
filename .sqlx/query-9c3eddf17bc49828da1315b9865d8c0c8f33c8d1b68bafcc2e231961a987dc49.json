@@ -1,0 +1,161 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH RECURSIVE fractal_tree(\n                id, memory_type, content, importance, confidence, sensitivity,\n                status, conflict_state, source, depth, access_count,\n                created_at, updated_at, superseded_by, source_id, provenance,\n                parent_id, last_accessed, deleted_at, metadata, entities,\n                tags, content_preview, embedding, level\n            ) AS (\n                SELECT id, memory_type, content, importance, confidence, sensitivity,\n                       status, conflict_state, source, depth, access_count,\n                       created_at, updated_at, superseded_by, source_id, provenance,\n                       parent_id, last_accessed, deleted_at, metadata, entities,\n                       tags, content_preview, embedding, 1\n                FROM memories\n                WHERE parent_id = $1 AND status = 'active'\n\n                UNION ALL\n\n                SELECT m.id, m.memory_type, m.content, m.importance, m.confidence,\n                       m.sensitivity, m.status, m.conflict_state, m.source, m.depth,\n                       m.access_count, m.created_at, m.updated_at, m.superseded_by,\n                       m.source_id, m.provenance, m.parent_id, m.last_accessed,\n                       m.deleted_at, m.metadata, m.entities, m.tags,\n                       m.content_preview, m.embedding, ft.level + 1\n                FROM memories m\n                INNER JOIN fractal_tree ft ON m.parent_id = ft.id\n                WHERE m.status = 'active' AND ft.level < $2\n            )\n            SELECT id as \"id!\", memory_type as \"memory_type!\",\n                   content as \"content!\", importance as \"importance!\",\n                   confidence as \"confidence!\", sensitivity as \"sensitivity!\",\n                   status as \"status!\", conflict_state as \"conflict_state!\",\n                   source as \"source!\", depth as \"depth!\",\n                   access_count as \"access_count!\",\n                   created_at as \"created_at!\", updated_at as \"updated_at!\",\n                   superseded_by, source_id, provenance, parent_id,\n                   last_accessed, deleted_at, metadata, entities,\n                   COALESCE(tags, ARRAY[]::TEXT[]) as \"tags!\",\n                   content_preview,\n                   embedding::float4[] as \"embedding: _\"\n            FROM fractal_tree\n            ORDER BY level\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "memory_type!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "content!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "importance!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "confidence!",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 5,
+        "name": "sensitivity!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "status!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "conflict_state!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "source!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 9,
+        "name": "depth!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 10,
+        "name": "access_count!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 11,
+        "name": "created_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 12,
+        "name": "updated_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 13,
+        "name": "superseded_by",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 14,
+        "name": "source_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 15,
+        "name": "provenance",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 16,
+        "name": "parent_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 17,
+        "name": "last_accessed",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 18,
+        "name": "deleted_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 19,
+        "name": "metadata",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 20,
+        "name": "entities",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 21,
+        "name": "tags!",
+        "type_info": "TextArray"
+      },
+      {
+        "ordinal": 22,
+        "name": "content_preview",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 23,
+        "name": "embedding: _",
+        "type_info": "Float4Array"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "9c3eddf17bc49828da1315b9865d8c0c8f33c8d1b68bafcc2e231961a987dc49"
+}

@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE memories\n            SET embedding = $2, updated_at = NOW()\n            WHERE id = $1 AND status != 'deleted'\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        {
+          "Custom": {
+            "name": "vector",
+            "kind": "Simple"
+          }
+        }
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a29dc6f7cef67c98c31a0ddffb4f391890a99768b6945ba3b6563ed5c4f41f41"
+}
