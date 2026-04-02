@@ -183,20 +183,24 @@ pub enum VlmModel {
     Gpt4oMini,
     /// Grok-4-1-fast Batch — $0.20/1M input, ~150ms latency, auto-caching
     Grok4Fast,
+    /// Ollama local LLM (e.g., llama3.2) — no API key needed
+    Ollama,
 }
 
 impl VlmModel {
     /// All models in fallback order.
-    pub fn fallback_chain() -> [Self; 3] {
-        [Self::Gpt5Nano, Self::Gpt4oMini, Self::Grok4Fast]
+    pub fn fallback_chain() -> [Self; 4] {
+        [Self::Gpt5Nano, Self::Gpt4oMini, Self::Grok4Fast, Self::Ollama]
     }
 
     /// API model identifier string.
+    /// For Ollama, this is loaded from OLLAMA_VLM_MODEL env var at runtime.
     pub fn model_id(&self) -> &'static str {
         match self {
             VlmModel::Gpt5Nano => "gpt-5-nano-2025-08-07",
             VlmModel::Gpt4oMini => "gpt-4o-mini-2024-07-18",
             VlmModel::Grok4Fast => "grok-4-1-fast",
+            VlmModel::Ollama => "llama3.2", // Default, overridden by OLLAMA_VLM_MODEL
         }
     }
 
@@ -206,14 +210,17 @@ impl VlmModel {
             VlmModel::Gpt5Nano => "GPT-5-nano Batch",
             VlmModel::Gpt4oMini => "GPT-4o-mini Batch",
             VlmModel::Grok4Fast => "Grok-4-1-fast Batch",
+            VlmModel::Ollama => "Ollama (local)",
         }
     }
 
     /// Base URL for the API.
+    /// For Ollama, this is loaded from OLLAMA_URL env var at runtime (default: http://localhost:11434).
     pub fn base_url(&self) -> &'static str {
         match self {
             VlmModel::Gpt5Nano | VlmModel::Gpt4oMini => "https://api.openai.com",
             VlmModel::Grok4Fast => "https://api.x.ai",
+            VlmModel::Ollama => "http://localhost:11434", // Default, overridden by OLLAMA_URL
         }
     }
 
@@ -223,6 +230,7 @@ impl VlmModel {
             VlmModel::Gpt5Nano => 15,
             VlmModel::Gpt4oMini => 20,
             VlmModel::Grok4Fast => 30,
+            VlmModel::Ollama => 60, // Local models are slower
         }
     }
 }
@@ -232,6 +240,10 @@ impl VlmModel {
 pub struct VlmConfig {
     pub openai_api_key: Option<String>,
     pub grok_api_key: Option<String>,
+    /// Ollama base URL (e.g., http://localhost:11434)
+    pub ollama_url: Option<String>,
+    /// Ollama VLM model for chat completions (e.g., llama3.2, mistral)
+    pub ollama_vlm_model: Option<String>,
 }
 
 impl VlmConfig {
@@ -240,12 +252,16 @@ impl VlmConfig {
         Self {
             openai_api_key: std::env::var("OPENAI_API_KEY").ok(),
             grok_api_key: std::env::var("GROK_API_KEY").ok(),
+            ollama_url: std::env::var("OLLAMA_URL").ok(),
+            ollama_vlm_model: std::env::var("OLLAMA_VLM_MODEL").ok(),
         }
     }
 
     /// Whether we have at least one API key configured.
     pub fn is_configured(&self) -> bool {
-        self.openai_api_key.is_some() || self.grok_api_key.is_some()
+        self.openai_api_key.is_some() 
+            || self.grok_api_key.is_some() 
+            || self.ollama_vlm_model.is_some()
     }
 }
 
@@ -355,7 +371,11 @@ impl VlmClient {
         model: VlmModel,
         config: &VlmConfig,
     ) -> Result<VlmSummary, VlmError> {
-        let api_key = match model {
+        // For Ollama, no API key needed — use model from config or default
+        let ollama_model = config.ollama_vlm_model.clone().unwrap_or_else(|| "llama3.2".to_string());
+        let ollama_url = config.ollama_url.clone().unwrap_or_else(|| "http://localhost:11434".to_string());
+
+        let api_key: &str = match model {
             VlmModel::Gpt5Nano | VlmModel::Gpt4oMini => {
                 config.openai_api_key.as_ref()
                     .ok_or_else(|| VlmError::NoApiKey(model.name().to_string()))?
@@ -364,6 +384,7 @@ impl VlmClient {
                 config.grok_api_key.as_ref()
                     .ok_or_else(|| VlmError::NoApiKey(model.name().to_string()))?
             }
+            VlmModel::Ollama => "", // No API key needed for local Ollama
         };
 
         let url = match model {
@@ -373,12 +394,96 @@ impl VlmClient {
             VlmModel::Grok4Fast => {
                 format!("{}/v1/responses", model.base_url())
             }
+            VlmModel::Ollama => {
+                format!("{}/api/chat", ollama_url)
+            }
         };
 
         // Build request body — no temperature for gpt-5-nano (not supported)
         let system_msg = context.system_directive();
         let user_prompt = context.prompt_template().replace("{content}", prompt);
 
+        // Handle Ollama separately — uses /api/chat with different format
+        if model == VlmModel::Ollama {
+            let ollama_body = serde_json::json!({
+                "model": ollama_model,
+                "messages": [
+                    {"role": "system", "content": system_msg},
+                    {"role": "user", "content": user_prompt},
+                ],
+                "stream": false,
+            });
+
+            let request = self.http
+                .post(&url)
+                .timeout(std::time::Duration::from_secs(model.timeout_secs()))
+                .json(&ollama_body);
+
+            let resp = match request.send().await {
+                Ok(r) => r,
+                Err(e) => {
+                    if e.is_timeout() {
+                        return Err(VlmError::Timeout(model.timeout_secs(), model.name()));
+                    }
+                    return Err(VlmError::Http(e));
+                }
+            };
+
+            let status = resp.status();
+
+            if !status.is_success() {
+                let body_text = resp.text().await.unwrap_or_default();
+                let msg = format!("HTTP {status}: {body_text}");
+                if status.is_server_error() {
+                    return Err(VlmError::Api(msg));
+                }
+                return Err(VlmError::Api(msg));
+            }
+
+            #[derive(serde::Deserialize)]
+            struct OllamaResponse {
+                message: OllamaMessage,
+                #[serde(default)]
+                prompt_eval_count: Option<u64>,
+                #[serde(default)]
+                eval_count: Option<u64>,
+            }
+
+            #[derive(serde::Deserialize)]
+            struct OllamaMessage {
+                content: String,
+            }
+
+            let ollama_resp: OllamaResponse = match resp.json().await {
+                Ok(b) => b,
+                Err(e) => return Err(VlmError::Http(e)),
+            };
+
+            let text = ollama_resp.message.content;
+            if text.is_empty() {
+                return Err(VlmError::NoResponse(model.name()));
+            }
+
+            let input_tokens = ollama_resp.prompt_eval_count.unwrap_or(0) as u32;
+            let output_tokens = ollama_resp.eval_count.unwrap_or(0) as u32;
+
+            tracing::debug!(
+                model = %model.name(),
+                input_tokens,
+                output_tokens,
+                text_len = text.len(),
+                "VLM summarization successful (Ollama)"
+            );
+
+            return Ok(VlmSummary {
+                text,
+                model_used: model,
+                input_tokens: Some(input_tokens),
+                output_tokens: Some(output_tokens),
+            });
+        }
+
+        // OpenAI / xAI format (gpt-5-nano, gpt-4o-mini, grok-4-fast)
         let mut body = serde_json::json!({
             "model": model.model_id(),
             "input": [

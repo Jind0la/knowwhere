@@ -205,14 +205,14 @@ async fn run() -> anyhow::Result<()> {
             None
         };
 
-    // -- VLM Background Worker (3-stage fallback: GPT-5-nano → GPT-4o-mini → Grok-4-fast) --
+    // -- VLM Background Worker (4-stage fallback: GPT-5-nano → GPT-4o-mini → Grok-4-fast → Ollama) --
     let vlm_config = VlmConfig::from_env();
     let (vlm_worker, _vlm_join) = if vlm_config.is_configured() {
         let (h, j) = VlmWorker::spawn(store.clone(), embedding.clone(), vlm_config);
-        tracing::info!("VLM summarization worker started (OPENAI_API_KEY or GROK_API_KEY detected)");
+        tracing::info!("VLM summarization worker started (OPENAI_API_KEY, GROK_API_KEY, or OLLAMA_VLM_MODEL detected)");
         (Some(h), Some(j))
     } else {
-        tracing::warn!("no OPENAI_API_KEY or GROK_API_KEY found — VLM summarization disabled");
+        tracing::warn!("no OPENAI_API_KEY, GROK_API_KEY, or OLLAMA_VLM_MODEL found — VLM summarization disabled");
         (None, None)
     };
 
