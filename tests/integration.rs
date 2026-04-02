@@ -493,6 +493,7 @@ async fn embed_text_returns_vector() {
 
 #[tokio::test]
 #[cfg(feature = "postgres-storage")]
+#[ignore = "requires DATABASE_URL — run: DATABASE_URL='postgresql://...' cargo test --features postgres-storage -- --include-ignored"]
 async fn postgres_store_hybrid_retrieve_bm25_only() {
     // Isolated test for hybrid_retrieve with BM25-only query (no query_vector).
     // This test verifies the BM25 fallback path works correctly when only
@@ -565,6 +566,7 @@ async fn postgres_store_hybrid_retrieve_bm25_only() {
 
 #[tokio::test]
 #[cfg(feature = "postgres-storage")]
+#[ignore = "requires DATABASE_URL — run: DATABASE_URL='postgresql://...' cargo test --features postgres-storage -- --include-ignored"]
 async fn postgres_store_hybrid_retrieve_with_vector() {
     // Test hybrid_retrieve with a real query vector.
     // Uses the vector search path (HNSW index) combined with BM25 via RRF.
@@ -629,6 +631,7 @@ async fn postgres_store_hybrid_retrieve_with_vector() {
 
 #[tokio::test]
 #[cfg(feature = "postgres-storage")]
+#[ignore = "requires DATABASE_URL — run: DATABASE_URL='postgresql://...' cargo test --features postgres-storage -- --include-ignored"]
 async fn postgres_store_count_matches_active_memories() {
     // Verify that store.count() correctly returns the number of active memories.
     // Previously this returned 0 even when active memories existed in the DB,

@@ -1,6 +1,6 @@
 # Bug Tracking
 
-**Last Updated:** 2026-03-28
+**Last Updated:** 2026-04-02
 
 ---
 
@@ -368,6 +368,64 @@ postgresql://postgres:kw@localhost:5433/kw
 
 ---
 
+---
+
+## BUG-009: content_contradicts() erkennt asymmetrische Negationen nicht 🟢 FIXED 2026-04-02
+
+**Beschreibung:** `content_contradicts()` erkannte Widersprüche wie `"The meeting is not happening"` vs `"The meeting is happening"` nicht korrekt. Die `contradictions` array prüfte nur symmetrische Patterns (beide Strings müssen je ein Negationsmarker haben), aber `b` ("The meeting is happening") hat kein "not ".
+
+**Symptome:**
+- `cargo test test_content_contradicts_negation` → FAILED
+- `cargo test test_content_contradicts_cross` → FAILED
+
+**Root Cause:** Pattern `("not ", "")` fehlte in der contradictions array. Nur `("not ", "not ")` war vorhanden — das matched nur wenn beide Strings "not " enthalten.
+
+**Fix:** Asymmetrische Patterns hinzugefügt in `src/memory/dream/conflict_detection.rs`:
+```rust
+("not ", ""),      // "not X" vs "X"
+("never ", ""),    // "never X" vs "X"
+("no ", ""),       // "no X" vs "X"
+("doesn't ", ""),  // "doesn't visit" vs "visits"
+("isn't ", ""),    // "isn't reliable" vs "is reliable"
+("won't ", ""),    // "won't happen" vs "happens"
+```
+
+**Files geändert:** `src/memory/dream/conflict_detection.rs`
+
+**Verification:**
+```bash
+cargo test --features postgres-storage --lib conflict_detection
+# test_content_contradicts_negation ... ok
+# test_content_contradicts_cross ... ok
+```
+
+---
+
+## BUG-010: tiered.rs Doctest failed wegen Unicode Box-Drawing 🟢 FIXED 2026-04-02
+
+**Beschreibung:** Doc-Comment in `src/memory/tiered.rs` (Zeile 31-34) nutze einen Rust-Code-Block (` ``` `) der Unicode Box-Drawing Zeichen (`──►` U+2500) enthielt. Der Rust Doctest-Parser konnte diese nicht als Rust parsen → "unknown start of token" Fehler.
+
+**Symptome:**
+```bash
+cargo test --doc
+# FAILED: src/memory/tiered.rs - memory::tiered::TieredCompactionWorker (line 31)
+# error: unknown start of token: \u{2500}
+```
+
+**Root Cause:** ` ``` ` impliziert Rust-Syntax, aber das Diagramm war Plain-Text mit Unicode-Grafik.
+
+**Fix:** ` ``` ` → ` ```text ` in `src/memory/tiered.rs:31` — der `text` Marker sagt rustdoc dass es Plain-Text ist, kein ausführbarer Code.
+
+**Files geändert:** `src/memory/tiered.rs`
+
+**Verification:**
+```bash
+cargo test --features postgres-storage --doc
+# test result: ok. 0 passed; 0 failed; 2 ignored
+```
+
+---
+
 ## Offene Bugs
 
-Keine offenen Bugs — BUG-005, BUG-006 und BUG-007 sind alle gefixt.
+Keine offenen Bugs — BUG-005, BUG-006, BUG-007, BUG-009 und BUG-010 sind alle gefixt.
