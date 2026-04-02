@@ -20,7 +20,11 @@ use knowwhere_server::api::{auth, auth::ApiKey, docs::ApiDoc, routes};
 use lazy_limit::{init_rate_limiter, Duration, RuleConfig};
 use knowwhere_server::connectors::frigate::FrigateConnector;
 use knowwhere_server::connectors::store_external_event;
-use knowwhere_server::embedding::{create_provider, EmbeddingProvider, ProviderKind};
+use knowwhere_server::embedding::EmbeddingProvider;
+#[cfg(any(feature = "openai-provider", feature = "grok-provider"))]
+use knowwhere_server::embedding::{create_provider, ProviderKind};
+#[cfg(not(any(feature = "openai-provider", feature = "grok-provider")))]
+use knowwhere_server::embedding::LocalOllamaProvider;
 use knowwhere_server::memory::events::InMemoryEventStore;
 use knowwhere_server::storage::StorageBackend;
 use knowwhere_server::memory::{DreamMode, GovernancePolicy};
@@ -116,15 +120,33 @@ async fn run() -> anyhow::Result<()> {
 
     let embedding: Arc<dyn EmbeddingProvider> =
         if let Ok(key) = std::env::var("GROK_API_KEY") {
-            tracing::info!("using Grok embedding provider");
-            create_provider(ProviderKind::Grok, Some(key))
+            #[cfg(feature = "grok-provider")]
+            {
+                tracing::info!("using Grok embedding provider");
+                create_provider(ProviderKind::Grok, Some(key))
+            }
+            #[cfg(not(feature = "grok-provider"))]
+            {
+                drop(key);
+                tracing::warn!("GROK_API_KEY is set but grok-provider feature is not enabled — falling back to Ollama");
+                Arc::new(LocalOllamaProvider::new())
+            }
         } else if let Ok(key) = std::env::var("OPENAI_API_KEY") {
-            tracing::info!("using OpenAI embedding provider");
-            create_provider(ProviderKind::OpenAI, Some(key))
+            #[cfg(feature = "openai-provider")]
+            {
+                tracing::info!("using OpenAI embedding provider");
+                create_provider(ProviderKind::OpenAI, Some(key))
+            }
+            #[cfg(not(feature = "openai-provider"))]
+            {
+                drop(key);
+                tracing::warn!("OPENAI_API_KEY is set but openai-provider feature is not enabled — falling back to Ollama");
+                Arc::new(LocalOllamaProvider::new())
+            }
         } else {
             let model = std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "nomic-embed-text-v2-moe".into());
-            tracing::info!(model, "no embedding API key found, using local ollama");
-            create_provider(ProviderKind::LocalOllama, None)
+            tracing::info!(model, "using local ollama embedding provider");
+            Arc::new(LocalOllamaProvider::new())
         };
 
     tracing::info!(provider = embedding.name(), "embedding provider ready");

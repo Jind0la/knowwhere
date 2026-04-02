@@ -37,5 +37,11 @@ default = []
 # Enable PostgreSQL-backed storage layer (requires DATABASE_URL env var at runtime)
 postgres-storage = []
 
+# Cloud embedding provider features (at most one should be enabled at a time)
+# When enabled, the corresponding provider is compiled in.
+# reqwest is always included (Ollama also needs it).
+openai-provider = []
+grok-provider = []
+
 [dev-dependencies]
 http-body-util = "0.1"

@@ -5,7 +5,9 @@ mod tests {
     use uuid::Uuid;
 
     use crate::embedding::provider::EmbeddingProvider;
-    use crate::embedding::{LocalOllamaProvider, create_provider, ProviderKind};
+    use crate::embedding::LocalOllamaProvider;
+    #[cfg(feature = "openai-provider")]
+    use crate::embedding::{create_provider, ProviderKind};
     use crate::memory::fractal_node::cosine_similarity;
     use crate::memory::FractalNode;
     use crate::multimodal::MultimodalData;
@@ -146,7 +148,8 @@ mod tests {
     // -- Embedding Tests (Woche 2) --
 
     #[tokio::test]
-    #[ignore = "requires OPENAI_API_KEY — run manually with: cargo test test_openai_embedding_generates_valid_vector -- --ignored"]
+    #[cfg(feature = "openai-provider")]
+    #[ignore = "requires OPENAI_API_KEY — run with: cargo test test_openai_embedding_generates_valid_vector --features openai-provider -- --ignored"]
     async fn test_openai_embedding_generates_valid_vector() {
         let provider = create_provider(
             ProviderKind::OpenAI,
@@ -167,6 +170,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(feature = "openai-provider")]
     #[ignore = "requires OPENAI_API_KEY"]
     async fn test_store_session_auto_embed() {
         let provider = create_provider(
@@ -229,6 +233,7 @@ mod tests {
     // -- SDK/API Integration Tests (Woche 4) --
 
     #[tokio::test]
+    #[cfg(feature = "openai-provider")]
     #[ignore = "requires OPENAI_API_KEY"]
     async fn test_sdk_store_session_retrieve_roundtrip() {
         let provider = create_provider(
@@ -454,15 +459,17 @@ mod tests {
     // -- Phase 1: Task-Prefix Tests --
 
     #[test]
-    #[ignore = "OpenAI provider does not use document prefixes"]
     fn test_document_prefix_applied() {
-        // OpenAI has no document prefix
+        let provider = LocalOllamaProvider::new();
+        // Ollama nomic uses "search_document: " prefix
+        assert_eq!(provider.document_prefix(), "search_document: ");
     }
 
     #[test]
-    #[ignore = "OpenAI provider does not use query prefixes"]
     fn test_query_prefix_applied() {
-        // OpenAI has no query prefix
+        let provider = LocalOllamaProvider::new();
+        // Ollama nomic uses "search_query: " prefix
+        assert_eq!(provider.query_prefix(), "search_query: ");
     }
 
     // -- Phase 3: BM25 Tests --

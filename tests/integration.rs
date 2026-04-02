@@ -9,22 +9,16 @@ use http_body_util::BodyExt;
 use tower::ServiceExt;
 
 use knowwhere_server::api::{auth, auth::ApiKey, routes};
-use knowwhere_server::embedding::{create_provider, ProviderKind};
+use knowwhere_server::embedding::{EmbeddingProvider, LocalOllamaProvider};
 use knowwhere_server::memory::{DreamMode, events::InMemoryEventStore};
 use knowwhere_server::memory::governance::GovernancePolicy;
-use knowwhere_server::storage::{MemoryStore, StorageBackend};
+use knowwhere_server::storage::MemoryStore;
 
-fn embedding_provider() -> Arc<dyn knowwhere_server::embedding::EmbeddingProvider> {
-    match std::env::var("OPENAI_API_KEY") {
-        Ok(key) => {
-            eprintln!("[test] Using OpenAI provider");
-            create_provider(ProviderKind::OpenAI, Some(key))
-        }
-        Err(_) => {
-            eprintln!("[test] OPENAI_API_KEY not set — falling back to LocalOllama");
-            create_provider(ProviderKind::LocalOllama, None)
-        }
-    }
+/// Creates the embedding provider for tests.
+/// Always uses LocalOllama — tests are designed and validated against Ollama embeddings.
+/// Cloud providers (OpenAI/Grok) require --features flags to compile.
+fn embedding_provider() -> Arc<dyn EmbeddingProvider> {
+    Arc::new(LocalOllamaProvider::new())
 }
 
 fn test_state() -> routes::AppState {

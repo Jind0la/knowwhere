@@ -60,13 +60,36 @@ pub async fn embed_query_batch(provider: &dyn EmbeddingProvider, texts: &[&str])
     }
 }
 
+// =============================================================================
+// Cloud Providers (OpenAI / Grok) — behind feature flags
+// =============================================================================
+// At most one of openai-provider or grok-provider should be enabled at a time.
+
+#[cfg(any(feature = "openai-provider", feature = "grok-provider"))]
+use serde::Deserialize as SharedDeserialize;
+
+#[cfg(any(feature = "openai-provider", feature = "grok-provider"))]
+#[derive(SharedDeserialize)]
+struct EmbeddingResponse {
+    data: Vec<EmbeddingData>,
+}
+
+#[cfg(any(feature = "openai-provider", feature = "grok-provider"))]
+#[derive(SharedDeserialize)]
+struct EmbeddingData {
+    index: usize,
+    embedding: Vec<f32>,
+}
+
 // -- Grok (xAI) --
 
+#[cfg(feature = "grok-provider")]
 pub struct GrokProvider {
     api_key: String,
     client: reqwest::Client,
 }
 
+#[cfg(feature = "grok-provider")]
 impl GrokProvider {
     pub fn new(api_key: String) -> Self {
         Self {
@@ -76,17 +99,7 @@ impl GrokProvider {
     }
 }
 
-#[derive(Deserialize)]
-struct EmbeddingResponse {
-    data: Vec<EmbeddingData>,
-}
-
-#[derive(Deserialize)]
-struct EmbeddingData {
-    index: usize,
-    embedding: Vec<f32>,
-}
-
+#[cfg(feature = "grok-provider")]
 #[async_trait]
 impl EmbeddingProvider for GrokProvider {
     async fn embed(&self, text: &str) -> Result<Vec<f32>> {
@@ -137,22 +150,19 @@ impl EmbeddingProvider for GrokProvider {
         Ok(data.into_iter().map(|d| d.embedding).collect())
     }
 
-    fn dimension(&self) -> usize {
-        1536
-    }
-
-    fn name(&self) -> &str {
-        "grok"
-    }
+    fn dimension(&self) -> usize { 1536 }
+    fn name(&self) -> &str { "grok" }
 }
 
 // -- OpenAI --
 
+#[cfg(feature = "openai-provider")]
 pub struct OpenAIProvider {
     api_key: String,
     client: reqwest::Client,
 }
 
+#[cfg(feature = "openai-provider")]
 impl OpenAIProvider {
     pub fn new(api_key: String) -> Self {
         Self {
@@ -162,6 +172,7 @@ impl OpenAIProvider {
     }
 }
 
+#[cfg(feature = "openai-provider")]
 #[async_trait]
 impl EmbeddingProvider for OpenAIProvider {
     async fn embed(&self, text: &str) -> Result<Vec<f32>> {
@@ -212,16 +223,13 @@ impl EmbeddingProvider for OpenAIProvider {
         Ok(data.into_iter().map(|d| d.embedding).collect())
     }
 
-    fn dimension(&self) -> usize {
-        1536
-    }
-
-    fn name(&self) -> &str {
-        "openai"
-    }
+    fn dimension(&self) -> usize { 1536 }
+    fn name(&self) -> &str { "openai" }
 }
 
-// -- Local Ollama (real HTTP embedding via nomic-embed-text) --
+// =============================================================================
+// Local Ollama (always available, the default and tested provider)
+// =============================================================================
 
 pub struct LocalOllamaProvider {
     client: reqwest::Client,
@@ -289,13 +297,8 @@ impl EmbeddingProvider for LocalOllamaProvider {
         try_join_all(futures).await
     }
 
-    fn dimension(&self) -> usize {
-        768
-    }
-
-    fn name(&self) -> &str {
-        "local-ollama"
-    }
+    fn dimension(&self) -> usize { 768 }
+    fn name(&self) -> &str { "local-ollama" }
 }
 
 #[cfg(test)]
