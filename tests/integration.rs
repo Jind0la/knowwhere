@@ -39,6 +39,7 @@ fn test_state() -> routes::AppState {
         vlm_worker: None,
         consolidation: None,
         frigate_dedup: DedupCache::new(),
+        frigate_webhook_secret: std::env::var("FRIGATE_WEBHOOK_SECRET").ok(),
     }
 }
 

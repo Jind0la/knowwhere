@@ -163,6 +163,8 @@ pub struct AppState {
     pub consolidation: Option<std::sync::Arc<crate::scheduler::ConsolidationScheduler>>,
     /// Dedup cache for Frigate webhook events.
     pub frigate_dedup: DedupCache,
+    /// Frigate webhook secret (read once at startup, not per-request).
+    pub frigate_webhook_secret: Option<String>,
 }
 
 impl std::fmt::Debug for AppState {
@@ -2576,14 +2578,14 @@ pub async fn webhook_frigate(
     headers: axum::http::HeaderMap,
     Json(payload): Json<FrigateWebhookEvent>,
 ) -> Result<Json<WebhookResponse>, (StatusCode, String)> {
-    // 1. Authenticate via secret
-    let webhook_secret = std::env::var("FRIGATE_WEBHOOK_SECRET").ok();
+    // 1. Authenticate via secret (read once at startup from AppState)
+    let webhook_secret = state.frigate_webhook_secret.as_deref();
     let header_secret = headers
         .get("X-Webhook-Secret")
         .and_then(|v| v.to_str().ok());
     let query_secret = params.get("secret").map(|s| s.as_str());
 
-    if !check_webhook_secret(webhook_secret.as_deref(), header_secret, query_secret) {
+    if !check_webhook_secret(webhook_secret, header_secret, query_secret) {
         tracing::warn!("frigate webhook: unauthorized (bad secret)");
         return Err((StatusCode::UNAUTHORIZED, "invalid or missing webhook secret".into()));
     }

@@ -257,6 +257,7 @@ async fn run() -> anyhow::Result<()> {
         vlm_worker,
         consolidation: consolidation_scheduler,
         frigate_dedup: DedupCache::new(),
+        frigate_webhook_secret: std::env::var("FRIGATE_WEBHOOK_SECRET").ok(),
     };
 
     let api_key = ApiKey(std::env::var("KNOWWHERE_API_KEY").ok());

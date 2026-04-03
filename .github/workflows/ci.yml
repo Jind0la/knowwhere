@@ -108,7 +108,7 @@ jobs:
           # Load ALL migration files automatically (sorts numerically)
           for f in $(find migrations -name '*.sql' | sort -V); do
             echo "Loading migration: $f"
-            docker exec -i kw-pg psql -U postgres -d kw < "$f" || echo "⚠️ Warning: migration $f had issues"
+            docker exec -i kw-pg psql -U postgres -d kw < "$f" || echo "Warning: migration $f had issues"
           done
 
       - name: Run integration tests
