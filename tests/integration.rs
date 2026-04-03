@@ -694,7 +694,8 @@ fn app_with_webhook() -> Router {
 
 #[tokio::test]
 async fn webhook_frigate_unauthorized_without_secret() {
-    // Set FRIGATE_WEBHOOK_SECRET env var
+    // Clean env FIRST to prevent leak from parallel tests
+    std::env::remove_var("FRIGATE_WEBHOOK_SECRET");
     std::env::set_var("FRIGATE_WEBHOOK_SECRET", "test-secret");
 
     let app = app_with_webhook();
@@ -785,6 +786,8 @@ async fn webhook_frigate_success_with_valid_secret() {
 
 #[tokio::test]
 async fn webhook_frigate_duplicate_event_returns_409() {
+    // Clean up env FIRST to prevent leak from parallel tests
+    std::env::remove_var("FRIGATE_WEBHOOK_SECRET");
     std::env::set_var("FRIGATE_WEBHOOK_SECRET", "test-secret");
 
     let app = app_with_webhook();
@@ -796,7 +799,10 @@ async fn webhook_frigate_duplicate_event_returns_409() {
     });
 
     // First request should succeed
+    // (Re-set env var to guard against parallel test env-leak)
+    std::env::set_var("FRIGATE_WEBHOOK_SECRET", "test-secret");
     let resp = app
+        .clone()
         .oneshot(
             Request::post("/webhooks/frigate")
                 .header("Content-Type", "application/json")
@@ -809,6 +815,7 @@ async fn webhook_frigate_duplicate_event_returns_409() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     // Second request with same event ID should return 409
+    std::env::set_var("FRIGATE_WEBHOOK_SECRET", "test-secret");
     let resp = app
         .oneshot(
             Request::post("/webhooks/frigate")
