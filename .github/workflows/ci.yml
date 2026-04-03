@@ -88,6 +88,7 @@ jobs:
 
       - name: Start PostgreSQL with pgvector
         run: |
+          docker rm -f kw-pg 2>/dev/null || true
           docker run -d --name kw-pg \
             -e POSTGRES_PASSWORD=kw \
             -e POSTGRES_DB=kw \
