@@ -14,6 +14,14 @@
 
 ---
 
+## Start Here (New to KnowWhere?)
+
+**5-Minute Setup:** See [docs/QUICKSTART.md](docs/QUICKSTART.md) — Docker, API key, OpenClaw plugin, and your first test query.
+
+**Beta Testers:** See [docs/BETA-README.md](docs/BETA-README.md) — known limitations, how to report issues, roadmap.
+
+---
+
 KnowWhere is a long-term memory backend for AI agents. It stores session data (full text + embeddings) and references external data sources via **pointers only** — never raw files. It features **hybrid retrieval** (semantic vector search + BM25 keyword search fused via Reciprocal Rank Fusion), fractal zooming through memory clusters, a "Dream Mode" for organic cluster formation, and pluggable embedding providers.
 
 ## How It Works
@@ -38,10 +46,10 @@ cd knowwhere
 cargo run
 ```
 
-Requires Rust 1.85+ via [rustup](https://rustup.rs) and [Ollama](https://ollama.ai) running locally with the `nomic-embed-text-v2-moe` model:
+Requires Rust 1.85+ via [rustup](https://rustup.rs) and [Ollama](https://ollama.ai) running locally with the `snowflake-arctic-embed2` model:
 
 ```bash
-ollama pull nomic-embed-text-v2-moe
+ollama pull snowflake-arctic-embed2
 ```
 
 Open [http://localhost:3737/swagger-ui/](http://localhost:3737/swagger-ui/) for the interactive API docs.
@@ -51,19 +59,19 @@ Open [http://localhost:3737/swagger-ui/](http://localhost:3737/swagger-ui/) for 
 ```bash
 # Default build (in-memory storage only)
 docker build -t knowwhere-server:local .
-docker run -d --name knowwhere -p 3000:3000 \
-  -e KNOWWHERE_API_KEY=your-key \
-  -e OPENAI_API_KEY=your-key \
-  -e KNOWWHERE_PORT=3000 \
+docker run -d --name knowwhere -p 3737:3737 \
+  -e KNOWWHERE_API_KEY=*** \
+  -e OPENAI_API_KEY=*** \
+  -e KNOWWHERE_PORT=3737 \
   -e RUST_LOG=info \
   knowwhere-server:local
 
 # With PostgreSQL support (postgres-storage feature)
 docker build --build-arg FEATURES=postgres-storage -t knowwhere-server:postgres .
-docker run -d --name knowwhere -p 3000:3000 \
-  -e KNOWWHERE_API_KEY=your-key \
-  -e DATABASE_URL=postgresql://user:pass@host:5432/knowwhere \
-  -e KNOWWHERE_PORT=3000 \
+docker run -d --name knowwhere -p 3737:3737 \
+  -e KNOWWHERE_API_KEY=*** \
+  -e DATABASE_URL=postgresql://user:***@host:5432/knowwhere \
+  -e KNOWWHERE_PORT=3737 \
   -e RUST_LOG=info \
   knowwhere-server:postgres
 ```
@@ -290,7 +298,7 @@ context = memory.get_context_string("When do we deploy?")
 | `KNOWWHERE_DATA_DIR` | No       | `./data`                 | Directory for persisted state (`state.json`)             |
 | `GROK_API_KEY`       | No       | *(unset)*                | Grok/xAI embedding provider API key                      |
 | `OPENAI_API_KEY`     | No       | *(unset)*                | OpenAI embedding provider API key                        |
-| `OLLAMA_MODEL`       | No       | `nomic-embed-text-v2-moe`| Local Ollama embedding model name                        |
+| `OLLAMA_MODEL`       | No       | `snowflake-arctic-embed2`| Local Ollama embedding model name                        |
 | `FRIGATE_URL`        | No       | *(unset)*                | Frigate NVR URL (enables camera event connector)         |
 | `RUST_LOG`           | No       | `info`                   | Tracing log level                                        |
 | `RATE_LIMIT`        | No       | *(unset)*                | Enable rate limiting (requires reverse proxy in front)    |
@@ -315,7 +323,7 @@ Public endpoints (no token): `/health`, `/swagger-ui/*`
 ## Architecture
 
 - **Backend:** Rust 1.85+ (Axum 0.8, Tokio, Tower)
-- **Embeddings:** Pluggable — Grok (xAI), OpenAI, local Ollama (`nomic-embed-text-v2-moe`)
+- **Embeddings:** Pluggable — Grok (xAI), OpenAI, local Ollama (`snowflake-arctic-embed2`)
 - **Vector Store:** USearch (cosine similarity, HNSW)
 - **Keyword Search:** BM25 with cached scorer (German-optimized)
 - **Fusion:** Reciprocal Rank Fusion (RRF, k=60)

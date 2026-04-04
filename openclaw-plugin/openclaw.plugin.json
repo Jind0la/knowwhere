@@ -41,6 +41,12 @@
         "minimum": 1,
         "maximum": 30,
         "description": "Import session messages from the last N days on gateway startup"
+      },
+      "minSessionSizeBytes": {
+        "type": "number",
+        "default": 200,
+        "minimum": 0,
+        "description": "Skip sessions smaller than this on import (filters out heartbeat/noise)"
       }
     }
   }

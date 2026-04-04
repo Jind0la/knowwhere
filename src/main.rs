@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 use axum::middleware;
 use axum::routing::{delete, get, post, put};
@@ -16,7 +17,7 @@ use utoipa_swagger_ui::SwaggerUi;
 #[cfg(feature = "postgres-storage")]
 use sqlx::postgres::PgPoolOptions;
 
-use knowwhere_server::api::{auth, auth::ApiKey, docs::ApiDoc, routes, webhooks::DedupCache};
+use knowwhere_server::api::{auth, auth::{ApiKey, AuthState}, docs::ApiDoc, routes, webhooks::DedupCache};
 use lazy_limit::{init_rate_limiter, Duration, RuleConfig};
 use knowwhere_server::connectors::frigate::FrigateConnector;
 use knowwhere_server::connectors::store_external_event;
@@ -260,7 +261,13 @@ async fn run() -> anyhow::Result<()> {
         frigate_webhook_secret: std::env::var("FRIGATE_WEBHOOK_SECRET").ok(),
     };
 
-    let api_key = ApiKey(std::env::var("KNOWWHERE_API_KEY").ok());
+    let api_key=ApiKey(std::env::var("KNOWWHERE_API_KEY").ok());
+
+    // Auth state: holds both the static admin key and registered beta tester keys
+    let auth_state = AuthState {
+        admin_key: Arc::new(RwLock::new(std::env::var("KNOWWHERE_API_KEY").ok())),
+        ..Default::default()
+    };
 
     let mut protected = Router::new()
         .route("/embed", post(routes::embed_text))
@@ -343,12 +350,16 @@ async fn run() -> anyhow::Result<()> {
         None => protected,
     }
     .route_layer(middleware::from_fn(auth::auth_middleware))
-    .layer(axum::Extension(api_key.clone()));
+    .layer(axum::Extension(auth_state.clone()));
 
     let app = Router::new()
         .route("/health", get(routes::health))
         .merge(protected)
-        .merge(auth::auth_router_with_state(state.clone()).layer(axum::Extension(api_key.clone())))
+        .merge(
+            auth::auth_router_with_state(state.clone())
+                .layer(axum::Extension(api_key.clone()))
+                .layer(axum::Extension(auth_state.clone()))
+        )
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
         .fallback_service(ServeDir::new("frontend"))
         .layer(CorsLayer::new().allow_origin(Any).allow_methods(Any).allow_headers(Any))
