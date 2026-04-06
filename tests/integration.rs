@@ -755,7 +755,7 @@ async fn postgres_api_key_fingerprint_lookup_and_rotation() {
 
     let new_key = format!("kw_{u}_rotated");
     let new_fp = stored_api_key_fingerprint(&new_key);
-    pg.replace_api_key(row.id, user_id, "default", &new_fp)
+    pg.replace_api_key(row.id, user_id, "default", &new_fp, None)
         .await
         .expect("rotate");
 
@@ -771,6 +771,209 @@ async fn postgres_api_key_fingerprint_lookup_and_rotation() {
         .is_some());
 
     pg.delete_auth_user(user_id).await.expect("cleanup user");
+}
+
+#[tokio::test]
+#[cfg(feature = "postgres-storage")]
+#[ignore = "requires DATABASE_URL — run: DATABASE_URL='postgresql://...' cargo test --features postgres-storage -- --include-ignored"]
+async fn postgres_retention_flow_decay_low_energy_and_compress() {
+    use knowwhere_server::memory::dream::energy_decay::EnergyDecayWorker;
+    use knowwhere_server::memory::types::{MemorySource, MemoryType};
+    use knowwhere_server::memory::FractalNode;
+    use knowwhere_server::storage::PostgresStore;
+    use std::env;
+
+    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set for this test");
+    let store = PostgresStore::connect(&database_url)
+        .await
+        .expect("failed to connect to PostgreSQL");
+
+    let node1 = FractalNode::new_typed(
+        Some("retention decay test 1".to_string()),
+        None,
+        vec![0.11; 768],
+        Default::default(),
+        MemoryType::Episodic,
+        MemorySource::Conversation,
+    );
+    let node2 = FractalNode::new_typed(
+        Some("retention decay test 2".to_string()),
+        None,
+        vec![0.12; 768],
+        Default::default(),
+        MemoryType::Episodic,
+        MemorySource::Conversation,
+    );
+
+    let id1 = store.insert(node1).await.expect("insert node1");
+    let id2 = store.insert(node2).await.expect("insert node2");
+    let ids = vec![id1, id2];
+
+    sqlx::query(
+        r#"
+        UPDATE memories
+        SET energy = 5,
+            last_energy_update = NOW() - INTERVAL '72 hours'
+        WHERE id = ANY($1)
+        "#,
+    )
+    .bind(&ids)
+    .execute(store.pool())
+    .await
+    .expect("seed low energy");
+
+    let worker = EnergyDecayWorker::with_defaults(store.pool());
+    let decay = worker.apply_decay().await.expect("apply decay");
+    assert!(decay.memories_marked_stale >= 2);
+
+    let low = worker
+        .find_low_energy_memories(10)
+        .await
+        .expect("list low energy");
+    let low_ids: std::collections::HashSet<_> = low.into_iter().map(|m| m.id).collect();
+    assert!(low_ids.contains(&id1));
+    assert!(low_ids.contains(&id2));
+
+    let compressed = worker.compress_cluster(&ids).await.expect("compress stale");
+    assert_eq!(compressed.superseded_ids.len(), 2);
+
+    let _ = store.delete(compressed.new_memory_id).await;
+    let _ = store.delete(id1).await;
+    let _ = store.delete(id2).await;
+}
+
+#[tokio::test]
+#[cfg(feature = "postgres-storage")]
+#[ignore = "requires DATABASE_URL — run: DATABASE_URL='postgresql://...' cargo test --features postgres-storage -- --include-ignored"]
+async fn postgres_auth_http_e2e_register_login_refresh_rotation() {
+    use knowwhere_server::storage::PostgresStore;
+    use serde_json::Value;
+    use std::env;
+    use uuid::Uuid;
+
+    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set for this test");
+    let pg = Arc::new(
+        PostgresStore::connect(&database_url)
+            .await
+            .expect("failed to connect to PostgreSQL"),
+    );
+    pg.run_auth_migrations().await.expect("auth migrations");
+
+    let user_suffix = Uuid::new_v4();
+    let username = format!("kw_e2e_{user_suffix}");
+    let email = format!("{username}@example.invalid");
+    let password = "s3cret-pass-123";
+
+    let state = test_state();
+    let auth_state = auth::AuthState {
+        admin_key: Arc::new(RwLock::new(None)),
+        pg_store: Some(pg.clone()),
+    };
+    let protected = Router::new()
+        .route("/dream/status", get(routes::dream_status))
+        .route_layer(middleware::from_fn(auth::auth_middleware));
+    let app = Router::new()
+        .route("/register", post(auth::register))
+        .route("/login", post(auth::login))
+        .route("/refresh", post(auth::refresh))
+        .merge(protected)
+        .layer(axum::Extension(auth_state))
+        .layer(axum::Extension(pg.clone()))
+        .with_state(state);
+
+    let register_body = serde_json::json!({
+        "username": username,
+        "email": email,
+        "password": password
+    });
+    let register_resp = app
+        .clone()
+        .oneshot(
+            Request::post("/register")
+                .header("content-type", "application/json")
+                .body(Body::from(register_body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(register_resp.status(), StatusCode::OK);
+
+    let login_body = serde_json::json!({
+        "username": username,
+        "password": password
+    });
+    let login_resp = app
+        .clone()
+        .oneshot(
+            Request::post("/login")
+                .header("content-type", "application/json")
+                .body(Body::from(login_body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(login_resp.status(), StatusCode::OK);
+    let login_json: Value =
+        serde_json::from_str(&body_string(login_resp.into_body()).await).unwrap();
+    let token = login_json["token"].as_str().unwrap().to_string();
+
+    let protected_ok = app
+        .clone()
+        .oneshot(
+            Request::get("/dream/status")
+                .header("authorization", format!("Bearer {}", &token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(protected_ok.status(), StatusCode::OK);
+
+    let refresh_body = serde_json::json!({ "token": token.clone() });
+    let refresh_resp = app
+        .clone()
+        .oneshot(
+            Request::post("/refresh")
+                .header("content-type", "application/json")
+                .body(Body::from(refresh_body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(refresh_resp.status(), StatusCode::OK);
+    let refresh_json: Value =
+        serde_json::from_str(&body_string(refresh_resp.into_body()).await).unwrap();
+    let refreshed = refresh_json["token"].as_str().unwrap().to_string();
+
+    let old_token_rejected = app
+        .clone()
+        .oneshot(
+            Request::get("/dream/status")
+                .header("authorization", format!("Bearer {}", token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(old_token_rejected.status(), StatusCode::UNAUTHORIZED);
+
+    let new_token_ok = app
+        .oneshot(
+            Request::get("/dream/status")
+                .header("authorization", format!("Bearer {}", refreshed))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(new_token_ok.status(), StatusCode::OK);
+
+    let user = pg
+        .get_user_by_username(&format!("kw_e2e_{user_suffix}"))
+        .await
+        .expect("lookup user")
+        .expect("user exists");
+    pg.delete_auth_user(user.id).await.expect("cleanup user");
 }
 
 fn app_with_webhook() -> Router {

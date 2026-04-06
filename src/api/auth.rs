@@ -7,6 +7,8 @@ use axum_governor::GovernorConfig;
 #[cfg(feature = "postgres-storage")]
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 #[cfg(feature = "postgres-storage")]
+use chrono::{Duration as ChronoDuration, Utc};
+#[cfg(feature = "postgres-storage")]
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -43,6 +45,16 @@ fn generate_api_key() -> String {
     let mut rng = rand::thread_rng();
     let bytes: Vec<u8> = (0..24).map(|_| rng.gen()).collect();
     format!("kw_{}", URL_SAFE_NO_PAD.encode(&bytes))
+}
+
+#[cfg(feature = "postgres-storage")]
+fn session_expires_at() -> chrono::DateTime<chrono::Utc> {
+    let ttl_days = std::env::var("AUTH_SESSION_TTL_DAYS")
+        .ok()
+        .and_then(|v| v.parse::<i64>().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(30);
+    Utc::now() + ChronoDuration::days(ttl_days)
 }
 
 /// Constant-time string comparison to prevent timing attacks.
@@ -182,15 +194,14 @@ pub async fn login(
     Extension(state): Extension<AuthState>,
     Json(req): Json<LoginRequest>,
 ) -> Result<Json<LoginResponse>, StatusCode> {
-    // Check admin key first
+    // Static admin key must be used directly as Bearer token (no /login minting).
     let admin_key = state.admin_key.read().await;
     if let Some(ref admin) = *admin_key {
         if secure_compare(&req.password, admin) && req.username == "admin" {
-            return Ok(Json(LoginResponse {
-                token: admin.clone(),
-                expires_at: "never".to_string(),
-                message: "authenticated as admin".to_string(),
-            }));
+            tracing::warn!(
+                "admin login via /login is disabled; use KNOWWHERE_API_KEY as Bearer token"
+            );
+            return Err(StatusCode::UNAUTHORIZED);
         }
     }
     drop(admin_key);
@@ -216,9 +227,10 @@ pub async fn login(
     // For beta: the "session token" is the API key itself.
     let api_key = generate_api_key();
     let fingerprint = stored_api_key_fingerprint(&api_key);
+    let expires_at = session_expires_at();
 
     pg_store
-        .create_api_key(user.id, &fingerprint, "session")
+        .create_api_key_with_expiry(user.id, &fingerprint, "session", Some(expires_at))
         .await
         .map_err(|e| {
             tracing::error!("failed to create session API key: {}", e);
@@ -229,7 +241,7 @@ pub async fn login(
 
     Ok(Json(LoginResponse {
         token: api_key,
-        expires_at: "never".to_string(),
+        expires_at: expires_at.to_rfc3339(),
         message: "authenticated".to_string(),
     }))
 }
@@ -259,8 +271,9 @@ pub async fn refresh(
     let new_key = generate_api_key();
     let new_fp = stored_api_key_fingerprint(&new_key);
 
+    let expires_at = session_expires_at();
     pg_store
-        .replace_api_key(row.id, row.user_id, &row.name, &new_fp)
+        .replace_api_key(row.id, row.user_id, &row.name, &new_fp, Some(expires_at))
         .await
         .map_err(|e| {
             tracing::error!("refresh: key rotation failed: {e}");

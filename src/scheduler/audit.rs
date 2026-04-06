@@ -11,6 +11,7 @@
 
 use std::sync::Arc;
 
+#[cfg(feature = "postgres-storage")]
 use anyhow::Result;
 use tokio::sync::RwLock;
 use tokio::time::{interval, Duration, Instant};
@@ -24,7 +25,7 @@ use uuid::Uuid;
 
 use crate::memory::types::MemoryStatus;
 use crate::scheduler::SchedulerConfig;
-use crate::storage::{MemoryStore, StorageBackend, UpdateOperation};
+use crate::storage::{StorageBackend, UpdateOperation};
 
 /// Audit Scheduler state.
 ///
@@ -33,7 +34,6 @@ use crate::storage::{MemoryStore, StorageBackend, UpdateOperation};
 pub struct AuditScheduler {
     store: Arc<dyn StorageBackend>,
     config: SchedulerConfig,
-    #[cfg(feature = "postgres-storage")]
     #[cfg(feature = "postgres-storage")]
     trajectory_pool: Option<Arc<PgPool>>,
 
@@ -167,7 +167,30 @@ impl AuditScheduler {
         );
     }
 
-    /// Apply energy decay to all active in-memory nodes.
+    /// Apply energy decay.
+    ///
+    /// - postgres-storage: use EnergyDecayWorker (energy model)
+    /// - non-postgres or missing pool: fallback to weight-based decay
+    #[cfg(feature = "postgres-storage")]
+    async fn apply_energy_decay(&self) -> usize {
+        if let Some(ref pool) = self.trajectory_pool {
+            let worker = crate::memory::dream::energy_decay::EnergyDecayWorker::with_defaults(pool);
+            match worker.apply_decay().await {
+                Ok(result) => return result.memories_updated,
+                Err(e) => {
+                    tracing::warn!(error = %e, "postgres energy decay failed, falling back to weight decay")
+                }
+            }
+        }
+        self.apply_weight_decay_fallback().await
+    }
+
+    #[cfg(not(feature = "postgres-storage"))]
+    async fn apply_energy_decay(&self) -> usize {
+        self.apply_weight_decay_fallback().await
+    }
+
+    /// Apply weight-based decay to all active in-memory nodes.
     ///
     /// Uses a simplified Ebbinghaus-inspired model:
     /// - Each active memory loses `DECAY_RATE` weight per hour since last update
@@ -175,7 +198,7 @@ impl AuditScheduler {
     /// - Memories that hit very low weight (< 0.1) are marked Stale
     const DECAY_RATE: f64 = 0.01; // 1% weight loss per call (~hourly)
 
-    async fn apply_energy_decay(&self) -> usize {
+    async fn apply_weight_decay_fallback(&self) -> usize {
         let all_nodes = match self.store.list_all().await {
             Ok(nodes) => nodes,
             Err(e) => {

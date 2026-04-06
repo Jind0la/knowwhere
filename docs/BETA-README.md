@@ -34,7 +34,7 @@ These are known gaps — some are on the roadmap, others need your feedback:
 
 1. **No web UI for memory management** — Currently only API + Swagger UI. A dashboard is planned.
 
-2. **Auth depends on deployment mode** — Without `postgres-storage`, only static `KNOWWHERE_API_KEY` is available. With `postgres-storage` + `DATABASE_URL`, `/register` + `/login` + `/refresh` are enabled.
+2. **Auth depends on deployment mode** — Without `postgres-storage`, only static `KNOWWHERE_API_KEY` is available. With `postgres-storage` + `DATABASE_URL`, `/register` + `/login` + `/refresh` are enabled with session TTL (`AUTH_SESSION_TTL_DAYS`, default 30).
 
 3. **Embedding provider lock-in** — Switching between Ollama/OpenAI/Grok requires restarting the server.
 
@@ -42,20 +42,22 @@ These are known gaps — some are on the roadmap, others need your feedback:
 
 5. **Session import is selective** — The OpenClaw plugin only imports the last 7 days by default. Full historical import is manual.
 
-6. **Rate limiting needs reverse proxy** — `RATE_LIMIT=1` requires nginx or Cloudflare in front.
+6. **Rate limiting needs reverse proxy** — set `RATE_LIMIT_MODE=proxy` only behind nginx/Cloudflare (or equivalent) with client IP headers.
 
 7. **Docker: no default API key** — If you don't set `KNOWWHERE_API_KEY`, the server runs without auth (anyone can access).
 
-8. **Retention/GC is policy-driven, not automatic by default** — Low-energy memories are surfaced via `/energy/low` and can be processed via `/energy/decay/apply` and `/energy/compress`. Automatic deletion is not enabled in beta by default.
+8. **Retention/GC is policy-driven, not hard-delete** — Energy decay moves low-energy memories into `stale` tier; operators can review via `/energy/low` and consolidate via `/energy/compress`. Automatic deletion is not enabled in beta.
 
 ### Beta Operations Policy (recommended)
 
-- **Auth:** Always set `KNOWWHERE_API_KEY` for self-hosted beta. Use `/register`/`/login` only when PostgreSQL mode is enabled.
-- **Rate limit:** Set `RATE_LIMIT=1` only when running behind a reverse proxy that provides client IP headers.
+- **Auth:** Always set `KNOWWHERE_API_KEY` for self-hosted beta. Use `/register`/`/login` only when PostgreSQL mode is enabled. Admin access uses `KNOWWHERE_API_KEY` directly (not `/login`).
+- **Startup safety:** Set `AUTH_STRICT_MIGRATIONS=true` in production-like environments to fail startup on auth migration errors.
+- **Rate limit:** Set `RATE_LIMIT_MODE=proxy` only when running behind a reverse proxy that provides `X-Forwarded-For` or `X-Real-IP`.
 - **Retention/GC MVP:** Run a scheduled maintenance job:
-  1) `POST /energy/decay/apply`
+  1) `POST /energy/decay`
   2) `GET /energy/low`
-  3) `POST /energy/compress` for selected clusters
+  3) `POST /energy/compress` for selected stale/low-energy clusters
+  - Erwartetes Verhalten: `energy/decay` markiert niedrige Energie als `stale`, `energy/low` zeigt `active` + `stale` Kandidaten, `energy/compress` verdichtet ausgewählte Cluster (kein Hard-Delete).
 
 ---
 

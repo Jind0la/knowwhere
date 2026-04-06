@@ -132,7 +132,7 @@ A background process that periodically clusters related nodes and strengthens co
 |--------|------|-------------|
 | POST | `/memories/{id}/energy/boost` | Boost memory energy (Ebbinghaus access boost) |
 | GET | `/energy/low` | List low-energy memories needing decay |
-| POST | `/energy/decay/apply` | Manually trigger energy decay on all memories |
+| POST | `/energy/decay` | Manually trigger energy decay on all memories |
 | POST | `/energy/compress` | Compress memory cluster via VLM |
 | POST | `/memories/{id}/compact` | Trigger tiered compaction for a memory |
 
@@ -302,8 +302,11 @@ context = memory.get_context_string("When do we deploy?")
 | `OLLAMA_MODEL`       | No       | `snowflake-arctic-embed2`| Local Ollama embedding model name                        |
 | `FRIGATE_URL`        | No       | *(unset)*                | Frigate NVR URL (enables camera event connector)         |
 | `RUST_LOG`           | No       | `info`                   | Tracing log level                                        |
-| `RATE_LIMIT`        | No       | *(unset)*                | Enable rate limiting (requires reverse proxy in front)    |
+| `RATE_LIMIT_MODE`   | No       | `off`                    | `off` or `proxy` (proxy requires `X-Forwarded-For` / `X-Real-IP`) |
+| `RATE_LIMIT`        | No       | *(unset)*                | Legacy fallback: if set, behaves like `RATE_LIMIT_MODE=proxy` |
 | `DATABASE_URL`      | No       | *(unset)*                | PostgreSQL connection (enables postgres-storage feature)   |
+| `AUTH_SESSION_TTL_DAYS` | No   | `30`                     | Session token TTL for `/login` and `/refresh` in PostgreSQL mode |
+| `AUTH_STRICT_MIGRATIONS` | No | `false`                  | If `true`/`1`, startup fails when auth migrations fail |
 
 If neither `GROK_API_KEY` nor `OPENAI_API_KEY` is set, KnowWhere falls back to local Ollama.
 
@@ -325,6 +328,9 @@ KnowWhere supports two beta auth modes:
 
 1. **Static admin key (default/self-hosted):** set `KNOWWHERE_API_KEY` and use it as Bearer token.
 2. **Self-service users (PostgreSQL mode):** `/register`, `/login`, `/refresh` are enabled only with `postgres-storage` + `DATABASE_URL`.
+   - `/login` returns a session token with finite TTL (`AUTH_SESSION_TTL_DAYS`, default 30).
+   - `/refresh` rotates the session token and re-applies TTL.
+   - `admin` login via `/login` is intentionally disabled; use `KNOWWHERE_API_KEY` directly as Bearer token.
 
 If `postgres-storage` is not enabled, auth routes return `503`.
 
@@ -414,7 +420,7 @@ Note: The `postgres-storage` feature compiles offline using the query cache in `
 
 ## Known Issues
 
-- **Rate Limiting**: Requires a reverse proxy (nginx, Cloudflare) that sets `X-Forwarded-For` headers. Enable with `RATE_LIMIT=1` when behind a proxy.
+- **Rate Limiting**: Use `RATE_LIMIT_MODE=proxy` only behind a reverse proxy (nginx, Cloudflare) that sets `X-Forwarded-For` or `X-Real-IP`. `RATE_LIMIT=1` remains as backward-compatible fallback.
 - **Docker postgres-storage**: The default Docker image does not include `postgres-storage` feature. Build with `docker build --build-arg FEATURES=postgres-storage .` or use the CI-built images for PostgreSQL support.
 
 ## Resolved Issues
