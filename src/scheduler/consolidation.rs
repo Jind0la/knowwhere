@@ -76,12 +76,16 @@ impl ConsolidationScheduler {
 
             // Run immediately on startup, then every interval
             scheduler_for_task.run().await;
-            scheduler_for_task.cycle_count.fetch_add(1, Ordering::Relaxed);
+            scheduler_for_task
+                .cycle_count
+                .fetch_add(1, Ordering::Relaxed);
 
             loop {
                 ticker.tick().await;
                 scheduler_for_task.run().await;
-                scheduler_for_task.cycle_count.fetch_add(1, Ordering::Relaxed);
+                scheduler_for_task
+                    .cycle_count
+                    .fetch_add(1, Ordering::Relaxed);
             }
         });
 
@@ -160,10 +164,7 @@ impl ConsolidationScheduler {
     /// - Have non-empty content or original_pointer
     ///
     /// Sorted by age (oldest first), capped at `limit`.
-    async fn find_candidates(
-        &self,
-        _limit: usize,
-    ) -> Vec<(Uuid, DateTime<Utc>)> {
+    async fn find_candidates(&self, _limit: usize) -> Vec<(Uuid, DateTime<Utc>)> {
         let all_nodes = match self.store.list_all().await {
             Ok(nodes) => nodes,
             Err(e) => {
@@ -189,7 +190,11 @@ impl ConsolidationScheduler {
                 continue;
             }
             // Must have content to summarize
-            let has_content = node.content.as_ref().map(|c| !c.is_empty()).unwrap_or(false)
+            let has_content = node
+                .content
+                .as_ref()
+                .map(|c| !c.is_empty())
+                .unwrap_or(false)
                 || node.original_pointer.is_some();
             if !has_content {
                 continue;

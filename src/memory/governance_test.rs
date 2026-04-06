@@ -97,7 +97,10 @@ fn test_governance_low_confidence() {
         "Low-confidence should reduce score multiplier"
     );
     assert!(
-        result.issues.iter().any(|i| format!("{:?}", i.issue_type).contains("LowConfidence")),
+        result
+            .issues
+            .iter()
+            .any(|i| format!("{:?}", i.issue_type).contains("LowConfidence")),
         "Should have LowConfidence issue, got: {:?}",
         result.issues
     );
@@ -121,16 +124,16 @@ fn test_governance_superseded_blocks() {
 
     let result = validator.validate(&cand);
 
-    assert!(
-        !result.passed,
-        "Superseded memory should fail governance"
-    );
+    assert!(!result.passed, "Superseded memory should fail governance");
     assert_eq!(
         result.score_multiplier, 0.0,
         "Superseded should get hard block (multiplier = 0.0)"
     );
     assert!(
-        result.issues.iter().any(|i| format!("{:?}", i.issue_type).contains("Superseded")),
+        result
+            .issues
+            .iter()
+            .any(|i| format!("{:?}", i.issue_type).contains("Superseded")),
         "Should have Superseded issue, got: {:?}",
         result.issues
     );
@@ -162,7 +165,10 @@ fn test_governance_restricted_blocks() {
         "Restricted should get hard block"
     );
     assert!(
-        result.issues.iter().any(|i| format!("{:?}", i.issue_type).contains("SensitivityBlocked")),
+        result
+            .issues
+            .iter()
+            .any(|i| format!("{:?}", i.issue_type).contains("SensitivityBlocked")),
         "Should have SensitivityBlocked issue"
     );
 }

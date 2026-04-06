@@ -8,7 +8,7 @@ services:
       - "3737:3737"
     environment:
       - RUST_LOG=info
-      - KNOWWHERE_API_KEY=${KNOWLEDGE_API_KEY:-kw_admin_default_change_me}
+      - KNOWWHERE_API_KEY=${KNOWWHERE_API_KEY:-kw_admin_default_change_me}
       - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-kw}@kw-postgres:5432/kw
       - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434}
       - OLLAMA_MODEL=${OLLAMA_MODEL:-snowflake-arctic-embed2}

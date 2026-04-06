@@ -7,7 +7,9 @@ use serde_json::Value;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::memory::types::{ConflictState, ContextTier, MemorySource, MemoryStatus, MemoryType, Sensitivity};
+use crate::memory::types::{
+    ConflictState, ContextTier, MemorySource, MemoryStatus, MemoryType, Sensitivity,
+};
 use crate::multimodal::MultimodalData;
 
 pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
@@ -121,7 +123,11 @@ fn default_importance() -> i32 {
 
 impl FractalNode {
     /// Session-Knoten: speichert den vollen Text + Embedding.
-    pub fn new_session(content: String, vector: Vec<f32>, metadata: HashMap<String, Value>) -> Self {
+    pub fn new_session(
+        content: String,
+        vector: Vec<f32>,
+        metadata: HashMap<String, Value>,
+    ) -> Self {
         let now = Utc::now();
         Self {
             id: Uuid::new_v4(),
@@ -295,14 +301,14 @@ impl FractalNode {
     ) -> Vec<(f32, &'a FractalNode)> {
         let sim = cosine_similarity(&self.vector, query_vector);
         let mut results = vec![(sim, self)];
-        
+
         if max_depth > 0 && sim >= pruning_threshold {
             if let Some(best) = self.find_best_child(query_vector) {
                 results.extend(best.zoom_retrieve(query_vector, max_depth - 1, pruning_threshold));
             }
         }
         // Wenn sim < pruning_threshold: Kinder werden NICHT durchsucht → PRUNED
-        
+
         results
     }
 

@@ -6,9 +6,9 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use anyhow::Result;
+use bm25::{Embedder, EmbedderBuilder, Language, Scorer};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
-use bm25::{Embedder, EmbedderBuilder, Language, Scorer};
 use usearch::{new_index, Index, IndexOptions, MetricKind, ScalarKind};
 use uuid::Uuid;
 
@@ -23,7 +23,6 @@ struct CachedBm25 {
     scorer: Scorer<Uuid>,
 }
 
-
 /// Wrapper for thread-safe access to USearch Index.
 struct SendableIndex(Index);
 unsafe impl Send for SendableIndex {}
@@ -35,15 +34,11 @@ impl SendableIndex {
     }
 
     fn reserve(&self, capacity: usize) -> Result<()> {
-        self.0
-            .reserve(capacity)
-            .map_err(|e| anyhow::anyhow!("{e}"))
+        self.0.reserve(capacity).map_err(|e| anyhow::anyhow!("{e}"))
     }
 
     fn add(&self, key: u64, vector: &[f32]) -> Result<()> {
-        self.0
-            .add(key, vector)
-            .map_err(|e| anyhow::anyhow!("{e}"))
+        self.0.add(key, vector).map_err(|e| anyhow::anyhow!("{e}"))
     }
 
     fn search(&self, vector: &[f32], count: usize) -> Vec<u64> {
@@ -117,10 +112,7 @@ impl StorageBackend for MemoryStore {
     }
 
     async fn hybrid_retrieve(&self, query: &HybridQuery) -> anyhow::Result<Vec<ScoredNode>> {
-        let vector = query
-            .query_vector
-            .as_deref()
-            .unwrap_or(&[]);
+        let vector = query.query_vector.as_deref().unwrap_or(&[]);
         let results = self
             .hybrid_retrieve(
                 query.query_text.as_deref(),
@@ -165,7 +157,11 @@ impl StorageBackend for MemoryStore {
             .collect())
     }
 
-    async fn search_bm25(&self, query_text: &str, top_k: usize) -> anyhow::Result<Vec<(Uuid, f32)>> {
+    async fn search_bm25(
+        &self,
+        query_text: &str,
+        top_k: usize,
+    ) -> anyhow::Result<Vec<(Uuid, f32)>> {
         Ok(self.search_bm25(query_text, top_k).await)
     }
 
@@ -290,17 +286,25 @@ impl MemoryStore {
         let corpus = if state.bm25_corpus.is_empty() {
             let mut rebuilt = Vec::new();
             for (id, node) in &state.nodes {
-                let text = node.content.as_deref()
+                let text = node
+                    .content
+                    .as_deref()
                     .or(node.original_pointer.as_deref())
                     .unwrap_or("");
                 if !text.is_empty() {
                     rebuilt.push((*id, text.to_string()));
                 }
             }
-            tracing::info!(count = rebuilt.len(), "BM25 corpus rebuilt from nodes (empty persisted state)");
+            tracing::info!(
+                count = rebuilt.len(),
+                "BM25 corpus rebuilt from nodes (empty persisted state)"
+            );
             rebuilt
         } else {
-            tracing::info!(count = state.bm25_corpus.len(), "BM25 corpus loaded from persisted state");
+            tracing::info!(
+                count = state.bm25_corpus.len(),
+                "BM25 corpus loaded from persisted state"
+            );
             state.bm25_corpus
         };
         self.bm25_corpus = Arc::new(RwLock::new(corpus));
@@ -434,11 +438,16 @@ impl MemoryStore {
             }
         }
 
-        let bm25_text = node.content.as_deref()
+        let bm25_text = node
+            .content
+            .as_deref()
             .or(node.original_pointer.as_deref())
             .unwrap_or("");
         if !bm25_text.is_empty() {
-            self.bm25_corpus.write().await.push((id, bm25_text.to_string()));
+            self.bm25_corpus
+                .write()
+                .await
+                .push((id, bm25_text.to_string()));
             *self.bm25_dirty.lock().unwrap() = true;
         }
 
@@ -472,7 +481,9 @@ impl MemoryStore {
             let nodes = self.nodes.read().await;
             nodes
                 .values()
-                .filter(|n| !n.vector.is_empty() && n.vector.iter().all(|&v| (v - 0.1).abs() < 1e-6))
+                .filter(|n| {
+                    !n.vector.is_empty() && n.vector.iter().all(|&v| (v - 0.1).abs() < 1e-6)
+                })
                 .map(|n| n.id)
                 .collect()
         };
@@ -535,7 +546,9 @@ impl MemoryStore {
         drop(nodes);
 
         {
-            let guard = self.usearch_index.lock()
+            let guard = self
+                .usearch_index
+                .lock()
                 .map_err(|_| anyhow::anyhow!("usearch mutex poisoned"))?;
             if let Some(ref index) = *guard {
                 let _ = index.add(key, &new_vector);
@@ -548,7 +561,8 @@ impl MemoryStore {
 
     fn rebuild_bm25_cache(&self, corpus: &[(Uuid, String)]) {
         let texts: Vec<&str> = corpus.iter().map(|(_, t)| t.as_str()).collect();
-        let embedder: Embedder = EmbedderBuilder::with_fit_to_corpus(Language::German, &texts).build();
+        let embedder: Embedder =
+            EmbedderBuilder::with_fit_to_corpus(Language::German, &texts).build();
         let mut scorer: Scorer<Uuid> = Scorer::new();
         for (id, text) in corpus.iter() {
             scorer.upsert(id, embedder.embed(text));
@@ -578,7 +592,8 @@ impl MemoryStore {
         let query_embedding = cached.embedder.embed(query);
         let matches = cached.scorer.matches(&query_embedding);
 
-        matches.into_iter()
+        matches
+            .into_iter()
             .take(top_k)
             .map(|m| (m.id, m.score))
             .collect()
@@ -607,11 +622,7 @@ impl MemoryStore {
     /// that appear in retrieval results are considered recently used and get their
     /// energy increased so they don't decay away prematurely.
     #[cfg(feature = "postgres-storage")]
-    async fn boost_energy_for_retrieval(
-        pool: &sqlx::PgPool,
-        result_ids: &[Uuid],
-        boost: i32,
-    ) {
+    async fn boost_energy_for_retrieval(pool: &sqlx::PgPool, result_ids: &[Uuid], boost: i32) {
         use crate::memory::dream::energy_decay::EnergyDecayWorker;
         let worker = EnergyDecayWorker::with_defaults(pool);
         for id in result_ids {
@@ -627,7 +638,9 @@ impl MemoryStore {
         query_vector: &[f32],
         top_k: usize,
         max_depth: usize,
-        #[cfg(feature = "postgres-storage")] trajectory_store: Option<&'a crate::storage::TrajectoryStore<'_>>,
+        #[cfg(feature = "postgres-storage")] trajectory_store: Option<
+            &'a crate::storage::TrajectoryStore<'_>,
+        >,
     ) -> Vec<(f32, FractalNode)> {
         let start = Instant::now();
 
@@ -639,15 +652,19 @@ impl MemoryStore {
             )
         });
 
-        let vector_results = self.retrieve_fractal(
-            query_vector, 
-            top_k * 2, 
-            max_depth,
-            #[cfg(feature = "postgres-storage")]
-            crate::memory::fractal_node::FractalNode::ZOOM_PRUNING_THRESHOLD,
-            #[cfg(feature = "postgres-storage")]
-            trajectory.as_mut().map(|t| t as &mut crate::storage::trajectory::RetrievalTrajectory),
-        ).await;
+        let vector_results = self
+            .retrieve_fractal(
+                query_vector,
+                top_k * 2,
+                max_depth,
+                #[cfg(feature = "postgres-storage")]
+                crate::memory::fractal_node::FractalNode::ZOOM_PRUNING_THRESHOLD,
+                #[cfg(feature = "postgres-storage")]
+                trajectory
+                    .as_mut()
+                    .map(|t| t as &mut crate::storage::trajectory::RetrievalTrajectory),
+            )
+            .await;
 
         // Note: trajectory logging is now done inside retrieve_fractal
 
@@ -659,14 +676,15 @@ impl MemoryStore {
                 let r = self.search_bm25(q, top_k * 2).await;
                 eprintln!("DEBUG hybrid: bm25_results={}", r.len());
                 r
-            },
+            }
             _ => vec![],
         };
 
         if bm25_results.is_empty() {
             #[cfg(feature = "postgres-storage")]
             let total_candidates = vector_results.len();
-            let results: Vec<_> = vector_results.into_iter()
+            let results: Vec<_> = vector_results
+                .into_iter()
                 .take(top_k)
                 .filter_map(|n| {
                     let sim = crate::memory::cosine_similarity(&n.vector, query_vector);
@@ -705,7 +723,8 @@ impl MemoryStore {
         let fused = Self::rrf_fuse(&vector_ids, &bm25_results, 60.0);
 
         let nodes = self.nodes.read().await;
-        let results: Vec<_> = fused.into_iter()
+        let results: Vec<_> = fused
+            .into_iter()
             .take(top_k)
             .filter_map(|(id, score)| nodes.get(&id).cloned().map(|n| (score, n)))
             .collect();
@@ -745,11 +764,13 @@ impl MemoryStore {
         top_k: usize,
         max_depth: usize,
         #[cfg(feature = "postgres-storage")] pruning_threshold: f32,
-        #[cfg(feature = "postgres-storage")] trajectory: Option<&mut crate::storage::trajectory::RetrievalTrajectory>,
+        #[cfg(feature = "postgres-storage")] trajectory: Option<
+            &mut crate::storage::trajectory::RetrievalTrajectory,
+        >,
     ) -> Vec<FractalNode> {
         #[cfg(not(feature = "postgres-storage"))]
         let pruning_threshold = crate::memory::fractal_node::FractalNode::ZOOM_PRUNING_THRESHOLD;
-        
+
         let node_count = self.nodes.read().await.len();
         let has_index = self
             .usearch_index
@@ -784,7 +805,7 @@ impl MemoryStore {
                     .flat_map(|node| node.zoom_retrieve(query_vector, max_depth, pruning_threshold))
                     .collect();
                 scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(Ordering::Equal));
-                
+
                 // Log initial search steps if trajectory is provided
                 #[cfg(feature = "postgres-storage")]
                 if let Some(traj) = trajectory {
@@ -792,7 +813,7 @@ impl MemoryStore {
                         traj.log_search(node.id, *score, "usearch_candidate");
                     }
                 }
-                
+
                 return scored
                     .into_iter()
                     .take(top_k)
@@ -806,7 +827,7 @@ impl MemoryStore {
         if let Some(traj) = trajectory {
             traj.log_info("fallback: linear scan");
         }
-        
+
         let nodes = self.nodes.read().await;
         let mut scored: Vec<(f32, &FractalNode)> = nodes
             .values()

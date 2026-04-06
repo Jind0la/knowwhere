@@ -179,7 +179,9 @@ impl AuditEngine {
     }
 
     fn check_staleness(&self, candidate: &GovernanceCandidate) -> Option<AuditFinding> {
-        let threshold = candidate.memory_type.suggested_refresh_days()
+        let threshold = candidate
+            .memory_type
+            .suggested_refresh_days()
             .unwrap_or(self.config.stale_threshold_days);
 
         let age = (Utc::now() - candidate.created_at).num_days() as u32;
@@ -233,10 +235,7 @@ impl AuditEngine {
                     memory_id: candidate.id,
                     finding_type: AuditFindingType::Orphaned,
                     severity: Severity::Info,
-                    description: format!(
-                        "Memory not accessed in {} days",
-                        days_since
-                    ),
+                    description: format!("Memory not accessed in {} days", days_since),
                     suggested_action: Some(
                         "Consider archiving or re-evaluating relevance".to_string(),
                     ),
@@ -249,9 +248,7 @@ impl AuditEngine {
                 finding_type: AuditFindingType::Orphaned,
                 severity: Severity::Info,
                 description: "Memory has never been accessed".to_string(),
-                suggested_action: Some(
-                    "Check if this memory is still relevant".to_string(),
-                ),
+                suggested_action: Some("Check if this memory is still relevant".to_string()),
             });
         }
         None
@@ -267,7 +264,8 @@ impl AuditEngine {
         let superseded_memories = store.get_superseded_memories().await?;
 
         for memory in superseded_memories {
-            let chain = self.follow_supersession_chain(store, memory.id, &mut Vec::new(), 0)
+            let chain = self
+                .follow_supersession_chain(store, memory.id, &mut Vec::new(), 0)
                 .await?;
 
             if chain.len() > self.config.max_supersession_depth {
@@ -321,8 +319,13 @@ impl AuditEngine {
         store: &M,
         findings: &[AuditFinding],
     ) -> Result<()> {
-        for finding in findings.iter().filter(|f| f.finding_type == AuditFindingType::StaleMarked) {
-            store.update_status(finding.memory_id, MemoryStatus::Stale).await?;
+        for finding in findings
+            .iter()
+            .filter(|f| f.finding_type == AuditFindingType::StaleMarked)
+        {
+            store
+                .update_status(finding.memory_id, MemoryStatus::Stale)
+                .await?;
         }
         Ok(())
     }

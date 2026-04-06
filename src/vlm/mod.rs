@@ -22,9 +22,9 @@ use uuid::Uuid;
 
 use crate::embedding::{embed_document, EmbeddingProvider};
 use crate::memory::types::{ContextTier, MemorySource, MemoryType};
-use std::collections::HashMap;
 use crate::memory::FractalNode;
 use crate::storage::{StorageBackend, UpdateOperation};
+use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------
 // Public API — Enqueue a summarization job
@@ -190,7 +190,12 @@ pub enum VlmModel {
 impl VlmModel {
     /// All models in fallback order.
     pub fn fallback_chain() -> [Self; 4] {
-        [Self::Gpt5Nano, Self::Gpt4oMini, Self::Grok4Fast, Self::Ollama]
+        [
+            Self::Gpt5Nano,
+            Self::Gpt4oMini,
+            Self::Grok4Fast,
+            Self::Ollama,
+        ]
     }
 
     /// API model identifier string.
@@ -259,8 +264,8 @@ impl VlmConfig {
 
     /// Whether we have at least one API key configured.
     pub fn is_configured(&self) -> bool {
-        self.openai_api_key.is_some() 
-            || self.grok_api_key.is_some() 
+        self.openai_api_key.is_some()
+            || self.grok_api_key.is_some()
             || self.ollama_vlm_model.is_some()
     }
 }
@@ -287,7 +292,11 @@ impl std::fmt::Display for VlmError {
             VlmError::Http(e) => write!(f, "HTTP request failed: {}", e),
             VlmError::Api(s) => write!(f, "API error: {}", s),
             VlmError::NoApiKey(m) => write!(f, "API key not configured for {}", m),
-            VlmError::RateLimited(m) => write!(f, "Rate limited (429) on {}, no more fallbacks available", m),
+            VlmError::RateLimited(m) => write!(
+                f,
+                "Rate limited (429) on {}, no more fallbacks available",
+                m
+            ),
             VlmError::Timeout(s, m) => write!(f, "Timeout after {}s on {}", s, m),
             VlmError::NoResponse(m) => write!(f, "No valid response from {}", m),
             VlmError::AllModelsFailed(errs) => write!(f, "All models failed: {}", errs.join("; ")),
@@ -344,7 +353,10 @@ impl VlmClient {
         let mut errors = Vec::new();
 
         for model in VlmModel::fallback_chain() {
-            match self.call_model(prompt, context.clone(), model, config).await {
+            match self
+                .call_model(prompt, context.clone(), model, config)
+                .await
+            {
                 Ok(summary) => return Ok(summary),
                 Err(e) => {
                     let msg = format!("{}: {}", model.name(), e);
@@ -372,18 +384,24 @@ impl VlmClient {
         config: &VlmConfig,
     ) -> Result<VlmSummary, VlmError> {
         // For Ollama, no API key needed — use model from config or default
-        let ollama_model = config.ollama_vlm_model.clone().unwrap_or_else(|| "llama3.2".to_string());
-        let ollama_url = config.ollama_url.clone().unwrap_or_else(|| "http://localhost:11434".to_string());
+        let ollama_model = config
+            .ollama_vlm_model
+            .clone()
+            .unwrap_or_else(|| "llama3.2".to_string());
+        let ollama_url = config
+            .ollama_url
+            .clone()
+            .unwrap_or_else(|| "http://localhost:11434".to_string());
 
         let api_key: &str = match model {
-            VlmModel::Gpt5Nano | VlmModel::Gpt4oMini => {
-                config.openai_api_key.as_ref()
-                    .ok_or_else(|| VlmError::NoApiKey(model.name().to_string()))?
-            }
-            VlmModel::Grok4Fast => {
-                config.grok_api_key.as_ref()
-                    .ok_or_else(|| VlmError::NoApiKey(model.name().to_string()))?
-            }
+            VlmModel::Gpt5Nano | VlmModel::Gpt4oMini => config
+                .openai_api_key
+                .as_ref()
+                .ok_or_else(|| VlmError::NoApiKey(model.name().to_string()))?,
+            VlmModel::Grok4Fast => config
+                .grok_api_key
+                .as_ref()
+                .ok_or_else(|| VlmError::NoApiKey(model.name().to_string()))?,
             VlmModel::Ollama => "", // No API key needed for local Ollama
         };
 
@@ -414,7 +432,8 @@ impl VlmClient {
                 "stream": false,
             });
 
-            let request = self.http
+            let request = self
+                .http
                 .post(&url)
                 .timeout(std::time::Duration::from_secs(model.timeout_secs()))
                 .json(&ollama_body);
@@ -498,7 +517,8 @@ impl VlmClient {
             body["temperature"] = serde_json::json!(0.3);
         }
 
-        let request = self.http
+        let request = self
+            .http
             .post(&url)
             .bearer_auth(api_key)
             .timeout(std::time::Duration::from_secs(model.timeout_secs()))
@@ -543,13 +563,15 @@ impl VlmClient {
         };
 
         // Extract text from output
-        let text = body.output
+        let text = body
+            .output
             .iter()
             .find(|o| o.get("type").and_then(|t| t.as_str()) == Some("message"))
             .and_then(|o| o.get("content"))
             .and_then(|c| c.as_array())
             .and_then(|arr| {
-                arr.iter().find(|item| item.get("type").and_then(|t| t.as_str()) == Some("output_text"))
+                arr.iter()
+                    .find(|item| item.get("type").and_then(|t| t.as_str()) == Some("output_text"))
             })
             .and_then(|item| item.get("text").and_then(|t| t.as_str()))
             .map(str::to_string)
@@ -559,7 +581,8 @@ impl VlmClient {
             return Err(VlmError::NoResponse(model.name()));
         }
 
-        let (input_tokens, output_tokens) = body.usage
+        let (input_tokens, output_tokens) = body
+            .usage
             .as_ref()
             .and_then(|u| {
                 let obj = u.as_object()?;
@@ -670,11 +693,9 @@ mod worker {
         async fn run(mut self) {
             loop {
                 // Receive from channel (with a short timeout so we can also check the queue)
-                let job = tokio::time::timeout(
-                    std::time::Duration::from_millis(50),
-                    self.job_rx.recv(),
-                )
-                .await;
+                let job =
+                    tokio::time::timeout(std::time::Duration::from_millis(50), self.job_rx.recv())
+                        .await;
 
                 match job {
                     Ok(Some(job)) => self.push_job(job).await,
@@ -721,7 +742,9 @@ mod worker {
                 q.pop()
             };
 
-            let Some(job) = job else { return; };
+            let Some(job) = job else {
+                return;
+            };
 
             {
                 let mut s = self.stats.write().await;
@@ -784,7 +807,8 @@ mod worker {
                 .join("\n\n");
 
             // Step 3: Call VLM with fallback
-            let summary_result = self.client
+            let summary_result = self
+                .client
                 .summarize_with_fallback(&combined, job.context, &self.config)
                 .await;
 
@@ -822,10 +846,22 @@ mod worker {
             let source = MemorySource::Consolidation;
 
             let mut metadata = HashMap::new();
-            metadata.insert("vlm_job_id".to_string(), serde_json::json!(job.id.to_string()));
-            metadata.insert("source_node_ids".to_string(),
-                serde_json::json!(job.node_ids.iter().map(|u| u.to_string()).collect::<Vec<_>>()));
-            metadata.insert("context_level".to_string(), serde_json::json!(job.context.to_string()));
+            metadata.insert(
+                "vlm_job_id".to_string(),
+                serde_json::json!(job.id.to_string()),
+            );
+            metadata.insert(
+                "source_node_ids".to_string(),
+                serde_json::json!(job
+                    .node_ids
+                    .iter()
+                    .map(|u| u.to_string())
+                    .collect::<Vec<_>>()),
+            );
+            metadata.insert(
+                "context_level".to_string(),
+                serde_json::json!(job.context.to_string()),
+            );
 
             let mut summary_node = FractalNode::new_typed(
                 Some(summary_text.clone()),
@@ -843,7 +879,8 @@ mod worker {
             // Step 7: Update source nodes with parent_tier_id pointing to summary
             let mut updates = 0;
             for node_id in &job.node_ids {
-                if let Err(e) = self.store
+                if let Err(e) = self
+                    .store
                     .update(node_id, UpdateOperation::SetParentTierId(summary_id))
                     .await
                 {
@@ -865,7 +902,10 @@ mod worker {
 
         /// Fallback text compression when VLM is unavailable.
         /// Uses token-count limits from SummaryContext::target_tokens().
-        pub(crate) fn truncation_fallback_text(combined_content: &str, context: &SummaryContext) -> String {
+        pub(crate) fn truncation_fallback_text(
+            combined_content: &str,
+            context: &SummaryContext,
+        ) -> String {
             let limit = context.target_tokens();
             // Rough: ~4 chars per token
             let char_limit = limit * 4;

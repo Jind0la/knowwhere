@@ -194,7 +194,11 @@ impl RetrievalTrajectory {
 
     /// Add a fractal zoom step.
     pub fn log_zoom(&mut self, child_id: Uuid, child_similarity: f32, parent_id: Uuid) {
-        self.add_step(RetrievalStep::descended(child_id, child_similarity, parent_id));
+        self.add_step(RetrievalStep::descended(
+            child_id,
+            child_similarity,
+            parent_id,
+        ));
     }
 
     /// Add a pruned step.
@@ -303,9 +307,9 @@ impl<'a> TrajectoryStore<'a> {
                 i as i32,
                 &step.step_type,
                 step.memory_id,
-                step.similarity as _,  // similarity maps to score_after
-                step.similarity as _,  // we don't have score_before, use same
-                step.remaining_depth.map(|d| d as i32),  // rank from remaining_depth if available
+                step.similarity as _, // similarity maps to score_after
+                step.similarity as _, // we don't have score_before, use same
+                step.remaining_depth.map(|d| d as i32), // rank from remaining_depth if available
                 step.filter_reason.clone(),
                 step.filter_reason.clone(),
             )
@@ -317,7 +321,11 @@ impl<'a> TrajectoryStore<'a> {
     }
 
     /// List recent retrieval runs (cursor-based pagination).
-    pub async fn list_runs(&self, limit: i32, after_id: Option<Uuid>) -> sqlx::Result<Vec<RetrievalRunRow>> {
+    pub async fn list_runs(
+        &self,
+        limit: i32,
+        after_id: Option<Uuid>,
+    ) -> sqlx::Result<Vec<RetrievalRunRow>> {
         let rows = if let Some(after) = after_id {
             sqlx::query_as!(
                 RetrievalRunRow,

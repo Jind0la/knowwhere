@@ -10,4 +10,6 @@ pub use in_memory::MemoryStore;
 #[cfg(feature = "postgres-storage")]
 pub use postgres_store::PostgresStore;
 #[cfg(feature = "postgres-storage")]
-pub use trajectory::{RetrievalStep, RetrievalTrajectory, RetrievalRunRow, TrajectoryStepRow, TrajectoryStore};
+pub use trajectory::{
+    RetrievalRunRow, RetrievalStep, RetrievalTrajectory, TrajectoryStepRow, TrajectoryStore,
+};

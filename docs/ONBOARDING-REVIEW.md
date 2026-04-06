@@ -3,13 +3,13 @@
 **Review Date:** 2026-04-04
 **Reviewer:** Research Engineer — KnowWhere Investigation & Features
 **Last Update:** 2026-04-04 (Session 6 fixes applied)
-**Status:** Ready for beta — 3 of 6 blockers fixed, 3 remaining
+**Status:** Beta-ready baseline reached; follow-up hardening remains (rate-limit policy, retention/GC policy, docs consistency)
 
 ---
 
 ## Executive Summary
 
-KnowWhere is feature-complete for P0/P1, but the onboarding experience has **6 critical blockers** that would prevent external beta testers from successfully connecting KnowWhere to OpenClaw today. The most severe is the **API key acquisition flow** — there is no documented path for a new user to obtain an API key. Secondary critical issues include Docker configuration errors, hook/config mismatches, and a non-existent quickstart guide.
+KnowWhere is feature-complete for P0/P1 and onboarding has improved significantly. The remaining work is now mostly hardening and consistency: clear auth mode communication (static key vs PostgreSQL self-service), explicit rate-limit policy, and retention/GC policy for long-running beta environments.
 
 ---
 
@@ -369,7 +369,7 @@ Using Docker means:
 1. ~~API key acquisition flow (Issue 1)~~ ✅ FIXED — /register endpoint exists + documented in WALKTHROUGH.md
 2. ~~docker-compose.yml broken env var (Issue 2)~~ ✅ FIXED — `${KNOWWHERE_API_KEY:-}` korrekt, CMD-SHELL typo gefixt
 3. ~~Plugin config/schema mismatch (Issue 3)~~ ✅ FIXED — storeOnCompaction aus Doku entfernt, /webhooks/frigate Route existiert
-4. ❌ Auth Keys in-memory (nach Restart weg) — in-memory HashMap, nicht PostgreSQL
+4. ❌ Auth mode communication inconsistent in docs (static key vs PostgreSQL self-service)
 5. ❌ Rate Limiting opt-in (RATE_LIMIT=1 nötig, nicht default)
 6. ❌ Retention/Garbage Collection fehlt — keine automatische Bereinigung
 
@@ -396,6 +396,7 @@ Using Docker means:
 | API key flow | ✅ Working | /register + /login existieren, in WALKTHROUGH.md dokumentiert |
 | Quickstart guide | ✅ Exists | docs/QUICKSTART.md + docs/WALKTHROUGH.md |
 | Graceful degradation | ✅ Good | Server down = plugin continues |
-| Auth persistence | ❌ In-memory | User/Keys in HashMap — nach Restart weg |
+| Auth persistence | ✅ With PostgreSQL | `/register`/`/login` keys persist in `auth_users` + `auth_api_keys` |
+| Auth fallback mode | ✅ Static key | `KNOWWHERE_API_KEY` works without PostgreSQL |
 | Rate Limiting | ⚠️ Opt-in | RATE_LIMIT=1 nötig, nicht default |
 | Retention/GC | ❌ Missing | Kein Auto-Cleanup für energy=0 Nodes |

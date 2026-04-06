@@ -22,9 +22,11 @@ mod tests;
 mod governance_test;
 
 pub use dream::{audit, consolidation, DreamMode};
-pub use events::{Event, EventType, EventStore, InMemoryEventStore};
+pub use events::{Event, EventStore, EventType, InMemoryEventStore};
 pub use fractal_node::{cosine_similarity, FractalNode, NodeType, Relation};
-pub use governance::{GovernanceCandidate, GovernancePolicy, GovernanceValidator, GovernedScoredNode};
+pub use governance::{
+    GovernanceCandidate, GovernancePolicy, GovernanceValidator, GovernedScoredNode,
+};
 #[cfg(feature = "postgres-storage")]
 pub use tiered::TieredCompactionWorker;
 pub use types::{ConflictState, ContextTier, MemorySource, MemoryStatus, MemoryType, Sensitivity};

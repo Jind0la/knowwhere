@@ -16,11 +16,11 @@ use tokio::sync::RwLock;
 use tokio::time::{interval, Duration, Instant};
 
 #[cfg(feature = "postgres-storage")]
-use uuid::Uuid;
+use crate::memory::dream::conflict_detection::ConflictGroup;
 #[cfg(feature = "postgres-storage")]
 use sqlx::PgPool;
 #[cfg(feature = "postgres-storage")]
-use crate::memory::dream::conflict_detection::ConflictGroup;
+use uuid::Uuid;
 
 use crate::memory::types::MemoryStatus;
 use crate::scheduler::SchedulerConfig;
@@ -208,10 +208,13 @@ impl AuditScheduler {
             if new_weight < node.weight {
                 let _ = self
                     .store
-                    .update(&node.id, UpdateOperation::ApplyAudit {
-                        weight: new_weight,
-                        status: new_status,
-                    })
+                    .update(
+                        &node.id,
+                        UpdateOperation::ApplyAudit {
+                            weight: new_weight,
+                            status: new_status,
+                        },
+                    )
                     .await;
                 updated += 1;
             }
@@ -259,7 +262,10 @@ impl AuditScheduler {
         for conflict in pending {
             if self.can_auto_resolve(&conflict, _threshold) {
                 // Find the highest-confidence memory as the winner
-                if let Some(winner_id) = self.find_winner(pool, &conflict.conflicting_memory_ids).await? {
+                if let Some(winner_id) = self
+                    .find_winner(pool, &conflict.conflicting_memory_ids)
+                    .await?
+                {
                     tracing::info!(
                         conflict_id = %conflict.id,
                         winner_id = %winner_id,

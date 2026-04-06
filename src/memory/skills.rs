@@ -288,13 +288,19 @@ impl<'a> SkillsStore<'a> {
     /// Update an existing skill.
     pub async fn update(&self, id: Uuid, updates: &UpdateSkillRequest) -> anyhow::Result<()> {
         // Fetch existing to merge
-        let existing = self.get(id).await?.ok_or_else(|| anyhow::anyhow!("skill {id} not found"))?;
+        let existing = self
+            .get(id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("skill {id} not found"))?;
 
         let skill_name = updates.skill_name.as_ref().unwrap_or(&existing.skill_name);
         let category = updates.category.as_ref().unwrap_or(&existing.category);
         let proficiency = updates.proficiency.unwrap_or(existing.proficiency);
         let components = updates.components.clone().unwrap_or(existing.components);
-        let prerequisites = updates.prerequisites.clone().unwrap_or(existing.prerequisites);
+        let prerequisites = updates
+            .prerequisites
+            .clone()
+            .unwrap_or(existing.prerequisites);
         let metadata = updates.metadata.clone().unwrap_or(existing.metadata);
 
         sqlx::query!(
@@ -340,12 +346,10 @@ impl<'a> SkillsStore<'a> {
     /// Updates `last_used` and recalculates the rolling `success_rate`.
     pub async fn mark_used(&self, id: Uuid, success: bool) -> anyhow::Result<()> {
         // Fetch current success_rate for rolling average
-        let current = sqlx::query_scalar!(
-            "SELECT success_rate FROM agent_skills WHERE id = $1",
-            id,
-        )
-        .fetch_optional(self.pool)
-        .await?;
+        let current =
+            sqlx::query_scalar!("SELECT success_rate FROM agent_skills WHERE id = $1", id,)
+                .fetch_optional(self.pool)
+                .await?;
 
         let current_rate = current.flatten().unwrap_or(0.0);
         // Simple rolling average: new = (old * 3 + (1 if success else 0)) / 4
@@ -376,7 +380,11 @@ impl<'a> SkillsStore<'a> {
     ///
     /// Uses a simple text match against `skill_name`, `category`, and `components`.
     /// Returns up to `top_k` results ordered by relevance.
-    pub async fn match_task(&self, task_query: &str, top_k: usize) -> anyhow::Result<Vec<AgentSkill>> {
+    pub async fn match_task(
+        &self,
+        task_query: &str,
+        top_k: usize,
+    ) -> anyhow::Result<Vec<AgentSkill>> {
         let pattern = format!("%{task_query}%");
 
         let rows = sqlx::query_as!(
@@ -456,12 +464,10 @@ impl<'a> SkillsStore<'a> {
         .await?;
 
         // Fetch again in case of race
-        sqlx::query_scalar!(
-            r#"SELECT id FROM memory_namespaces WHERE path = 'agent/skills'"#,
-        )
-        .fetch_one(self.pool)
-        .await
-        .map_err(Into::into)
+        sqlx::query_scalar!(r#"SELECT id FROM memory_namespaces WHERE path = 'agent/skills'"#,)
+            .fetch_one(self.pool)
+            .await
+            .map_err(Into::into)
     }
 }
 

@@ -8,11 +8,12 @@ use axum::Router;
 use http_body_util::BodyExt;
 use tower::ServiceExt;
 
-use knowwhere_server::api::{auth, auth::ApiKey, routes, webhooks::DedupCache};
+use knowwhere_server::api::{auth, routes, webhooks::DedupCache};
 use knowwhere_server::embedding::{EmbeddingProvider, LocalOllamaProvider};
-use knowwhere_server::memory::{DreamMode, events::InMemoryEventStore};
 use knowwhere_server::memory::governance::GovernancePolicy;
+use knowwhere_server::memory::{events::InMemoryEventStore, DreamMode};
 use knowwhere_server::storage::{MemoryStore, StorageBackend};
+use tokio::sync::RwLock;
 
 /// Creates the embedding provider for tests.
 /// Always uses LocalOllama — tests are designed and validated against Ollama embeddings.
@@ -22,8 +23,7 @@ fn embedding_provider() -> Arc<dyn EmbeddingProvider> {
 }
 
 fn test_state() -> routes::AppState {
-    let store: Arc<dyn knowwhere_server::storage::StorageBackend> =
-        Arc::new(MemoryStore::new());
+    let store: Arc<dyn knowwhere_server::storage::StorageBackend> = Arc::new(MemoryStore::new());
     let dream_store = store.clone();
     let dream = DreamMode::new(dream_store.clone());
     let embedding = embedding_provider();
@@ -32,7 +32,7 @@ fn test_state() -> routes::AppState {
         dream_store,
         dream,
         embedding,
-        governance_policy: GovernancePolicy::default_policy(),
+        governance_policy: Arc::new(RwLock::new(GovernancePolicy::default_policy())),
         events: InMemoryEventStore::new(),
         #[cfg(feature = "postgres-storage")]
         trajectory_pool: None,
@@ -52,10 +52,10 @@ fn app_without_auth() -> Router {
         .route("/store_external", post(routes::store_external))
         .route("/retrieve/{id}", get(routes::retrieve))
         .route("/retrieve_fractal", post(routes::retrieve_fractal))
+        .route("/governance/policy", get(routes::get_governance_policy))
+        .route("/governance/policy", post(routes::update_governance_policy))
         .route("/nodes/recent", get(routes::recent_nodes))
-        .route("/dream/status", get(routes::dream_status))
-        .route_layer(middleware::from_fn(auth::auth_middleware))
-        .layer(axum::Extension(ApiKey(None)));
+        .route("/dream/status", get(routes::dream_status));
 
     Router::new()
         .route("/health", get(routes::health))
@@ -65,6 +65,11 @@ fn app_without_auth() -> Router {
 
 fn app_with_auth(key: &str) -> Router {
     let state = test_state();
+    let auth_state = auth::AuthState {
+        admin_key: Arc::new(RwLock::new(Some(key.to_string()))),
+        #[cfg(feature = "postgres-storage")]
+        pg_store: None,
+    };
 
     let protected = Router::new()
         .route("/embed", post(routes::embed_text))
@@ -75,7 +80,7 @@ fn app_with_auth(key: &str) -> Router {
         .route("/nodes/recent", get(routes::recent_nodes))
         .route("/dream/status", get(routes::dream_status))
         .route_layer(middleware::from_fn(auth::auth_middleware))
-        .layer(axum::Extension(ApiKey(Some(key.to_string()))));
+        .layer(axum::Extension(auth_state));
 
     Router::new()
         .route("/health", get(routes::health))
@@ -152,6 +157,49 @@ async fn auth_rejects_wrong_token() {
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn governance_policy_update_is_persisted_in_runtime_state() {
+    let app = app_without_auth();
+
+    let get_before = app
+        .clone()
+        .oneshot(
+            Request::get("/governance/policy")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(get_before.status(), StatusCode::OK);
+
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::post("/governance/policy")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"min_confidence":0.91,"blocked_sensitivities":["restricted","high"]}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let get_after = app
+        .oneshot(
+            Request::get("/governance/policy")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(get_after.status(), StatusCode::OK);
+    let body = body_string(get_after.into_body()).await;
+    assert!(body.contains("\"min_confidence\":0.91"));
+    assert!(body.contains("\"high\""));
 }
 
 // -- Store + Retrieve Roundtrip --
@@ -287,7 +335,9 @@ async fn fractal_retrieve_with_query_text_returns_valid_json() {
         .oneshot(
             Request::post("/store_session")
                 .header("content-type", "application/json")
-                .body(Body::from(r#"{"content":"remember the meeting tomorrow at 3pm"}"#))
+                .body(Body::from(
+                    r#"{"content":"remember the meeting tomorrow at 3pm"}"#,
+                ))
                 .unwrap(),
         )
         .await
@@ -323,9 +373,7 @@ async fn fractal_retrieve_requires_query() {
         .oneshot(
             Request::post("/retrieve_fractal")
                 .header("content-type", "application/json")
-                .body(Body::from(
-                    r#"{"top_k":5,"max_depth":2}"#,
-                ))
+                .body(Body::from(r#"{"top_k":5,"max_depth":2}"#))
                 .unwrap(),
         )
         .await
@@ -382,11 +430,7 @@ async fn dream_status_returns_valid_json() {
     let app = app_without_auth();
 
     let resp = app
-        .oneshot(
-            Request::get("/dream/status")
-                .body(Body::empty())
-                .unwrap(),
-        )
+        .oneshot(Request::get("/dream/status").body(Body::empty()).unwrap())
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
@@ -506,12 +550,15 @@ async fn postgres_store_hybrid_retrieve_bm25_only() {
     // the pgvector column as Vec<f32>, but pgvector stores vectors in its own
     // binary format that is NOT compatible with PostgreSQL's float4[].
     // Fix: cast to float4[] explicitly: `embedding::float4[] as "embedding: _"`
-    use knowwhere_server::storage::{postgres_store::PostgresStore, backend::HybridQuery, StorageBackend};
     use knowwhere_server::memory::fractal_node::FractalNode;
+    use knowwhere_server::storage::{
+        backend::HybridQuery, postgres_store::PostgresStore, StorageBackend,
+    };
     use std::env;
 
-    let database_url = env::var("DATABASE_URL")
-        .expect("DATABASE_URL must be set for this test (run: export DATABASE_URL='postgres://...')");
+    let database_url = env::var("DATABASE_URL").expect(
+        "DATABASE_URL must be set for this test (run: export DATABASE_URL='postgres://...')",
+    );
 
     let store = PostgresStore::connect(&database_url)
         .await
@@ -528,10 +575,7 @@ async fn postgres_store_hybrid_retrieve_bm25_only() {
         knowwhere_server::memory::types::MemorySource::Conversation,
     );
 
-    let node_id = store
-        .insert(node)
-        .await
-        .expect("insert failed");
+    let node_id = store.insert(node).await.expect("insert failed");
 
     // BM25-only query — this exercises the fallback path in hybrid_retrieve
     // that calls search_bm25() then get() for each result.
@@ -560,10 +604,7 @@ async fn postgres_store_hybrid_retrieve_bm25_only() {
     );
 
     // Cleanup
-    store
-        .delete(node_id)
-        .await
-        .expect("cleanup delete failed");
+    store.delete(node_id).await.expect("cleanup delete failed");
 }
 
 #[tokio::test]
@@ -572,13 +613,12 @@ async fn postgres_store_hybrid_retrieve_bm25_only() {
 async fn postgres_store_hybrid_retrieve_with_vector() {
     // Test hybrid_retrieve with a real query vector.
     // Uses the vector search path (HNSW index) combined with BM25 via RRF.
-    use knowwhere_server::storage::postgres_store::PostgresStore;
     use knowwhere_server::memory::fractal_node::FractalNode;
     use knowwhere_server::storage::backend::HybridQuery;
+    use knowwhere_server::storage::postgres_store::PostgresStore;
     use std::env;
 
-    let database_url = env::var("DATABASE_URL")
-        .expect("DATABASE_URL must be set for this test");
+    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set for this test");
 
     let store = PostgresStore::connect(&database_url)
         .await
@@ -596,10 +636,7 @@ async fn postgres_store_hybrid_retrieve_with_vector() {
         knowwhere_server::memory::types::MemorySource::Conversation,
     );
 
-    let node_id = store
-        .insert(node)
-        .await
-        .expect("insert failed");
+    let node_id = store.insert(node).await.expect("insert failed");
 
     // Query with the same vector — should find the node with high similarity
     let query = HybridQuery {
@@ -625,10 +662,7 @@ async fn postgres_store_hybrid_retrieve_with_vector() {
     );
 
     // Cleanup
-    store
-        .delete(node_id)
-        .await
-        .expect("cleanup delete failed");
+    store.delete(node_id).await.expect("cleanup delete failed");
 }
 
 #[tokio::test]
@@ -638,12 +672,11 @@ async fn postgres_store_count_matches_active_memories() {
     // Verify that store.count() correctly returns the number of active memories.
     // Previously this returned 0 even when active memories existed in the DB,
     // due to silent query failures from the pgvector type mismatch.
-    use knowwhere_server::storage::postgres_store::PostgresStore;
     use knowwhere_server::memory::fractal_node::FractalNode;
+    use knowwhere_server::storage::postgres_store::PostgresStore;
     use std::env;
 
-    let database_url = env::var("DATABASE_URL")
-        .expect("DATABASE_URL must be set for this test");
+    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set for this test");
 
     let store = PostgresStore::connect(&database_url)
         .await
@@ -671,18 +704,74 @@ async fn postgres_store_count_matches_active_memories() {
     let id2 = store.insert(node2).await.expect("insert 2 failed");
 
     let count = StorageBackend::count(&store).await;
-    assert!(
-        count >= 2,
-        "count() should be at least 2, got {}",
-        count
-    );
+    assert!(count >= 2, "count() should be at least 2, got {}", count);
 
     // Cleanup
     store.delete(id1).await.expect("delete 1 failed");
     store.delete(id2).await.expect("delete 2 failed");
 }
 
-// -- Frigate Webhook Tests --
+#[tokio::test]
+#[cfg(feature = "postgres-storage")]
+#[ignore = "requires DATABASE_URL — run: DATABASE_URL='postgresql://...' cargo test --features postgres-storage -- --include-ignored"]
+async fn postgres_api_key_fingerprint_lookup_and_rotation() {
+    use knowwhere_server::storage::postgres_store::{stored_api_key_fingerprint, PostgresStore};
+    use std::env;
+    use uuid::Uuid;
+
+    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set for this test");
+
+    let pg = PostgresStore::connect(&database_url)
+        .await
+        .expect("failed to connect to PostgreSQL");
+    let _ = pg.run_auth_migrations().await;
+
+    let u = Uuid::new_v4();
+    let username = format!("kw_auth_{u}");
+    let email = format!("{username}@example.invalid");
+    let user_id = pg
+        .create_user(&username, &email, "unused-password-placeholder")
+        .await
+        .expect("create_user");
+
+    let api_key = format!("kw_{u}_secret");
+    let fp = stored_api_key_fingerprint(&api_key);
+    pg.create_api_key(user_id, &fp, "default")
+        .await
+        .expect("create_api_key");
+
+    let row = pg
+        .find_api_key_by_plaintext(&api_key)
+        .await
+        .expect("find")
+        .expect("key should resolve");
+    assert_eq!(row.user_id, user_id);
+
+    assert!(pg
+        .find_api_key_by_plaintext("kw_totally_wrong")
+        .await
+        .expect("find wrong")
+        .is_none());
+
+    let new_key = format!("kw_{u}_rotated");
+    let new_fp = stored_api_key_fingerprint(&new_key);
+    pg.replace_api_key(row.id, user_id, "default", &new_fp)
+        .await
+        .expect("rotate");
+
+    assert!(pg
+        .find_api_key_by_plaintext(&api_key)
+        .await
+        .expect("find old")
+        .is_none());
+    assert!(pg
+        .find_api_key_by_plaintext(&new_key)
+        .await
+        .expect("find new")
+        .is_some());
+
+    pg.delete_auth_user(user_id).await.expect("cleanup user");
+}
 
 fn app_with_webhook() -> Router {
     let state = test_state();

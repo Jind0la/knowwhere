@@ -2,9 +2,9 @@
 //!
 //! Defines a backend-agnostic interface for KnowWhere's memory storage.
 //! All storage backends (MemoryStore, PostgresStore, etc.) implement this trait.
-use uuid::Uuid;
-use crate::memory::FractalNode;
 use crate::memory::types::MemoryStatus;
+use crate::memory::FractalNode;
+use uuid::Uuid;
 
 /// Query parameters for hybrid retrieval (vector + BM25 combined search).
 #[derive(Debug, Clone)]
@@ -41,7 +41,12 @@ impl HybridQuery {
     }
 
     /// Create a hybrid query (BM25 + vector, combined via RRF).
-    pub fn hybrid(text: impl Into<String>, vector: Vec<f32>, top_k: usize, max_depth: usize) -> Self {
+    pub fn hybrid(
+        text: impl Into<String>,
+        vector: Vec<f32>,
+        top_k: usize,
+        max_depth: usize,
+    ) -> Self {
         Self {
             query_text: Some(text.into()),
             query_vector: Some(vector),
@@ -66,7 +71,10 @@ pub enum UpdateOperation {
     SetStatus(MemoryStatus),
     /// Composite operation: set weight + optionally status (used by AuditScheduler).
     /// This must be atomic — both changes happen together.
-    ApplyAudit { weight: f64, status: Option<MemoryStatus> },
+    ApplyAudit {
+        weight: f64,
+        status: Option<MemoryStatus>,
+    },
 }
 
 impl UpdateOperation {
@@ -165,7 +173,8 @@ pub trait StorageBackend: Send + Sync {
     async fn retrieve_fractal(&self, query: &HybridQuery) -> anyhow::Result<Vec<ScoredNode>>;
 
     /// Standalone BM25 keyword search (no vector component).
-    async fn search_bm25(&self, query_text: &str, top_k: usize) -> anyhow::Result<Vec<(Uuid, f32)>>;
+    async fn search_bm25(&self, query_text: &str, top_k: usize)
+        -> anyhow::Result<Vec<(Uuid, f32)>>;
 
     // --- Enumeration ---
 

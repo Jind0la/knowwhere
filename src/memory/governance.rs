@@ -90,7 +90,10 @@ impl GovernancePolicy {
     /// GovernanceCandidate to avoid duplication.
     ///
     /// Returns (multiplier, issues).
-    pub(crate) fn governance_check(&self, candidate: &GovernanceCandidate) -> (f64, Vec<ValidationIssue>) {
+    pub(crate) fn governance_check(
+        &self,
+        candidate: &GovernanceCandidate,
+    ) -> (f64, Vec<ValidationIssue>) {
         let mut multiplier = 1.0;
         let mut issues = Vec::new();
 
@@ -100,7 +103,8 @@ impl GovernancePolicy {
             issues.push(ValidationIssue {
                 issue_type: IssueType::LowConfidence,
                 description: IssueType::LowConfidence.description(&format!(
-                    "{:.2} < {:.2}", candidate.confidence, self.min_confidence
+                    "{:.2} < {:.2}",
+                    candidate.confidence, self.min_confidence
                 )),
                 score_impact: IssueType::LowConfidence.score_impact(),
             });
@@ -124,7 +128,8 @@ impl GovernancePolicy {
         if self.blocked_sensitivities.contains(&candidate.sensitivity) {
             issues.push(ValidationIssue {
                 issue_type: IssueType::SensitivityBlocked,
-                description: IssueType::SensitivityBlocked.description(&format!("{:?}", candidate.sensitivity)),
+                description: IssueType::SensitivityBlocked
+                    .description(&format!("{:?}", candidate.sensitivity)),
                 score_impact: IssueType::SensitivityBlocked.score_impact(),
             });
             multiplier = 0.0; // hard block
@@ -134,7 +139,8 @@ impl GovernancePolicy {
         if !candidate.status.is_retrievable() {
             issues.push(ValidationIssue {
                 issue_type: IssueType::InvalidStatus,
-                description: IssueType::InvalidStatus.description(&format!("{:?}", candidate.status)),
+                description: IssueType::InvalidStatus
+                    .description(&format!("{:?}", candidate.status)),
                 score_impact: IssueType::InvalidStatus.score_impact(),
             });
             multiplier = 0.0; // hard block
@@ -182,7 +188,10 @@ impl ValidationResult {
     }
 
     pub fn fail(issues: Vec<ValidationIssue>) -> Self {
-        let multiplier = issues.iter().map(|i| i.score_impact).fold(1.0, |acc, m| acc * m);
+        let multiplier = issues
+            .iter()
+            .map(|i| i.score_impact)
+            .fold(1.0, |acc, m| acc * m);
         Self {
             passed: false,
             issues,
@@ -225,12 +234,12 @@ impl IssueType {
     fn score_impact(&self) -> f64 {
         match self {
             IssueType::LowConfidence => 0.5,
-            IssueType::Superseded => 0.0,   // Hard block
+            IssueType::Superseded => 0.0,         // Hard block
             IssueType::SensitivityBlocked => 0.0, // Hard block
             IssueType::Stale => 0.7,
             IssueType::UnresolvedConflict => 0.3,
             IssueType::InvalidStatus => 0.0, // Hard block
-            IssueType::Irrelevant => 0.0,     // Hard block
+            IssueType::Irrelevant => 0.0,    // Hard block
         }
     }
 
@@ -284,7 +293,8 @@ impl GovernanceValidator {
         }
 
         // Additional check: conflict (GovernanceValidator only)
-        if self.policy.conflict_check_enabled && candidate.conflict_state == ConflictState::Pending {
+        if self.policy.conflict_check_enabled && candidate.conflict_state == ConflictState::Pending
+        {
             issues.push(ValidationIssue {
                 issue_type: IssueType::UnresolvedConflict,
                 description: IssueType::UnresolvedConflict.description("pending resolution"),
@@ -369,7 +379,10 @@ impl GovernanceCandidate {
         let (multiplier, _issues) = policy.governance_check(self);
 
         // Additional: conflict penalty (GovernanceCandidate only)
-        if multiplier > 0.0 && policy.conflict_check_enabled && self.conflict_state == ConflictState::Pending {
+        if multiplier > 0.0
+            && policy.conflict_check_enabled
+            && self.conflict_state == ConflictState::Pending
+        {
             return multiplier * 0.3;
         }
 

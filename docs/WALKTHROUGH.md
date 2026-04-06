@@ -65,11 +65,11 @@ curl -X POST http://localhost:3737/register \
 
 Erwartete Antwort:
 ```json
-{"message":"user registered successfully","api_key":"kw_abc123xyz..."}
+{"api_key":"kw_abc123xyz...","user_id":"...","message":"Registration successful. Save your API key now — it cannot be retrieved again."}
 ```
 
-> **Account wird in-memory gespeichert** (nach Server-Restart weg).
-> Für persistente Nutzer in Production: PostgreSQL-Storage verwenden.
+> **Wichtig:** `/register` ist nur verfügbar, wenn der Server mit `postgres-storage` + `DATABASE_URL` läuft.
+> Ohne PostgreSQL nutze statisch gesetztes `KNOWWHERE_API_KEY`.
 
 Falls du schon einen Account hast, einfach einloggen:
 
@@ -81,7 +81,7 @@ curl -X POST http://localhost:3737/login \
 
 Erwartete Antwort:
 ```json
-{"token":"eyJhbGci..."}
+{"token":"kw_...","expires_at":"never","message":"authenticated"}
 ```
 
 ---

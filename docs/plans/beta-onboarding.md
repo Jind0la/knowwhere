@@ -4,6 +4,9 @@
 **Owner:** Research Engineer — KnowWhere Investigation & Features
 **Target:** External beta testers
 **Priority:** Blockers must be resolved before beta launch
+**Status (2026-04-06):** IMP-001 bis IMP-005 umgesetzt (Quickstart + Walkthrough vorhanden). Verbleibende Beta-Hardening-Punkte: Auth-Modus-Doku konsistent halten (static key vs PostgreSQL self-service), Rate Limiting opt-in, Retention/GC.
+
+---
 
 ---
 
@@ -18,11 +21,11 @@ Enable external beta testers to connect KnowWhere to OpenClaw with minimal frict
 ### IMP-001: Document API Key Acquisition Flow
 
 **Priority:** BLOCKER
-**Status:** Not started
+**Status:** ✅ DONE
 **Complexity:** Medium
 
 **Description:**
-There is no documented path for a new beta tester to obtain an API key. The server exposes `/auth/register` and `/auth/login`, but these return JWT tokens — which are separate from the `KNOWWHERE_API_KEY` static key used by the plugin. A decision must first be made on the key distribution model.
+There was no documented path for a new beta tester to obtain an API key. The current server supports two paths: static `KNOWWHERE_API_KEY` (self-hosted default) and self-service `/register` + `/login` when `postgres-storage` is enabled.
 
 **Decisions Required:**
 1. **Self-hosted beta**: Users generate their own static key by setting `KNOWWHERE_API_KEY=xxx` in their environment. Document this clearly.
@@ -46,7 +49,7 @@ For beta, go with **Option 1 (Self-hosted)**: A beta tester runs their own KnowW
 ### IMP-002: Fix docker-compose.yml
 
 **Priority:** BLOCKER
-**Status:** Not started
+**Status:** ✅ DONE
 **Complexity:** Low
 
 **Changes Needed:**
@@ -96,7 +99,7 @@ OPENAI_API_KEY=
 ### IMP-003: Align Plugin Config (Schema, README, Code)
 
 **Priority:** BLOCKER
-**Status:** Not started
+**Status:** ✅ DONE
 **Complexity:** Low-Medium
 
 **Problem:** The openclaw-plugin README documents `storeOnCompaction` which doesn't exist in the code or schema. The actual options (`importLookbackDays`) exist in the schema and code but aren't documented in the README.
@@ -135,7 +138,7 @@ OPENAI_API_KEY=
 ### IMP-004: Create Consolidated Quickstart Guide
 
 **Priority:** HIGH
-**Status:** Not started
+**Status:** ✅ DONE
 **Complexity:** Low
 
 **Changes Needed:**
@@ -243,7 +246,7 @@ curl http://localhost:3000/health | jq .node_count
 ### IMP-005: Add Plugin Verification Commands
 
 **Priority:** HIGH
-**Status:** Not started
+**Status:** ✅ DONE (WALKTHROUGH + QUICKSTART Verify-Schritte)
 **Complexity:** Low
 
 **Changes Needed:**

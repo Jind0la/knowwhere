@@ -126,19 +126,19 @@ impl MemoryType {
             MemoryType::Episodic => 0.8,
             MemoryType::Semantic => 0.85,
             MemoryType::Preference => 0.75, // Preferences can be less certain
-            MemoryType::Procedural => 0.9, // Procedural should be well-verified
-            MemoryType::Meta => 0.5,       // Meta-knowledge starts with low confidence
+            MemoryType::Procedural => 0.9,  // Procedural should be well-verified
+            MemoryType::Meta => 0.5,        // Meta-knowledge starts with low confidence
         }
     }
 
     /// How many days until this memory type might become stale (suggestion only).
     pub fn suggested_refresh_days(&self) -> Option<u32> {
         match self {
-            MemoryType::Episodic => Some(7),   // Events go stale after a week
-            MemoryType::Semantic => Some(90),  // Facts are stable longer
-            MemoryType::Preference => Some(30), // Preferences can change
+            MemoryType::Episodic => Some(7),     // Events go stale after a week
+            MemoryType::Semantic => Some(90),    // Facts are stable longer
+            MemoryType::Preference => Some(30),  // Preferences can change
             MemoryType::Procedural => Some(180), // Procedures are very stable
-            MemoryType::Meta => Some(14),       // Meta-knowledge needs frequent audit
+            MemoryType::Meta => Some(14),        // Meta-knowledge needs frequent audit
         }
     }
 
@@ -181,13 +181,17 @@ impl MemoryType {
 
 impl std::fmt::Display for MemoryType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", match self {
-            MemoryType::Episodic => "episodic",
-            MemoryType::Semantic => "semantic",
-            MemoryType::Preference => "preference",
-            MemoryType::Procedural => "procedural",
-            MemoryType::Meta => "meta",
-        })
+        write!(
+            f,
+            "{}",
+            match self {
+                MemoryType::Episodic => "episodic",
+                MemoryType::Semantic => "semantic",
+                MemoryType::Preference => "preference",
+                MemoryType::Procedural => "procedural",
+                MemoryType::Meta => "meta",
+            }
+        )
     }
 }
 

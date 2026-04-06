@@ -34,14 +34,13 @@
 //! tracing::info!(found, merged, "deduplication complete");
 //! ```
 
+use anyhow::Result;
 #[cfg(feature = "postgres-storage")]
-
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
-use uuid::Uuid;
-use anyhow::Result;
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 // =============================================================================
 // Types
