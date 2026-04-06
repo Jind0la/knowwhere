@@ -816,8 +816,7 @@ impl PostgresStore {
     pub async fn get_user_by_username(&self, username: &str) -> Result<Option<AuthUserRow>> {
         let row = sqlx::query_as(
             r#"
-            SELECT id as "id!", username as "username!", email as "email!",
-                   password_hash as "password_hash!", created_at as "created_at!"
+            SELECT id, username, email, password_hash, created_at
             FROM auth_users
             WHERE username = $1
             "#,
@@ -841,8 +840,7 @@ impl PostgresStore {
     pub async fn get_user_by_id(&self, id: Uuid) -> Result<Option<AuthUserRow>> {
         let row = sqlx::query_as(
             r#"
-            SELECT id as "id!", username as "username!", email as "email!",
-                   password_hash as "password_hash!", created_at as "created_at!"
+            SELECT id, username, email, password_hash, created_at
             FROM auth_users
             WHERE id = $1
             "#,
@@ -881,8 +879,7 @@ impl PostgresStore {
     pub async fn get_api_key_by_hash(&self, key_hash: &str) -> Result<Option<AuthApiKeyRow>> {
         let row = sqlx::query_as(
             r#"
-            SELECT id as "id!", user_id as "user_id!", key_hash as "key_hash!",
-                   name as "name!", created_at as "created_at!", last_used_at
+            SELECT id, user_id, key_hash, name, created_at, last_used_at
             FROM auth_api_keys
             WHERE key_hash = $1
             "#,
@@ -905,8 +902,7 @@ impl PostgresStore {
 
         let legacy = sqlx::query_as::<_, AuthApiKeyRow>(
             r#"
-            SELECT id as "id!", user_id as "user_id!", key_hash as "key_hash!",
-                   name as "name!", created_at as "created_at!", last_used_at
+            SELECT id, user_id, key_hash, name, created_at, last_used_at
             FROM auth_api_keys
             WHERE key_hash LIKE '$2%'
             "#,

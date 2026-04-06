@@ -117,6 +117,14 @@ jobs:
         run: |
           cargo test --test integration --features postgres-storage -- --include-ignored
 
+      - name: cargo check (postgres-storage)
+        run: cargo check --all-targets --features postgres-storage
+
+      - name: cargo clippy (postgres-storage)
+        env:
+          RUSTFLAGS: "--cap-lints=warn"
+        run: cargo clippy --all-targets --features postgres-storage
+
   docker:
     name: Docker Build
     runs-on: ubuntu-latest

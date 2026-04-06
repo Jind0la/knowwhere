@@ -14,16 +14,7 @@ use tracing_subscriber::EnvFilter;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
-#[cfg(feature = "postgres-storage")]
-use sqlx::postgres::PgPoolOptions;
-
-use knowwhere_server::api::{
-    auth,
-    auth::{ApiKey, AuthState},
-    docs::ApiDoc,
-    routes,
-    webhooks::DedupCache,
-};
+use knowwhere_server::api::{auth, auth::ApiKey, docs::ApiDoc, routes, webhooks::DedupCache};
 use knowwhere_server::connectors::frigate::FrigateConnector;
 use knowwhere_server::connectors::store_external_event;
 use knowwhere_server::embedding::EmbeddingProvider;
@@ -167,7 +158,6 @@ async fn run() -> anyhow::Result<()> {
     // Concrete store for VLM worker, schedulers, DreamMode, and FrigateConnector.
     let dream_store = store.clone();
     let connector_store = store.clone();
-    let shutdown_store = store.clone();
     let dream = DreamMode::new(dream_store.clone());
 
     let embedding: Arc<dyn EmbeddingProvider> = if let Ok(key) = std::env::var("GROK_API_KEY") {
@@ -299,15 +289,12 @@ async fn run() -> anyhow::Result<()> {
         tracing::info!("Dream Mode scheduler disabled (DREAM_ENABLED=false)");
     }
 
-    // Arc<dyn StorageBackend> for API layer — already an Arc<dyn StorageBackend>
-    let store_for_api = store.clone();
-
     let state = routes::AppState {
         store: store.clone(),
         dream_store: store.clone(),
         dream,
         embedding,
-        governance_policy: GovernancePolicy::default_policy(),
+        governance_policy: Arc::new(RwLock::new(GovernancePolicy::default_policy())),
         events: InMemoryEventStore::new(),
         #[cfg(feature = "postgres-storage")]
         trajectory_pool,
@@ -418,7 +405,7 @@ async fn run() -> anyhow::Result<()> {
         None
     };
 
-    let mut protected = match rate_limit_layer {
+    let protected = match rate_limit_layer {
         Some(layer) => protected.layer(layer),
         None => protected,
     }

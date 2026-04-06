@@ -103,9 +103,9 @@ A background process that periodically clusters related nodes and strengthens co
 |--------|------|-------------|
 | GET | `/health` | Server status + node count |
 | GET | `/swagger-ui/*` | Interactive OpenAPI documentation |
-| POST | `/auth/login` | Login with credentials |
-| POST | `/auth/register` | Register new account |
-| POST | `/auth/refresh` | Refresh access token |
+| POST | `/login` | Login with credentials (requires `postgres-storage`) |
+| POST | `/register` | Register new account (requires `postgres-storage`) |
+| POST | `/refresh` | Rotate token (requires `postgres-storage`) |
 
 ### Core Memory (auth required)
 | Method | Path | Description |
@@ -186,7 +186,8 @@ A background process that periodically clusters related nodes and strengthens co
 {
   "score": 0.032,
   "id": "uuid",
-  "node_type": "Session",
+  "memory_type": "episodic",
+  "source": "conversation",
   "content": "The app should be anonymous...",
   "original_pointer": null,
   "metadata": { "source": "user:Nimar" },
@@ -196,7 +197,7 @@ A background process that periodically clusters related nodes and strengthens co
 
 Note: The `vector` field is intentionally excluded from retrieval responses to save bandwidth.
 
-**NodeType**: `Session` (full text stored) or `External` (pointer only).
+**MemoryType**: `episodic`, `semantic`, `preference`, `procedural`, `meta`.
 
 ## Integration Philosophy
 
@@ -319,6 +320,13 @@ curl -H "Authorization: Bearer my-secret-key-123" http://localhost:3737/embed \
 ```
 
 Public endpoints (no token): `/health`, `/swagger-ui/*`
+
+KnowWhere supports two beta auth modes:
+
+1. **Static admin key (default/self-hosted):** set `KNOWWHERE_API_KEY` and use it as Bearer token.
+2. **Self-service users (PostgreSQL mode):** `/register`, `/login`, `/refresh` are enabled only with `postgres-storage` + `DATABASE_URL`.
+
+If `postgres-storage` is not enabled, auth routes return `503`.
 
 ## Architecture
 

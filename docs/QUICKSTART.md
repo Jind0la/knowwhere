@@ -28,7 +28,7 @@ cd knowwhere
 docker build -t knowwhere-server:local .
 
 # Run the server
-docker run -d --name knowwhere -p 3737:3000 \
+docker run -d --name knowwhere -p 3737:3737 \
   -e KNOWWHERE_API_KEY=my-secret-key-123 \
   -e RUST_LOG=info \
   knowwhere-server:local
@@ -86,32 +86,40 @@ curl http://localhost:3737/health
 
 ## Step 2: Get Your API Key
 
-If you started the server with `KNOWWHERE_API_KEY`, use that value directly.
+KnowWhere supports two beta modes:
 
-**To register a new account and get an API key via the API:**
+1) **Static admin key (works with and without PostgreSQL)**
+- Set `KNOWWHERE_API_KEY` when starting the server.
+- Use that exact value as `Authorization: Bearer ...` and in OpenClaw `apiKey`.
+
+2) **Self-service users (requires `postgres-storage` + `DATABASE_URL`)**
+- `/register`, `/login`, `/refresh` are available only in this mode.
+- API keys are persisted in PostgreSQL.
+
+Register/login example:
 
 ```bash
-# Register a new account (no credentials needed — self-serve beta onboarding)
 curl -X POST http://localhost:3737/register \
   -H "Content-Type: application/json" \
-  -d '{}'
+  -d '{
+    "username": "beta_user",
+    "email": "beta_user@example.com",
+    "password": "very-secret-password"
+  }'
 
-# Response: { "api_key": "kw_...", "message": "..." }
-# Save your api_key — it is shown only once.
+# response contains: api_key, user_id, message
 
-# Login to get your Bearer token
 curl -X POST http://localhost:3737/login \
   -H "Content-Type: application/json" \
-  -d '{"api_key": "kw_..."}'
+  -d '{
+    "username": "beta_user",
+    "password": "very-secret-password"
+  }'
 
-# Response: { "token": "kw_...", "message": "authenticated" }
-# Use this token in the Authorization header: Authorization: Bearer kw_...
+# response contains: token
 ```
 
-The `api_key` from registration IS your Bearer token. Save it — you'll need it for the OpenClaw plugin.
-
-**Note:** Registered API keys are stored in-memory and are lost on server restart.
-For persistent keys, set `KNOWWHERE_API_KEY` environment variable before starting the server.
+If `postgres-storage` is disabled, these endpoints return `503 Service Unavailable`.
 
 
 **API documentation:** Open [http://localhost:3737/swagger-ui/](http://localhost:3737/swagger-ui/) in your browser.
@@ -248,7 +256,7 @@ Cold-start embedding takes 1–3 seconds. This is normal — subsequent queries 
 If port 3737 is busy, change the mapping:
 
 ```bash
-docker run -d --name knowwhere -p 3738:3000 ...
+docker run -d --name knowwhere -p 3738:3737 ...
 ```
 
 Then update the OpenClaw config endpoint to `http://127.0.0.1:3738`.

@@ -7,6 +7,7 @@ use axum::http::StatusCode;
 use axum::Json;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tokio::sync::RwLock;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
@@ -153,7 +154,7 @@ pub struct AppState {
     pub dream: DreamMode,
     pub embedding: Arc<dyn EmbeddingProvider>,
     /// Active governance policy for Stage 2 retrieval validation.
-    pub governance_policy: GovernancePolicy,
+    pub governance_policy: Arc<RwLock<GovernancePolicy>>,
     /// In-memory event store for Layer 0 (appended to on each mutation).
     /// For production with multiple nodes, use PostgresStore instead.
     pub events: InMemoryEventStore,
@@ -643,7 +644,7 @@ pub async fn retrieve_fractal(
         .and_then(|s| MemoryType::parse(s));
 
     // Stage 2: Governance validation
-    let validator = GovernanceValidator::new(state.governance_policy.clone());
+    let validator = GovernanceValidator::new(state.governance_policy.read().await.clone());
     let mut scored: Vec<ScoredNode> = results
         .into_iter()
         .filter_map(|s| {
@@ -876,7 +877,7 @@ pub async fn dream_status(State(state): State<AppState>) -> Json<DreamStatus> {
     )
 )]
 pub async fn get_governance_policy(State(state): State<AppState>) -> Json<GovernancePolicy> {
-    Json(state.governance_policy.clone())
+    Json(state.governance_policy.read().await.clone())
 }
 
 /// Update the governance policy.
@@ -920,7 +921,7 @@ pub async fn update_governance_policy(
     State(state): State<AppState>,
     Json(req): Json<UpdatePolicyRequest>,
 ) -> Json<UpdatePolicyResponse> {
-    let mut policy = state.governance_policy.clone();
+    let mut policy = state.governance_policy.read().await.clone();
 
     if let Some(preset) = req.preset {
         policy = match preset.as_str() {
@@ -952,7 +953,7 @@ pub async fn update_governance_policy(
         policy.recency_penalty_after_days = v;
     }
 
-    // Note: in a real app this would be persisted. For now it's in-memory only.
+    *state.governance_policy.write().await = policy.clone();
     tracing::info!(?policy, "governance policy updated");
 
     Json(UpdatePolicyResponse {

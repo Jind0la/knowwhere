@@ -8,11 +8,12 @@ use axum::Router;
 use http_body_util::BodyExt;
 use tower::ServiceExt;
 
-use knowwhere_server::api::{auth, auth::ApiKey, routes, webhooks::DedupCache};
+use knowwhere_server::api::{auth, routes, webhooks::DedupCache};
 use knowwhere_server::embedding::{EmbeddingProvider, LocalOllamaProvider};
 use knowwhere_server::memory::governance::GovernancePolicy;
 use knowwhere_server::memory::{events::InMemoryEventStore, DreamMode};
 use knowwhere_server::storage::{MemoryStore, StorageBackend};
+use tokio::sync::RwLock;
 
 /// Creates the embedding provider for tests.
 /// Always uses LocalOllama — tests are designed and validated against Ollama embeddings.
@@ -31,7 +32,7 @@ fn test_state() -> routes::AppState {
         dream_store,
         dream,
         embedding,
-        governance_policy: GovernancePolicy::default_policy(),
+        governance_policy: Arc::new(RwLock::new(GovernancePolicy::default_policy())),
         events: InMemoryEventStore::new(),
         #[cfg(feature = "postgres-storage")]
         trajectory_pool: None,
@@ -51,10 +52,10 @@ fn app_without_auth() -> Router {
         .route("/store_external", post(routes::store_external))
         .route("/retrieve/{id}", get(routes::retrieve))
         .route("/retrieve_fractal", post(routes::retrieve_fractal))
+        .route("/governance/policy", get(routes::get_governance_policy))
+        .route("/governance/policy", post(routes::update_governance_policy))
         .route("/nodes/recent", get(routes::recent_nodes))
-        .route("/dream/status", get(routes::dream_status))
-        .route_layer(middleware::from_fn(auth::auth_middleware))
-        .layer(axum::Extension(ApiKey(None)));
+        .route("/dream/status", get(routes::dream_status));
 
     Router::new()
         .route("/health", get(routes::health))
@@ -64,6 +65,11 @@ fn app_without_auth() -> Router {
 
 fn app_with_auth(key: &str) -> Router {
     let state = test_state();
+    let auth_state = auth::AuthState {
+        admin_key: Arc::new(RwLock::new(Some(key.to_string()))),
+        #[cfg(feature = "postgres-storage")]
+        pg_store: None,
+    };
 
     let protected = Router::new()
         .route("/embed", post(routes::embed_text))
@@ -74,7 +80,7 @@ fn app_with_auth(key: &str) -> Router {
         .route("/nodes/recent", get(routes::recent_nodes))
         .route("/dream/status", get(routes::dream_status))
         .route_layer(middleware::from_fn(auth::auth_middleware))
-        .layer(axum::Extension(ApiKey(Some(key.to_string()))));
+        .layer(axum::Extension(auth_state));
 
     Router::new()
         .route("/health", get(routes::health))
@@ -151,6 +157,49 @@ async fn auth_rejects_wrong_token() {
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn governance_policy_update_is_persisted_in_runtime_state() {
+    let app = app_without_auth();
+
+    let get_before = app
+        .clone()
+        .oneshot(
+            Request::get("/governance/policy")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(get_before.status(), StatusCode::OK);
+
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::post("/governance/policy")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"min_confidence":0.91,"blocked_sensitivities":["restricted","high"]}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let get_after = app
+        .oneshot(
+            Request::get("/governance/policy")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(get_after.status(), StatusCode::OK);
+    let body = body_string(get_after.into_body()).await;
+    assert!(body.contains("\"min_confidence\":0.91"));
+    assert!(body.contains("\"high\""));
 }
 
 // -- Store + Retrieve Roundtrip --

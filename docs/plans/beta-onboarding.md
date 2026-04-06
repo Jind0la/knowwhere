@@ -4,7 +4,7 @@
 **Owner:** Research Engineer — KnowWhere Investigation & Features
 **Target:** External beta testers
 **Priority:** Blockers must be resolved before beta launch
-**Status (2026-04-04):** IMP-001, IMP-002, IMP-003 DONE. IMP-004 (Quickstart) + IMP-005 (Verify) DONE (QUICKSTART.md + WALKTHROUGH.md created). 3 real blockers remain: Auth in-memory, Rate Limiting opt-in, Retention/GC.
+**Status (2026-04-06):** IMP-001 bis IMP-005 umgesetzt (Quickstart + Walkthrough vorhanden). Verbleibende Beta-Hardening-Punkte: Auth-Modus-Doku konsistent halten (static key vs PostgreSQL self-service), Rate Limiting opt-in, Retention/GC.
 
 ---
 
@@ -25,7 +25,7 @@ Enable external beta testers to connect KnowWhere to OpenClaw with minimal frict
 **Complexity:** Medium
 
 **Description:**
-There is no documented path for a new beta tester to obtain an API key. The server exposes `/auth/register` and `/auth/login`, but these return JWT tokens — which are separate from the `KNOWWHERE_API_KEY` static key used by the plugin. A decision must first be made on the key distribution model.
+There was no documented path for a new beta tester to obtain an API key. The current server supports two paths: static `KNOWWHERE_API_KEY` (self-hosted default) and self-service `/register` + `/login` when `postgres-storage` is enabled.
 
 **Decisions Required:**
 1. **Self-hosted beta**: Users generate their own static key by setting `KNOWWHERE_API_KEY=xxx` in their environment. Document this clearly.
@@ -138,7 +138,7 @@ OPENAI_API_KEY=
 ### IMP-004: Create Consolidated Quickstart Guide
 
 **Priority:** HIGH
-**Status:** Not started
+**Status:** ✅ DONE
 **Complexity:** Low
 
 **Changes Needed:**
@@ -246,7 +246,7 @@ curl http://localhost:3000/health | jq .node_count
 ### IMP-005: Add Plugin Verification Commands
 
 **Priority:** HIGH
-**Status:** Not started
+**Status:** ✅ DONE (WALKTHROUGH + QUICKSTART Verify-Schritte)
 **Complexity:** Low
 
 **Changes Needed:**
