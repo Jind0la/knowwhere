@@ -32,6 +32,12 @@ use crate::memory::types::{ConflictState, ContextTier, MemorySource, MemoryStatu
 use crate::memory::MemoryType;
 use crate::storage::backend::{HybridQuery, ScoredNode, StorageBackend, UpdateOperation};
 
+/// Hex-encoded BLAKE3 of the plaintext API key — stored in `auth_api_keys.key_hash` for O(1) lookup.
+#[must_use]
+pub fn stored_api_key_fingerprint(plaintext: &str) -> String {
+    blake3::hash(plaintext.as_bytes()).to_hex().to_string()
+}
+
 /// PostgreSQL-backed storage layer.
 /// Wraps the existing in-memory USearch index with persistent PostgreSQL storage.
 pub struct PostgresStore {
@@ -59,7 +65,11 @@ impl PostgresStore {
     // -------------------------------------------------------------------------
 
     /// Append an event to the immutable event log.
-    pub async fn append_event(&self, event_type: &str, payload: &serde_json::Value) -> Result<Uuid> {
+    pub async fn append_event(
+        &self,
+        event_type: &str,
+        payload: &serde_json::Value,
+    ) -> Result<Uuid> {
         let id = Uuid::new_v4();
         sqlx::query!(
             r#"
@@ -76,11 +86,7 @@ impl PostgresStore {
     }
 
     /// Read events for replay (used for rebuilding state from event log).
-    pub async fn read_events(
-        &self,
-        after_id: Option<Uuid>,
-        limit: i64,
-    ) -> Result<Vec<Event>> {
+    pub async fn read_events(&self, after_id: Option<Uuid>, limit: i64) -> Result<Vec<Event>> {
         let rows = if let Some(after) = after_id {
             sqlx::query_as!(
                 Event,
@@ -279,8 +285,11 @@ impl PostgresStore {
         .execute(&self.pool)
         .await?;
 
-        self.append_event("memory_deleted", &serde_json::json!({ "memory_id": id.to_string() }))
-            .await?;
+        self.append_event(
+            "memory_deleted",
+            &serde_json::json!({ "memory_id": id.to_string() }),
+        )
+        .await?;
 
         Ok(())
     }
@@ -343,7 +352,7 @@ impl PostgresStore {
             WHERE status = 'active'
               AND (embedding IS NULL
                    OR embedding = '{}'::vector)
-            "#
+            "#,
         )
         .execute(&self.pool)
         .await?;
@@ -775,6 +784,273 @@ impl PostgresStore {
         .await?;
         Ok(id)
     }
+
+    // -------------------------------------------------------------------------
+    // Auth: Users (beta user accounts)
+    // -------------------------------------------------------------------------
+
+    /// Create a new user account.
+    pub async fn create_user(
+        &self,
+        username: &str,
+        email: &str,
+        password_hash: &str,
+    ) -> Result<Uuid> {
+        let id = Uuid::new_v4();
+        sqlx::query(
+            r#"
+            INSERT INTO auth_users (id, username, email, password_hash, created_at)
+            VALUES ($1, $2, $3, $4, NOW())
+            "#,
+        )
+        .bind(id)
+        .bind(username)
+        .bind(email)
+        .bind(password_hash)
+        .execute(&self.pool)
+        .await?;
+        Ok(id)
+    }
+
+    /// Get a user by username.
+    pub async fn get_user_by_username(&self, username: &str) -> Result<Option<AuthUserRow>> {
+        let row = sqlx::query_as(
+            r#"
+            SELECT id as "id!", username as "username!", email as "email!",
+                   password_hash as "password_hash!", created_at as "created_at!"
+            FROM auth_users
+            WHERE username = $1
+            "#,
+        )
+        .bind(username)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row)
+    }
+
+    /// Delete a beta user and cascading API keys (`ON DELETE CASCADE`).
+    pub async fn delete_auth_user(&self, user_id: Uuid) -> Result<()> {
+        sqlx::query(r#"DELETE FROM auth_users WHERE id = $1"#)
+            .bind(user_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Get a user by ID.
+    pub async fn get_user_by_id(&self, id: Uuid) -> Result<Option<AuthUserRow>> {
+        let row = sqlx::query_as(
+            r#"
+            SELECT id as "id!", username as "username!", email as "email!",
+                   password_hash as "password_hash!", created_at as "created_at!"
+            FROM auth_users
+            WHERE id = $1
+            "#,
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row)
+    }
+
+    // -------------------------------------------------------------------------
+    // Auth: API Keys
+    // -------------------------------------------------------------------------
+
+    /// Create an API key for a user. Returns the key ID.
+    ///
+    /// `key_hash` must be [`stored_api_key_fingerprint`] of the plaintext key (BLAKE3 hex).
+    pub async fn create_api_key(&self, user_id: Uuid, key_hash: &str, name: &str) -> Result<Uuid> {
+        let id = Uuid::new_v4();
+        sqlx::query(
+            r#"
+            INSERT INTO auth_api_keys (id, user_id, key_hash, name, created_at)
+            VALUES ($1, $2, $3, $4, NOW())
+            "#,
+        )
+        .bind(id)
+        .bind(user_id)
+        .bind(key_hash)
+        .bind(name)
+        .execute(&self.pool)
+        .await?;
+        Ok(id)
+    }
+
+    /// Look up an API key by stored fingerprint (`key_hash` column).
+    pub async fn get_api_key_by_hash(&self, key_hash: &str) -> Result<Option<AuthApiKeyRow>> {
+        let row = sqlx::query_as(
+            r#"
+            SELECT id as "id!", user_id as "user_id!", key_hash as "key_hash!",
+                   name as "name!", created_at as "created_at!", last_used_at
+            FROM auth_api_keys
+            WHERE key_hash = $1
+            "#,
+        )
+        .bind(key_hash)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row)
+    }
+
+    /// Resolve an API key from the raw Bearer secret (BLAKE3 lookup, with legacy bcrypt migration).
+    pub async fn find_api_key_by_plaintext(
+        &self,
+        plaintext: &str,
+    ) -> Result<Option<AuthApiKeyRow>> {
+        let digest = stored_api_key_fingerprint(plaintext);
+        if let Some(row) = self.get_api_key_by_hash(&digest).await? {
+            return Ok(Some(row));
+        }
+
+        let legacy = sqlx::query_as::<_, AuthApiKeyRow>(
+            r#"
+            SELECT id as "id!", user_id as "user_id!", key_hash as "key_hash!",
+                   name as "name!", created_at as "created_at!", last_used_at
+            FROM auth_api_keys
+            WHERE key_hash LIKE '$2%'
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        for row in legacy {
+            if bcrypt::verify(plaintext, &row.key_hash).unwrap_or(false) {
+                sqlx::query(r#"UPDATE auth_api_keys SET key_hash = $1 WHERE id = $2"#)
+                    .bind(&digest)
+                    .bind(row.id)
+                    .execute(&self.pool)
+                    .await?;
+                tracing::info!(key_id = %row.id, "migrated API key row from bcrypt to BLAKE3 fingerprint");
+                let mut upgraded = row;
+                upgraded.key_hash = digest;
+                return Ok(Some(upgraded));
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Atomically remove one API key row and insert a new fingerprint for the same user/name.
+    pub async fn replace_api_key(
+        &self,
+        old_key_id: Uuid,
+        user_id: Uuid,
+        key_name: &str,
+        new_fingerprint: &str,
+    ) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
+        let deleted = sqlx::query(r#"DELETE FROM auth_api_keys WHERE id = $1 AND user_id = $2"#)
+            .bind(old_key_id)
+            .bind(user_id)
+            .execute(&mut *tx)
+            .await?;
+        if deleted.rows_affected() != 1 {
+            anyhow::bail!("api key row missing or user mismatch");
+        }
+        let new_id = Uuid::new_v4();
+        sqlx::query(
+            r#"
+            INSERT INTO auth_api_keys (id, user_id, key_hash, name, created_at)
+            VALUES ($1, $2, $3, $4, NOW())
+            "#,
+        )
+        .bind(new_id)
+        .bind(user_id)
+        .bind(new_fingerprint)
+        .bind(key_name)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    /// Update last_used_at when an API key is used.
+    pub async fn record_api_key_usage(&self, key_id: Uuid) -> Result<()> {
+        sqlx::query(
+            r#"
+            UPDATE auth_api_keys
+            SET last_used_at = NOW()
+            WHERE id = $1
+            "#,
+        )
+        .bind(key_id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Run auth schema migrations (create tables if they don't exist).
+    /// Called on server startup when postgres-storage feature is enabled.
+    pub async fn run_auth_migrations(&self) -> Result<()> {
+        // Create auth_users table
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS auth_users (
+                id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                username        VARCHAR(255) UNIQUE NOT NULL,
+                email           VARCHAR(255) UNIQUE NOT NULL,
+                password_hash   VARCHAR(255) NOT NULL,
+                created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        // Create indexes on auth_users
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS idx_auth_users_username ON auth_users(username)
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS idx_auth_users_email ON auth_users(email)
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        // Create auth_api_keys table (key_hash: BLAKE3 hex of plaintext key; legacy bcrypt rows start with $2)
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS auth_api_keys (
+                id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                user_id         UUID NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+                key_hash        VARCHAR(255) NOT NULL,
+                name            VARCHAR(255) DEFAULT 'default',
+                created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                last_used_at    TIMESTAMPTZ
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        // Create indexes on auth_api_keys
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS idx_auth_api_keys_key_hash ON auth_api_keys(key_hash)
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS idx_auth_api_keys_user ON auth_api_keys(user_id)
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        tracing::info!("auth schema migrations completed");
+        Ok(())
+    }
 }
 
 // =============================================================================
@@ -808,8 +1084,7 @@ impl StorageBackend for PostgresStore {
             Sensitivity::High => "high",
             Sensitivity::Restricted => "restricted",
         };
-        let metadata = serde_json::to_value(&node.metadata)
-            .unwrap_or(serde_json::json!({}));
+        let metadata = serde_json::to_value(&node.metadata).unwrap_or(serde_json::json!({}));
 
         self.store_session(
             content,
@@ -845,10 +1120,7 @@ impl StorageBackend for PostgresStore {
     // --- Query ---
 
     async fn hybrid_retrieve(&self, query: &HybridQuery) -> anyhow::Result<Vec<ScoredNode>> {
-        let vector = query
-            .query_vector
-            .as_deref()
-            .unwrap_or(&[]);
+        let vector = query.query_vector.as_deref().unwrap_or(&[]);
 
         // If only text is provided, fall back to BM25
         if query.query_text.is_some() && query.query_vector.is_none() {
@@ -921,7 +1193,11 @@ impl StorageBackend for PostgresStore {
             .collect())
     }
 
-    async fn search_bm25(&self, query_text: &str, top_k: usize) -> anyhow::Result<Vec<(Uuid, f32)>> {
+    async fn search_bm25(
+        &self,
+        query_text: &str,
+        top_k: usize,
+    ) -> anyhow::Result<Vec<(Uuid, f32)>> {
         self.search_bm25(query_text, top_k as i32).await
     }
 
@@ -929,18 +1205,12 @@ impl StorageBackend for PostgresStore {
 
     async fn list_all(&self) -> anyhow::Result<Vec<FractalNode>> {
         let rows = self.list_memories().await?;
-        Ok(rows
-            .into_iter()
-            .map(memory_row_to_fractal_node)
-            .collect())
+        Ok(rows.into_iter().map(memory_row_to_fractal_node).collect())
     }
 
     async fn recent(&self, limit: usize) -> anyhow::Result<Vec<FractalNode>> {
         let rows = self.recent_memories(limit as i32).await?;
-        Ok(rows
-            .into_iter()
-            .map(memory_row_to_fractal_node)
-            .collect())
+        Ok(rows.into_iter().map(memory_row_to_fractal_node).collect())
     }
 
     async fn count(&self) -> usize {
@@ -965,11 +1235,9 @@ impl StorageBackend for PostgresStore {
                 query.fetch_one(&self.pool).await?;
             }
             UpdateOperation::SetWeight(w) => {
-                let query = sqlx::query(
-                    "UPDATE memories SET weight = $1 WHERE id = $2",
-                )
-                .bind(w)
-                .bind(*id);
+                let query = sqlx::query("UPDATE memories SET weight = $1 WHERE id = $2")
+                    .bind(w)
+                    .bind(*id);
                 query.execute(&self.pool).await?;
             }
             UpdateOperation::SetParentTierId(parent_id) => {
@@ -989,11 +1257,9 @@ impl StorageBackend for PostgresStore {
                     crate::memory::types::MemoryStatus::Superseded => "superseded",
                     crate::memory::types::MemoryStatus::Stale => "stale",
                 };
-                let query = sqlx::query(
-                    "UPDATE memories SET status = $1 WHERE id = $2",
-                )
-                .bind(status_str)
-                .bind(*id);
+                let query = sqlx::query("UPDATE memories SET status = $1 WHERE id = $2")
+                    .bind(status_str)
+                    .bind(*id);
                 query.execute(&self.pool).await?;
             }
             UpdateOperation::ApplyAudit { weight, status } => {
@@ -1028,14 +1294,11 @@ fn memory_row_to_fractal_node(row: MemoryRow) -> FractalNode {
         serde_json::from_value(row.metadata.clone()).unwrap_or_default();
 
     // Parse structured fields from strings stored in the DB
-    let memory_type =
-        MemoryType::parse(&row.memory_type).unwrap_or(MemoryType::Episodic);
+    let memory_type = MemoryType::parse(&row.memory_type).unwrap_or(MemoryType::Episodic);
     let source = MemorySource::parse(&row.source).unwrap_or(MemorySource::Conversation);
-    let sensitivity =
-        Sensitivity::parse(&row.sensitivity).unwrap_or(Sensitivity::Normal);
+    let sensitivity = Sensitivity::parse(&row.sensitivity).unwrap_or(Sensitivity::Normal);
     let status = MemoryStatus::parse(&row.status).unwrap_or(MemoryStatus::Active);
-    let conflict_state =
-        ConflictState::parse(&row.conflict_state).unwrap_or(ConflictState::None);
+    let conflict_state = ConflictState::parse(&row.conflict_state).unwrap_or(ConflictState::None);
 
     // Fields not stored per-row — use sensible defaults
     let context_tier = ContextTier::Raw;
@@ -1084,11 +1347,9 @@ fn memory_row_to_fractal_node(row: MemoryRow) -> FractalNode {
 fn memory_with_score_to_fractal_node(row: MemoryWithScore) -> Option<FractalNode> {
     let provenance = row.provenance.clone();
 
-    let memory_type =
-        MemoryType::parse(&row.memory_type).unwrap_or(MemoryType::Episodic);
+    let memory_type = MemoryType::parse(&row.memory_type).unwrap_or(MemoryType::Episodic);
     let source = MemorySource::parse(&row.source).unwrap_or(MemorySource::Conversation);
-    let sensitivity =
-        Sensitivity::parse(&row.sensitivity).unwrap_or(Sensitivity::Normal);
+    let sensitivity = Sensitivity::parse(&row.sensitivity).unwrap_or(Sensitivity::Normal);
     let status = MemoryStatus::parse(&row.status).unwrap_or(MemoryStatus::Active);
 
     Some(FractalNode {
@@ -1240,4 +1501,25 @@ pub struct ConsolidationRow {
     pub status: String,
     pub error_message: Option<String>,
     pub created_at: DateTime<Utc>,
+}
+
+/// Row type for auth_users table.
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct AuthUserRow {
+    pub id: Uuid,
+    pub username: String,
+    pub email: String,
+    pub password_hash: String,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Row type for auth_api_keys table.
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct AuthApiKeyRow {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub key_hash: String,
+    pub name: String,
+    pub created_at: DateTime<Utc>,
+    pub last_used_at: Option<DateTime<Utc>>,
 }

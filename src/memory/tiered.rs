@@ -21,8 +21,8 @@ use crate::memory::types::ContextTier;
 use crate::vlm::{SummaryContext, VlmJob, VlmWorkerHandle};
 
 /// Maximum token counts per tier (rough guidelines, not enforced)
-const L0_MAX_TOKENS: usize = 50;   // ~one sentence
-const L1_MAX_TOKENS: usize = 300;  // ~one paragraph
+const L0_MAX_TOKENS: usize = 50; // ~one sentence
+const L1_MAX_TOKENS: usize = 300; // ~one paragraph
 
 /// Background worker that compacts memories through the tier hierarchy.
 ///
@@ -43,8 +43,16 @@ pub struct TieredCompactionWorker {
 }
 
 impl TieredCompactionWorker {
-    pub fn new(pool: PgPool, embedding: Arc<dyn EmbeddingProvider>, vlm_handle: Option<VlmWorkerHandle>) -> Self {
-        Self { pool, embedding, vlm_handle }
+    pub fn new(
+        pool: PgPool,
+        embedding: Arc<dyn EmbeddingProvider>,
+        vlm_handle: Option<VlmWorkerHandle>,
+    ) -> Self {
+        Self {
+            pool,
+            embedding,
+            vlm_handle,
+        }
     }
 
     /// Compact a memory to the specified target tier (or next tier down if not specified).
@@ -92,13 +100,11 @@ impl TieredCompactionWorker {
             None => anyhow::bail!("memory {} not found or not active", memory_id),
         };
 
-        let current_tier = ContextTier::parse(&row.context_tier)
-            .unwrap_or(ContextTier::Raw);
+        let current_tier = ContextTier::parse(&row.context_tier).unwrap_or(ContextTier::Raw);
 
         // Determine target tier (default: next tier down)
-        let target = target_tier.unwrap_or_else(|| {
-            current_tier.parent_tier().unwrap_or(ContextTier::Summary)
-        });
+        let target = target_tier
+            .unwrap_or_else(|| current_tier.parent_tier().unwrap_or(ContextTier::Summary));
 
         // If already at or below target, nothing to do
         if current_tier == target {
@@ -133,7 +139,8 @@ impl TieredCompactionWorker {
         if raw_content.len() <= L1_MAX_TOKENS {
             return raw_content.to_string();
         }
-        let truncated = &raw_content[..raw_content.char_indices()
+        let truncated = &raw_content[..raw_content
+            .char_indices()
             .nth(L1_MAX_TOKENS)
             .map(|(i, _)| i)
             .unwrap_or(raw_content.len())];
@@ -145,20 +152,20 @@ impl TieredCompactionWorker {
     /// Used when VLM is unavailable. For production, use VLM-based compaction
     /// via `compact_memory()`.
     pub(crate) fn truncation_fallback_summary(&self, overview_content: &str) -> String {
-        if let Some(first_sentence) = overview_content.split(&['.', '!', '?'][..])
-            .next()
-        {
+        if let Some(first_sentence) = overview_content.split(&['.', '!', '?'][..]).next() {
             let summary = first_sentence.trim();
             if summary.len() <= L0_MAX_TOKENS {
                 return summary.to_string();
             }
-            let truncated = &summary[..summary.char_indices()
+            let truncated = &summary[..summary
+                .char_indices()
                 .nth(L0_MAX_TOKENS)
                 .map(|(i, _)| i)
                 .unwrap_or(summary.len())];
             return format!("{}...", truncated.trim());
         }
-        let truncated = &overview_content[..overview_content.char_indices()
+        let truncated = &overview_content[..overview_content
+            .char_indices()
             .nth(L0_MAX_TOKENS)
             .map(|(i, _)| i)
             .unwrap_or(overview_content.len())];

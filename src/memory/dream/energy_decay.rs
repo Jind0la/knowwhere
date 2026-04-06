@@ -36,14 +36,13 @@
 //! let low_energy = worker.find_low_energy_memories(10).await?;
 //! ```
 
+use anyhow::Result;
 #[cfg(feature = "postgres-storage")]
-
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
-use uuid::Uuid;
-use anyhow::Result;
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 // =============================================================================
 // Types
@@ -245,7 +244,10 @@ impl<'a> EnergyDecayWorker<'a> {
     /// Returns an error if fewer than 2 valid memories are found.
     pub async fn compress_cluster(&self, memory_ids: &[Uuid]) -> Result<CompressionResult> {
         if memory_ids.len() < 2 {
-            anyhow::bail!("compress_cluster requires at least 2 memory IDs, got {}", memory_ids.len());
+            anyhow::bail!(
+                "compress_cluster requires at least 2 memory IDs, got {}",
+                memory_ids.len()
+            );
         }
 
         // Fetch all memories in the cluster

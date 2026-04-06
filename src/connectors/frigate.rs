@@ -49,8 +49,14 @@ impl FrigateConnector {
                 self.base_url, event_id
             );
 
-            let camera = ev.get("camera").and_then(|v| v.as_str()).unwrap_or("unknown");
-            let label = ev.get("label").and_then(|v| v.as_str()).unwrap_or("unknown");
+            let camera = ev
+                .get("camera")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            let label = ev
+                .get("label")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
             let score = ev.get("top_score").and_then(|v| v.as_f64()).unwrap_or(0.0);
 
             result.push(ExternalEvent {

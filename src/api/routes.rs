@@ -10,15 +10,18 @@ use serde_json::Value;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
-use crate::embedding::{EmbeddingProvider, embed_document, embed_query};
+use crate::api::webhooks::{check_webhook_secret, DedupCache};
+use crate::embedding::{embed_document, embed_query, EmbeddingProvider};
 use crate::memory::dream::DreamStatus;
 #[cfg(feature = "postgres-storage")]
 use crate::memory::skills::CreateSkillResponse;
 use crate::memory::types::{ContextTier, MemorySource, MemoryType, Sensitivity};
-use crate::memory::{DreamMode, Event, EventStore, FractalNode, GovernancePolicy, GovernanceValidator, InMemoryEventStore};
+use crate::memory::{
+    DreamMode, Event, EventStore, FractalNode, GovernancePolicy, GovernanceValidator,
+    InMemoryEventStore,
+};
 use crate::multimodal::MultimodalData;
 use crate::vlm::{SummaryContext, VlmJob, VlmWorkerStatus};
-use crate::api::webhooks::{check_webhook_secret, DedupCache};
 
 #[derive(Serialize, ToSchema)]
 pub struct ScoredNode {
@@ -139,7 +142,7 @@ fn clean_for_embedding(text: &str) -> String {
     }
     out
 }
-use crate::storage::{MemoryStore, StorageBackend, HybridQuery};
+use crate::storage::{HybridQuery, MemoryStore, StorageBackend};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -294,7 +297,10 @@ pub async fn store_session(
     // Validate content before embedding to avoid opaque upstream errors
     let cleaned = clean_for_embedding(&req.content);
     if cleaned.len() < 4 {
-        return Err((StatusCode::BAD_REQUEST, "content too short or empty after cleaning".into()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "content too short or empty after cleaning".into(),
+        ));
     }
     // Reject highly repetitive content — Ollama rejects near-uniform strings
     {
@@ -311,7 +317,10 @@ pub async fn store_session(
             if let Some(&max_count) = freq.values().max() {
                 let ratio = max_count as f64 / total as f64;
                 if ratio > 0.9 {
-                    return Err((StatusCode::BAD_REQUEST, "content too repetitive for embedding".into()));
+                    return Err((
+                        StatusCode::BAD_REQUEST,
+                        "content too repetitive for embedding".into(),
+                    ));
                 }
             }
         }
@@ -319,17 +328,18 @@ pub async fn store_session(
 
     let vector = match req.vector {
         Some(v) if !v.is_empty() => v,
-        _ => {
-            embed_document(&*state.embedding, &cleaned)
-                .await
-                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("auto-embed failed: {e}")))?
-        }
+        _ => embed_document(&*state.embedding, &cleaned)
+            .await
+            .map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("auto-embed failed: {e}"),
+                )
+            })?,
     };
 
-    let memory_type = MemoryType::parse(&req.memory_type)
-        .unwrap_or(MemoryType::Episodic);
-    let source = MemorySource::parse(&req.source)
-        .unwrap_or(MemorySource::Conversation);
+    let memory_type = MemoryType::parse(&req.memory_type).unwrap_or(MemoryType::Episodic);
+    let source = MemorySource::parse(&req.source).unwrap_or(MemorySource::Conversation);
 
     let mut node = FractalNode::new_typed(
         Some(req.content),
@@ -419,22 +429,30 @@ pub async fn store_external(
                 if !emb.is_empty() {
                     emb.to_vec()
                 } else {
-                    embed_document(&*state.embedding, &req.pointer).await.map_err(|e| {
-                        (StatusCode::INTERNAL_SERVER_ERROR, format!("auto-embed failed: {e}"))
-                    })?
+                    embed_document(&*state.embedding, &req.pointer)
+                        .await
+                        .map_err(|e| {
+                            (
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                format!("auto-embed failed: {e}"),
+                            )
+                        })?
                 }
             } else {
-                embed_document(&*state.embedding, &req.pointer).await.map_err(|e| {
-                    (StatusCode::INTERNAL_SERVER_ERROR, format!("auto-embed failed: {e}"))
-                })?
+                embed_document(&*state.embedding, &req.pointer)
+                    .await
+                    .map_err(|e| {
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            format!("auto-embed failed: {e}"),
+                        )
+                    })?
             }
         }
     };
 
-    let memory_type = MemoryType::parse(&req.memory_type)
-        .unwrap_or(MemoryType::Semantic);
-    let source = MemorySource::parse(&req.source)
-        .unwrap_or(MemorySource::Import);
+    let memory_type = MemoryType::parse(&req.memory_type).unwrap_or(MemoryType::Semantic);
+    let source = MemorySource::parse(&req.source).unwrap_or(MemorySource::Import);
 
     let mut node = FractalNode::new_typed(
         None,
@@ -569,14 +587,10 @@ pub async fn retrieve_fractal(
                     return Err(StatusCode::BAD_REQUEST);
                 }
                 tracing::info!(query_text = %text, "embedding query text");
-                state
-                    .embedding
-                    .embed(text)
-                    .await
-                    .map_err(|e| {
-                        tracing::error!("embedding failed: {}", e);
-                        StatusCode::INTERNAL_SERVER_ERROR
-                    })?
+                state.embedding.embed(text).await.map_err(|e| {
+                    tracing::error!("embedding failed: {}", e);
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?
             } else {
                 return Err(StatusCode::BAD_REQUEST);
             }
@@ -585,8 +599,7 @@ pub async fn retrieve_fractal(
     tracing::info!(query_vector_dim = query_vector.len(), "using query vector");
 
     // Parse max_tier filter (default: overview)
-    let max_tier = req.max_tier.as_ref()
-        .and_then(|s| ContextTier::parse(s));
+    let max_tier = req.max_tier.as_ref().and_then(|s| ContextTier::parse(s));
 
     // Stage 1: Hybrid retrieval via StorageBackend trait
     let query = HybridQuery {
@@ -595,14 +608,10 @@ pub async fn retrieve_fractal(
         top_k: req.top_k,
         max_depth: req.max_depth,
     };
-    let results = state
-        .store
-        .hybrid_retrieve(&query)
-        .await
-        .map_err(|e| {
-            tracing::error!("hybrid_retrieve failed: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    let results = state.store.hybrid_retrieve(&query).await.map_err(|e| {
+        tracing::error!("hybrid_retrieve failed: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     // Apply max_tier filter: only include nodes at or below max_tier
     let max_tier_filter = max_tier;
@@ -655,7 +664,12 @@ pub async fn retrieve_fractal(
                 return None;
             }
 
-            Some(ScoredNode::from_governed(s.score, s.node, validation.passed, validation.issues))
+            Some(ScoredNode::from_governed(
+                s.score,
+                s.node,
+                validation.passed,
+                validation.issues,
+            ))
         })
         .collect();
 
@@ -663,16 +677,22 @@ pub async fn retrieve_fractal(
     // Nodes with hard blocks are already filtered out above.
     scored.sort_by(|a, b| {
         // Apply governance score multiplier to retrieval score
-        let multiplier_a = a.governance_issues.iter()
+        let multiplier_a = a
+            .governance_issues
+            .iter()
             .map(|i| i.score_impact)
             .fold(1.0_f64, |acc, m| acc * m) as f32;
-        let multiplier_b = b.governance_issues.iter()
+        let multiplier_b = b
+            .governance_issues
+            .iter()
             .map(|i| i.score_impact)
             .fold(1.0_f64, |acc, m| acc * m) as f32;
 
         let effective_a = a.score * multiplier_a;
         let effective_b = b.score * multiplier_b;
-        effective_b.partial_cmp(&effective_a).unwrap_or(std::cmp::Ordering::Equal)
+        effective_b
+            .partial_cmp(&effective_a)
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
 
     Ok(Json(scored))
@@ -759,11 +779,10 @@ pub async fn recent_nodes(
     axum::extract::Query(q): axum::extract::Query<RecentQuery>,
 ) -> Result<Json<Vec<FractalNode>>, StatusCode> {
     let limit = q.limit.min(100);
-    let nodes = state.store.recent(limit).await
-        .map_err(|e| {
-            tracing::error!("recent failed: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    let nodes = state.store.recent(limit).await.map_err(|e| {
+        tracing::error!("recent failed: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
     Ok(Json(nodes))
 }
 
@@ -784,9 +803,7 @@ pub struct ReembedResponse {
         (status = 200, description = "Re-embedding complete", body = ReembedResponse)
     )
 )]
-pub async fn reembed_all(
-    State(state): State<AppState>,
-) -> Json<ReembedResponse> {
+pub async fn reembed_all(State(state): State<AppState>) -> Json<ReembedResponse> {
     let all_nodes = state.store.list_all().await.unwrap_or_default();
     let mut updated = 0usize;
     let mut failed = 0usize;
@@ -803,7 +820,12 @@ pub async fn reembed_all(
 
         match embed_document(&*state.embedding, &text).await {
             Ok(vec) => {
-                if state.store.update_vector(&node.id, vec).await.unwrap_or(false) {
+                if state
+                    .store
+                    .update_vector(&node.id, vec)
+                    .await
+                    .unwrap_or(false)
+                {
                     updated += 1;
                 } else {
                     failed += 1;
@@ -1072,12 +1094,19 @@ pub async fn list_retrieval_runs(
 ) -> Result<Json<Vec<RetrievalRunResponse>>, (StatusCode, String)> {
     let pool = match &state.trajectory_pool {
         Some(p) => p,
-        None => return Err((StatusCode::SERVICE_UNAVAILABLE, "postgres-storage not configured".into())),
+        None => {
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "postgres-storage not configured".into(),
+            ))
+        }
     };
     let store = crate::storage::TrajectoryStore::new(pool.as_ref());
     let limit = q.limit.min(100);
     match store.list_runs(limit, q.after_id).await {
-        Ok(rows) => Ok(Json(rows.into_iter().map(RetrievalRunResponse::from).collect())),
+        Ok(rows) => Ok(Json(
+            rows.into_iter().map(RetrievalRunResponse::from).collect(),
+        )),
         Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
     }
 }
@@ -1102,12 +1131,20 @@ pub async fn get_retrieval_run(
 ) -> Result<Json<RetrievalRunResponse>, (StatusCode, String)> {
     let pool = match &state.trajectory_pool {
         Some(p) => p,
-        None => return Err((StatusCode::SERVICE_UNAVAILABLE, "postgres-storage not configured".into())),
+        None => {
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "postgres-storage not configured".into(),
+            ))
+        }
     };
     let store = crate::storage::TrajectoryStore::new(pool.as_ref());
     match store.get_run(id).await {
         Ok(Some(row)) => Ok(Json(RetrievalRunResponse::from(row))),
-        Ok(None) => Err((StatusCode::NOT_FOUND, format!("retrieval run {id} not found"))),
+        Ok(None) => Err((
+            StatusCode::NOT_FOUND,
+            format!("retrieval run {id} not found"),
+        )),
         Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
     }
 }
@@ -1132,11 +1169,18 @@ pub async fn get_retrieval_trajectory(
 ) -> Result<Json<Vec<TrajectoryStepResponse>>, (StatusCode, String)> {
     let pool = match &state.trajectory_pool {
         Some(p) => p,
-        None => return Err((StatusCode::SERVICE_UNAVAILABLE, "postgres-storage not configured".into())),
+        None => {
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "postgres-storage not configured".into(),
+            ))
+        }
     };
     let store = crate::storage::TrajectoryStore::new(pool.as_ref());
     match store.get_trajectory(id).await {
-        Ok(rows) => Ok(Json(rows.into_iter().map(TrajectoryStepResponse::from).collect())),
+        Ok(rows) => Ok(Json(
+            rows.into_iter().map(TrajectoryStepResponse::from).collect(),
+        )),
         Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
     }
 }
@@ -1187,18 +1231,29 @@ pub async fn compact_memory(
 
     let pool = match &state.trajectory_pool {
         Some(p) => p.clone(),
-        None => return Err((StatusCode::SERVICE_UNAVAILABLE, "postgres-storage not configured".into())),
+        None => {
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "postgres-storage not configured".into(),
+            ))
+        }
     };
 
     let target_tier = q.tier.as_ref().and_then(|s| ContextTier::parse(s));
 
-    let worker = TieredCompactionWorker::new((*pool).clone(), state.embedding.clone(), state.vlm_worker.clone());
+    let worker = TieredCompactionWorker::new(
+        (*pool).clone(),
+        state.embedding.clone(),
+        state.vlm_worker.clone(),
+    );
     match worker.compact_memory(id, target_tier).await {
         Ok(new_id) => {
             let tier_str = if new_id == id {
                 id.to_string() // no new tier created
             } else {
-                target_tier.map(|t| t.to_string()).unwrap_or_else(|| "next".to_string())
+                target_tier
+                    .map(|t| t.to_string())
+                    .unwrap_or_else(|| "next".to_string())
             };
             Ok(Json(CompactMemoryResponse {
                 id: new_id,
@@ -1206,7 +1261,12 @@ pub async fn compact_memory(
                 message: if new_id == id {
                     "memory already at target tier".to_string()
                 } else {
-                    format!("compacted to {}", target_tier.map(|t| t.to_string()).unwrap_or_else(|| "next tier".to_string()))
+                    format!(
+                        "compacted to {}",
+                        target_tier
+                            .map(|t| t.to_string())
+                            .unwrap_or_else(|| "next tier".to_string())
+                    )
                 },
             }))
         }
@@ -1291,9 +1351,13 @@ pub async fn get_memory(
 #[cfg(feature = "postgres-storage")]
 use crate::memory::dream::conflict_detection::{ConflictDetector, ConflictGroup};
 #[cfg(feature = "postgres-storage")]
-use crate::memory::dream::energy_decay::{EnergyDecayWorker, MemoryEnergyInfo, DecayResult, CompressionResult};
+use crate::memory::dream::deduplication::{
+    DeduplicationResult, DeduplicationRunRow, DeduplicationWorker, DuplicatePair,
+};
 #[cfg(feature = "postgres-storage")]
-use crate::memory::dream::deduplication::{DeduplicationWorker, DuplicatePair, DeduplicationRunRow, DeduplicationResult};
+use crate::memory::dream::energy_decay::{
+    CompressionResult, DecayResult, EnergyDecayWorker, MemoryEnergyInfo,
+};
 
 /// GET /conflicts — list all pending (unresolved) conflicts.
 #[cfg(feature = "postgres-storage")]
@@ -1306,10 +1370,17 @@ use crate::memory::dream::deduplication::{DeduplicationWorker, DuplicatePair, De
         (status = 503, description = "postgres-storage not configured", body = String)
     )
 )]
-pub async fn list_conflicts(State(state): State<AppState>) -> Result<Json<Vec<ConflictGroup>>, (StatusCode, String)> {
+pub async fn list_conflicts(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<ConflictGroup>>, (StatusCode, String)> {
     let pool = match &state.trajectory_pool {
         Some(p) => p.clone(),
-        None => return Err((StatusCode::SERVICE_UNAVAILABLE, "postgres-storage not configured".into())),
+        None => {
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "postgres-storage not configured".into(),
+            ))
+        }
     };
 
     let detector = ConflictDetector::new(&pool);
@@ -1358,7 +1429,12 @@ pub async fn resolve_conflict(
 ) -> Result<Json<ResolveConflictResponse>, (StatusCode, String)> {
     let pool = match &state.trajectory_pool {
         Some(p) => p.clone(),
-        None => return Err((StatusCode::SERVICE_UNAVAILABLE, "postgres-storage not configured".into())),
+        None => {
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "postgres-storage not configured".into(),
+            ))
+        }
     };
 
     let detector = ConflictDetector::new(&pool);
@@ -1426,7 +1502,12 @@ pub async fn boost_memory_energy(
 ) -> Result<Json<BoostEnergyResponse>, (StatusCode, String)> {
     let pool = match &state.trajectory_pool {
         Some(p) => p.clone(),
-        None => return Err((StatusCode::SERVICE_UNAVAILABLE, "postgres-storage not configured".into())),
+        None => {
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "postgres-storage not configured".into(),
+            ))
+        }
     };
 
     let worker = EnergyDecayWorker::with_defaults(&pool);
@@ -1438,7 +1519,10 @@ pub async fn boost_memory_energy(
         })),
         Err(e) => {
             if e.to_string().contains("0 rows") {
-                Err((StatusCode::NOT_FOUND, format!("memory {} not found or not active", id)))
+                Err((
+                    StatusCode::NOT_FOUND,
+                    format!("memory {} not found or not active", id),
+                ))
             } else {
                 Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
             }
@@ -1475,7 +1559,12 @@ pub async fn list_low_energy_memories(
 ) -> Result<Json<Vec<MemoryEnergyInfo>>, (StatusCode, String)> {
     let pool = match &state.trajectory_pool {
         Some(p) => p.clone(),
-        None => return Err((StatusCode::SERVICE_UNAVAILABLE, "postgres-storage not configured".into())),
+        None => {
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "postgres-storage not configured".into(),
+            ))
+        }
     };
 
     let worker = EnergyDecayWorker::with_defaults(&pool);
@@ -1501,7 +1590,12 @@ pub async fn apply_energy_decay(
 ) -> Result<Json<DecayResult>, (StatusCode, String)> {
     let pool = match &state.trajectory_pool {
         Some(p) => p.clone(),
-        None => return Err((StatusCode::SERVICE_UNAVAILABLE, "postgres-storage not configured".into())),
+        None => {
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "postgres-storage not configured".into(),
+            ))
+        }
     };
 
     let worker = EnergyDecayWorker::with_defaults(&pool);
@@ -1538,11 +1632,19 @@ pub async fn compress_memory_cluster(
 ) -> Result<Json<CompressionResult>, (StatusCode, String)> {
     let pool = match &state.trajectory_pool {
         Some(p) => p.clone(),
-        None => return Err((StatusCode::SERVICE_UNAVAILABLE, "postgres-storage not configured".into())),
+        None => {
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "postgres-storage not configured".into(),
+            ))
+        }
     };
 
     if req.memory_ids.len() < 2 {
-        return Err((StatusCode::BAD_REQUEST, "need at least 2 memory IDs to compress".into()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "need at least 2 memory IDs to compress".into(),
+        ));
     }
 
     let worker = EnergyDecayWorker::with_defaults(&pool);
@@ -1572,7 +1674,12 @@ pub async fn list_deduplication_candidates(
 ) -> Result<Json<Vec<DuplicatePair>>, (StatusCode, String)> {
     let pool = match &state.trajectory_pool {
         Some(p) => p.clone(),
-        None => return Err((StatusCode::SERVICE_UNAVAILABLE, "postgres-storage not configured".into())),
+        None => {
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "postgres-storage not configured".into(),
+            ))
+        }
     };
 
     let worker = DeduplicationWorker::with_defaults(&pool);
@@ -1598,7 +1705,12 @@ pub async fn run_deduplication(
 ) -> Result<Json<DeduplicationResult>, (StatusCode, String)> {
     let pool = match &state.trajectory_pool {
         Some(p) => p.clone(),
-        None => return Err((StatusCode::SERVICE_UNAVAILABLE, "postgres-storage not configured".into())),
+        None => {
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "postgres-storage not configured".into(),
+            ))
+        }
     };
 
     let worker = DeduplicationWorker::with_defaults(&pool);
@@ -1637,7 +1749,12 @@ pub async fn list_deduplication_runs(
 ) -> Result<Json<Vec<DeduplicationRunRow>>, (StatusCode, String)> {
     let pool = match &state.trajectory_pool {
         Some(p) => p.clone(),
-        None => return Err((StatusCode::SERVICE_UNAVAILABLE, "postgres-storage not configured".into())),
+        None => {
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "postgres-storage not configured".into(),
+            ))
+        }
     };
 
     let worker = DeduplicationWorker::with_defaults(&pool);
@@ -1653,7 +1770,7 @@ pub async fn list_deduplication_runs(
 
 #[cfg(feature = "postgres-storage")]
 use crate::memory::self_healing::{
-    HealthCheckResult, HealingStats, RepairStatus, SelfHealingService,
+    HealingStats, HealthCheckResult, RepairStatus, SelfHealingService,
 };
 
 /// POST /memories/{id}/reindex — re-compute content hash + semantic thumbnail for an external node.
@@ -1691,7 +1808,12 @@ pub async fn reindex_external_node(
 
     let pool = match &state.trajectory_pool {
         Some(p) => p.clone(),
-        None => return Err((StatusCode::SERVICE_UNAVAILABLE, "postgres-storage not configured".into())),
+        None => {
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "postgres-storage not configured".into(),
+            ))
+        }
     };
 
     // Fetch the memory to get its original_pointer
@@ -1701,10 +1823,12 @@ pub async fn reindex_external_node(
         Err(e) => return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
     };
 
-    let uri = node
-        .original_pointer
-        .as_ref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, format!("memory {id} has no original_pointer (not an external node)")))?;
+    let uri = node.original_pointer.as_ref().ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            format!("memory {id} has no original_pointer (not an external node)"),
+        )
+    })?;
 
     // Convert URI to path
     let file_path: PathBuf = if uri.starts_with("file://") {
@@ -1714,7 +1838,10 @@ pub async fn reindex_external_node(
     };
 
     if !file_path.exists() {
-        return Err((StatusCode::BAD_REQUEST, format!("pointer file does not exist: {}", file_path.display())));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            format!("pointer file does not exist: {}", file_path.display()),
+        ));
     }
 
     // Get file_root from env or default
@@ -1726,7 +1853,12 @@ pub async fn reindex_external_node(
     service
         .index_external_node(id, &file_path)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("reindex failed: {e}")))?;
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("reindex failed: {e}"),
+            )
+        })?;
 
     // Fetch updated hash/thumbnail for response
     let (content_hash, thumbnail_words) = {
@@ -1737,17 +1869,24 @@ pub async fn reindex_external_node(
             "#,
             id,
         )
-        .fetch_one(
-            match state.trajectory_pool.as_ref() {
-                Some(arc) => &**arc,
-                None => return Err((StatusCode::INTERNAL_SERVER_ERROR, "no trajectory pool".into()).into()),
-            },
-        )
+        .fetch_one(match state.trajectory_pool.as_ref() {
+            Some(arc) => &**arc,
+            None => {
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "no trajectory pool".into(),
+                )
+                    .into())
+            }
+        })
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
         (
             row.content_hash,
-            row.semantic_thumbnail.as_ref().map(|t| t.split_whitespace().count()).unwrap_or(0),
+            row.semantic_thumbnail
+                .as_ref()
+                .map(|t| t.split_whitespace().count())
+                .unwrap_or(0),
         )
     };
 
@@ -1782,7 +1921,12 @@ pub async fn memory_health_check(
 ) -> Result<Json<HealthCheckResult>, (StatusCode, String)> {
     let pool = match &state.trajectory_pool {
         Some(p) => p.clone(),
-        None => return Err((StatusCode::SERVICE_UNAVAILABLE, "postgres-storage not configured".into())),
+        None => {
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "postgres-storage not configured".into(),
+            ))
+        }
     };
 
     let file_root = std::env::var("KNOWWHERE_FILE_ROOT")
@@ -1812,7 +1956,12 @@ pub async fn self_healing_stats(
 ) -> Result<Json<HealingStats>, (StatusCode, String)> {
     let pool = match &state.trajectory_pool {
         Some(p) => p.clone(),
-        None => return Err((StatusCode::SERVICE_UNAVAILABLE, "postgres-storage not configured".into())),
+        None => {
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "postgres-storage not configured".into(),
+            ))
+        }
     };
 
     let file_root = std::env::var("KNOWWHERE_FILE_ROOT")
@@ -1846,7 +1995,12 @@ pub async fn list_namespaces(
 ) -> Result<Json<Vec<crate::memory::namespaces::MemoryNamespace>>, (StatusCode, String)> {
     let pool = match &state.trajectory_pool {
         Some(p) => p.clone(),
-        None => return Err((StatusCode::SERVICE_UNAVAILABLE, "postgres-storage not configured".into())),
+        None => {
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "postgres-storage not configured".into(),
+            ))
+        }
     };
 
     let store = crate::memory::namespaces::NamespaceStore::new(pool.as_ref());
@@ -1877,13 +2031,21 @@ pub async fn get_namespace(
 ) -> Result<Json<crate::memory::namespaces::MemoryNamespace>, (StatusCode, String)> {
     let pool = match &state.trajectory_pool {
         Some(p) => p.clone(),
-        None => return Err((StatusCode::SERVICE_UNAVAILABLE, "postgres-storage not configured".into())),
+        None => {
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "postgres-storage not configured".into(),
+            ))
+        }
     };
 
     let store = crate::memory::namespaces::NamespaceStore::new(pool.as_ref());
     match store.find_by_path(&path).await {
         Ok(Some(ns)) => Ok(Json(ns)),
-        Ok(None) => Err((StatusCode::NOT_FOUND, format!("namespace '{path}' not found"))),
+        Ok(None) => Err((
+            StatusCode::NOT_FOUND,
+            format!("namespace '{path}' not found"),
+        )),
         Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
     }
 }
@@ -1918,7 +2080,12 @@ pub async fn namespace_memories(
 ) -> Result<Json<Vec<crate::memory::namespaces::MemoryRow>>, (StatusCode, String)> {
     let pool = match &state.trajectory_pool {
         Some(p) => p.clone(),
-        None => return Err((StatusCode::SERVICE_UNAVAILABLE, "postgres-storage not configured".into())),
+        None => {
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "postgres-storage not configured".into(),
+            ))
+        }
     };
 
     let store = crate::memory::namespaces::NamespaceStore::new(pool.as_ref());
@@ -1927,7 +2094,10 @@ pub async fn namespace_memories(
             Ok(rows) => Ok(Json(rows)),
             Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
         },
-        Ok(None) => Err((StatusCode::NOT_FOUND, format!("namespace '{path}' not found"))),
+        Ok(None) => Err((
+            StatusCode::NOT_FOUND,
+            format!("namespace '{path}' not found"),
+        )),
         Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
     }
 }
@@ -1965,7 +2135,12 @@ pub async fn create_namespace(
 ) -> Result<(StatusCode, Json<CreateNamespaceResponse>), (StatusCode, String)> {
     let pool = match &state.trajectory_pool {
         Some(p) => p.clone(),
-        None => return Err((StatusCode::SERVICE_UNAVAILABLE, "postgres-storage not configured".into())),
+        None => {
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "postgres-storage not configured".into(),
+            ))
+        }
     };
 
     let depth = req.path.matches('/').count() as i32 + 1;
@@ -2022,7 +2197,12 @@ pub async fn namespace_search(
 
     let pool = match &state.trajectory_pool {
         Some(p) => p.clone(),
-        None => return Err((StatusCode::SERVICE_UNAVAILABLE, "postgres-storage not configured".into())),
+        None => {
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "postgres-storage not configured".into(),
+            ))
+        }
     };
 
     let store = NamespaceStore::new(pool.as_ref());
@@ -2030,7 +2210,12 @@ pub async fn namespace_search(
     // Resolve path to namespace ID
     let namespace_id = match store.find_by_path(&path).await {
         Ok(Some(ns)) => ns.id,
-        Ok(None) => return Err((StatusCode::NOT_FOUND, format!("namespace '{path}' not found"))),
+        Ok(None) => {
+            return Err((
+                StatusCode::NOT_FOUND,
+                format!("namespace '{path}' not found"),
+            ))
+        }
         Err(e) => return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
     };
 
@@ -2050,7 +2235,12 @@ pub async fn namespace_search(
     let query_text = q.q.clone();
     let query_vector = embed_query(&*state.embedding, &query_text)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("embed failed: {e}")))?;
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("embed failed: {e}"),
+            )
+        })?;
 
     // Hybrid retrieve with the namespace constraint
     let query = HybridQuery {
@@ -2059,11 +2249,12 @@ pub async fn namespace_search(
         top_k: q.top_k,
         max_depth: 3,
     };
-    let all_results = state
-        .store
-        .hybrid_retrieve(&query)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("hybrid_retrieve failed: {e}")))?;
+    let all_results = state.store.hybrid_retrieve(&query).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("hybrid_retrieve failed: {e}"),
+        )
+    })?;
 
     // Filter to only memories in this namespace
     let filtered: Vec<ScoredNode> = all_results
@@ -2099,7 +2290,12 @@ pub async fn create_skill(
 
     let pool = match &state.trajectory_pool {
         Some(p) => p.clone(),
-        None => return Err((StatusCode::SERVICE_UNAVAILABLE, "postgres-storage not configured".into())),
+        None => {
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "postgres-storage not configured".into(),
+            ))
+        }
     };
 
     let store = SkillsStore::new(pool.as_ref());
@@ -2146,7 +2342,12 @@ pub async fn list_skills(
 
     let pool = match &state.trajectory_pool {
         Some(p) => p.clone(),
-        None => return Err((StatusCode::SERVICE_UNAVAILABLE, "postgres-storage not configured".into())),
+        None => {
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "postgres-storage not configured".into(),
+            ))
+        }
     };
 
     let store = SkillsStore::new(pool.as_ref());
@@ -2179,7 +2380,12 @@ pub async fn get_skill(
 
     let pool = match &state.trajectory_pool {
         Some(p) => p.clone(),
-        None => return Err((StatusCode::SERVICE_UNAVAILABLE, "postgres-storage not configured".into())),
+        None => {
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "postgres-storage not configured".into(),
+            ))
+        }
     };
 
     let store = SkillsStore::new(pool.as_ref());
@@ -2215,7 +2421,12 @@ pub async fn update_skill(
 
     let pool = match &state.trajectory_pool {
         Some(p) => p.clone(),
-        None => return Err((StatusCode::SERVICE_UNAVAILABLE, "postgres-storage not configured".into())),
+        None => {
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "postgres-storage not configured".into(),
+            ))
+        }
     };
 
     let store = SkillsStore::new(pool.as_ref());
@@ -2257,7 +2468,12 @@ pub async fn delete_skill(
 
     let pool = match &state.trajectory_pool {
         Some(p) => p.clone(),
-        None => return Err((StatusCode::SERVICE_UNAVAILABLE, "postgres-storage not configured".into())),
+        None => {
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "postgres-storage not configured".into(),
+            ))
+        }
     };
 
     let store = SkillsStore::new(pool.as_ref());
@@ -2285,7 +2501,7 @@ pub struct UseSkillQuery {
     pub success: bool,
 }
 
-    #[allow(dead_code)]
+#[allow(dead_code)]
 fn default_success() -> bool {
     true
 }
@@ -2321,7 +2537,12 @@ pub async fn use_skill(
 
     let pool = match &state.trajectory_pool {
         Some(p) => p.clone(),
-        None => return Err((StatusCode::SERVICE_UNAVAILABLE, "postgres-storage not configured".into())),
+        None => {
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "postgres-storage not configured".into(),
+            ))
+        }
     };
 
     let store = SkillsStore::new(pool.as_ref());
@@ -2372,7 +2593,12 @@ pub async fn match_skills(
 
     let pool = match &state.trajectory_pool {
         Some(p) => p.clone(),
-        None => return Err((StatusCode::SERVICE_UNAVAILABLE, "postgres-storage not configured".into())),
+        None => {
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "postgres-storage not configured".into(),
+            ))
+        }
     };
 
     let store = SkillsStore::new(pool.as_ref());
@@ -2428,7 +2654,10 @@ pub async fn vlm_status(
             let status = handle.status().await;
             Ok(Json(status))
         }
-        None => Err((StatusCode::SERVICE_UNAVAILABLE, "VLM worker not configured (set OPENAI_API_KEY or GROK_API_KEY)".into())),
+        None => Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            "VLM worker not configured (set OPENAI_API_KEY or GROK_API_KEY)".into(),
+        )),
     }
 }
 
@@ -2448,9 +2677,12 @@ pub async fn vlm_enqueue(
     State(state): State<AppState>,
     Json(req): Json<VlmEnqueueRequest>,
 ) -> Result<(StatusCode, Json<VlmEnqueueResponse>), (StatusCode, String)> {
-    let handle = state.vlm_worker
-        .as_ref()
-        .ok_or_else(|| (StatusCode::SERVICE_UNAVAILABLE, "VLM worker not configured".into()))?;
+    let handle = state.vlm_worker.as_ref().ok_or_else(|| {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "VLM worker not configured".into(),
+        )
+    })?;
 
     if req.node_ids.is_empty() {
         return Err((StatusCode::BAD_REQUEST, "node_ids must not be empty".into()));
@@ -2460,22 +2692,26 @@ pub async fn vlm_enqueue(
         return Err((StatusCode::BAD_REQUEST, "priority must be 1–10".into()));
     }
 
-    let job = VlmJob::new(req.node_ids.clone(), req.context)
-        .with_priority(req.priority);
+    let job = VlmJob::new(req.node_ids.clone(), req.context).with_priority(req.priority);
 
     let job_id = job.id;
 
-    handle.enqueue(job).await
+    handle
+        .enqueue(job)
+        .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     let status = handle.status().await;
 
     tracing::info!(job_id = %job_id, queue_depth = status.queue_depth, "VLM job enqueued");
 
-    Ok((StatusCode::ACCEPTED, Json(VlmEnqueueResponse {
-        job_id,
-        queue_depth: status.queue_depth,
-    })))
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(VlmEnqueueResponse {
+            job_id,
+            queue_depth: status.queue_depth,
+        }),
+    ))
 }
 
 // -- Frigate Webhook --
@@ -2587,7 +2823,10 @@ pub async fn webhook_frigate(
 
     if !check_webhook_secret(webhook_secret, header_secret, query_secret) {
         tracing::warn!("frigate webhook: unauthorized (bad secret)");
-        return Err((StatusCode::UNAUTHORIZED, "invalid or missing webhook secret".into()));
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            "invalid or missing webhook secret".into(),
+        ));
     }
 
     // 2. Deduplicate by event_id
@@ -2595,7 +2834,10 @@ pub async fn webhook_frigate(
     let dedup_key = format!("frigate:{}", event_id);
     if state.frigate_dedup.seen_or_insert(&dedup_key).await {
         tracing::debug!(event_id = %event_id, "frigate webhook: duplicate event");
-        return Err((StatusCode::CONFLICT, format!("event {} already processed", event_id)));
+        return Err((
+            StatusCode::CONFLICT,
+            format!("event {} already processed", event_id),
+        ));
     }
 
     // 3. Build external event and store
@@ -2610,7 +2852,10 @@ pub async fn webhook_frigate(
         }
         Err(e) => {
             tracing::error!(event_id = %event_id, error = %e, "frigate webhook: failed to store");
-            Err((StatusCode::INTERNAL_SERVER_ERROR, format!("store failed: {e}")))
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("store failed: {e}"),
+            ))
         }
     }
 }

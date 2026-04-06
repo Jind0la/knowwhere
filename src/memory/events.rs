@@ -207,9 +207,7 @@ pub mod builders {
 
     pub fn memory_superseded(memory_id: Uuid, superseded_by_id: Uuid) -> Event {
         Event::new(
-            EventType::MemorySuperseded {
-                superseded_by_id,
-            },
+            EventType::MemorySuperseded { superseded_by_id },
             serde_json::json!({
                 "memory_id": memory_id.to_string(),
                 "superseded_by": superseded_by_id.to_string(),
@@ -289,18 +287,10 @@ pub trait EventStore: Send + Sync {
     }
 
     /// Read events after a given cursor (for replay).
-    async fn read_after(
-        &self,
-        after_id: Option<Uuid>,
-        limit: i64,
-    ) -> anyhow::Result<Vec<Event>>;
+    async fn read_after(&self, after_id: Option<Uuid>, limit: i64) -> anyhow::Result<Vec<Event>>;
 
     /// Read events by type.
-    async fn read_by_type(
-        &self,
-        event_type: &str,
-        limit: i64,
-    ) -> anyhow::Result<Vec<Event>>;
+    async fn read_by_type(&self, event_type: &str, limit: i64) -> anyhow::Result<Vec<Event>>;
 
     /// Count total events.
     async fn count(&self) -> anyhow::Result<i64>;
@@ -349,18 +339,22 @@ impl EventStore for InMemoryEventStore {
         Ok(())
     }
 
-    async fn read_after(
-        &self,
-        after_id: Option<Uuid>,
-        limit: i64,
-    ) -> anyhow::Result<Vec<Event>> {
+    async fn read_after(&self, after_id: Option<Uuid>, limit: i64) -> anyhow::Result<Vec<Event>> {
         let events = self.events.read().await;
         let start = if let Some(after) = after_id {
-            events.iter().position(|e| e.id == after).map(|p| p + 1).unwrap_or(0)
+            events
+                .iter()
+                .position(|e| e.id == after)
+                .map(|p| p + 1)
+                .unwrap_or(0)
         } else {
             0
         };
-        Ok(events[start..].iter().take(limit as usize).cloned().collect())
+        Ok(events[start..]
+            .iter()
+            .take(limit as usize)
+            .cloned()
+            .collect())
     }
 
     async fn read_by_type(&self, event_type: &str, limit: i64) -> anyhow::Result<Vec<Event>> {

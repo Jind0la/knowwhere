@@ -40,9 +40,7 @@ pub async fn store_external_event(
     };
 
     let node = match event.multimodal {
-        Some(mm) => {
-            FractalNode::new_external_multimodal(event.pointer, vector, event.metadata, mm)
-        }
+        Some(mm) => FractalNode::new_external_multimodal(event.pointer, vector, event.metadata, mm),
         None => FractalNode::new_external(event.pointer, vector, event.metadata),
     };
 
@@ -59,18 +57,22 @@ pub async fn store_external_events_batch(
     embedding: &Arc<dyn EmbeddingProvider>,
     events: Vec<ExternalEvent>,
 ) -> Result<Vec<Uuid>> {
-    let (plain_events, multimodal_events): (Vec<_>, Vec<_>) = events
-        .into_iter()
-        .partition(|e| e.multimodal.is_none());
+    let (plain_events, multimodal_events): (Vec<_>, Vec<_>) =
+        events.into_iter().partition(|e| e.multimodal.is_none());
 
     let pointers: Vec<&str> = plain_events.iter().map(|e| e.pointer.as_str()).collect();
-    let embeddings = crate::embedding::provider::embed_document_batch(embedding.as_ref(), &pointers).await?;
+    let embeddings =
+        crate::embedding::provider::embed_document_batch(embedding.as_ref(), &pointers).await?;
 
     let nodes: Result<Vec<_>> = plain_events
         .into_iter()
         .zip(embeddings.into_iter())
         .map(|(event, vector)| {
-            Ok(FractalNode::new_external(event.pointer, vector, event.metadata))
+            Ok(FractalNode::new_external(
+                event.pointer,
+                vector,
+                event.metadata,
+            ))
         })
         .collect();
     let nodes = nodes?;

@@ -6,7 +6,7 @@ use crate::memory::{FractalNode, NodeType, Relation};
 use crate::multimodal::MultimodalData;
 
 #[cfg(feature = "postgres-storage")]
-use crate::memory::self_healing::{HealthCheckResult, HealingStats};
+use crate::memory::self_healing::{HealingStats, HealthCheckResult};
 
 #[cfg(feature = "postgres-storage")]
 use crate::api::routes::ReindexResponse;

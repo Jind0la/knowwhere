@@ -79,9 +79,9 @@ impl SelfHealingService {
     ///
     /// Call this when storing a new external node, or when re-indexing.
     pub async fn index_external_node(&self, memory_id: Uuid, file_path: &Path) -> Result<()> {
-        let content = tokio::fs::read(file_path)
-            .await
-            .with_context(|| format!("failed to read file for indexing: {}", file_path.display()))?;
+        let content = tokio::fs::read(file_path).await.with_context(|| {
+            format!("failed to read file for indexing: {}", file_path.display())
+        })?;
 
         // 1. Compute BLAKE3 hash
         let hash = blake3::hash(&content);
@@ -214,12 +214,10 @@ impl SelfHealingService {
 
     /// Get self-healing statistics.
     pub async fn stats(&self) -> Result<HealingStats> {
-        let total_checked: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM self_healing_log",
-        )
-        .fetch_one(&self.pool)
-        .await
-        .context("failed to count total self-healing log entries")?;
+        let total_checked: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM self_healing_log")
+            .fetch_one(&self.pool)
+            .await
+            .context("failed to count total self-healing log entries")?;
 
         let currently_broken: i64 = sqlx::query_scalar(
             "SELECT COUNT(DISTINCT memory_id) FROM self_healing_log WHERE repair_status = 'unrepaired'",
@@ -264,9 +262,7 @@ impl SelfHealingService {
 
     /// Search file_root recursively for a file whose BLAKE3 hash matches.
     async fn find_by_hash(&self, target_hash: &str) -> Result<Option<PathBuf>> {
-        let target: Hash = target_hash
-            .parse()
-            .context("invalid blake3 hash string")?;
+        let target: Hash = target_hash.parse().context("invalid blake3 hash string")?;
 
         let mut candidate: Option<PathBuf> = None;
         let mut visited = 0usize;
@@ -357,9 +353,7 @@ impl SelfHealingService {
                         let file_words: std::collections::HashSet<&str> =
                             text.split_whitespace().collect();
 
-                        let overlap: usize = thumbnail_words
-                            .intersection(&file_words)
-                            .count();
+                        let overlap: usize = thumbnail_words.intersection(&file_words).count();
 
                         // Require at least 10 common words to be considered a match
                         if overlap >= 10 {

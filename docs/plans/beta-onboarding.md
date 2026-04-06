@@ -4,6 +4,9 @@
 **Owner:** Research Engineer — KnowWhere Investigation & Features
 **Target:** External beta testers
 **Priority:** Blockers must be resolved before beta launch
+**Status (2026-04-04):** IMP-001, IMP-002, IMP-003 DONE. IMP-004 (Quickstart) + IMP-005 (Verify) DONE (QUICKSTART.md + WALKTHROUGH.md created). 3 real blockers remain: Auth in-memory, Rate Limiting opt-in, Retention/GC.
+
+---
 
 ---
 
@@ -18,7 +21,7 @@ Enable external beta testers to connect KnowWhere to OpenClaw with minimal frict
 ### IMP-001: Document API Key Acquisition Flow
 
 **Priority:** BLOCKER
-**Status:** Not started
+**Status:** ✅ DONE
 **Complexity:** Medium
 
 **Description:**
@@ -46,7 +49,7 @@ For beta, go with **Option 1 (Self-hosted)**: A beta tester runs their own KnowW
 ### IMP-002: Fix docker-compose.yml
 
 **Priority:** BLOCKER
-**Status:** Not started
+**Status:** ✅ DONE
 **Complexity:** Low
 
 **Changes Needed:**
@@ -96,7 +99,7 @@ OPENAI_API_KEY=
 ### IMP-003: Align Plugin Config (Schema, README, Code)
 
 **Priority:** BLOCKER
-**Status:** Not started
+**Status:** ✅ DONE
 **Complexity:** Low-Medium
 
 **Problem:** The openclaw-plugin README documents `storeOnCompaction` which doesn't exist in the code or schema. The actual options (`importLookbackDays`) exist in the schema and code but aren't documented in the README.

@@ -128,8 +128,8 @@ impl<C: ConsolidationStore> ConsolidationEngine<C> {
 
             // Generate summary (simplified — in production this would call an LLM)
             let summary = self.generate_summary(&contents, &cluster.topic)?;
-            let avg_importance = memories.iter().map(|m| m.importance).sum::<i32>() as f32
-                / memories.len() as f32;
+            let avg_importance =
+                memories.iter().map(|m| m.importance).sum::<i32>() as f32 / memories.len() as f32;
 
             // Create parent summary node
             let parent_id = self
@@ -188,9 +188,7 @@ impl<C: ConsolidationStore> ConsolidationEngine<C> {
             }
 
             // Find related memories
-            let related = self
-                .find_related(memories, candidate, &assigned)
-                .await?;
+            let related = self.find_related(memories, candidate, &assigned).await?;
 
             if related.len() >= self.config.min_cluster_size {
                 let mut cluster_ids = related;
@@ -232,7 +230,11 @@ impl<C: ConsolidationStore> ConsolidationEngine<C> {
     }
 
     /// Calculate similarity between two clustering candidates.
-    fn calculate_similarity(&self, a: &ClusteringCandidate, b: &ClusteringCandidate) -> Result<f64> {
+    fn calculate_similarity(
+        &self,
+        a: &ClusteringCandidate,
+        b: &ClusteringCandidate,
+    ) -> Result<f64> {
         use crate::memory::fractal_node::cosine_similarity;
 
         // Fallback to content-based similarity if vectors aren't available
@@ -280,7 +282,8 @@ use async_trait::async_trait;
 
 #[async_trait]
 pub trait ConsolidationStore: Send + Sync {
-    async fn get_episodic_memories_older_than(&self, days: u32) -> Result<Vec<ClusteringCandidate>>;
+    async fn get_episodic_memories_older_than(&self, days: u32)
+        -> Result<Vec<ClusteringCandidate>>;
     async fn get_memories_by_ids(&self, ids: &[Uuid]) -> Result<Vec<ConsolidationMemory>>;
     async fn create_summary_node(
         &self,

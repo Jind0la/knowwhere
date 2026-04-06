@@ -44,11 +44,8 @@ mod tests {
     async fn store_session_and_external_via_memory_store() {
         let store = MemoryStore::new();
 
-        let session = FractalNode::new_session(
-            "stored session".to_string(),
-            vec![0.1, 0.2],
-            HashMap::new(),
-        );
+        let session =
+            FractalNode::new_session("stored session".to_string(), vec![0.1, 0.2], HashMap::new());
         let external = FractalNode::new_external(
             "gdrive://doc/123".to_string(),
             vec![0.3, 0.4],
@@ -97,21 +94,12 @@ mod tests {
 
     #[test]
     fn zoom_retrieve_with_children() {
-        let mut parent = FractalNode::new_session(
-            "parent".to_string(),
-            vec![1.0, 0.0, 0.0],
-            HashMap::new(),
-        );
-        let close_child = FractalNode::new_session(
-            "close".to_string(),
-            vec![0.9, 0.1, 0.0],
-            HashMap::new(),
-        );
-        let far_child = FractalNode::new_session(
-            "far".to_string(),
-            vec![0.0, 0.0, 1.0],
-            HashMap::new(),
-        );
+        let mut parent =
+            FractalNode::new_session("parent".to_string(), vec![1.0, 0.0, 0.0], HashMap::new());
+        let close_child =
+            FractalNode::new_session("close".to_string(), vec![0.9, 0.1, 0.0], HashMap::new());
+        let far_child =
+            FractalNode::new_session("far".to_string(), vec![0.0, 0.0, 1.0], HashMap::new());
         parent.children = vec![close_child, far_child];
 
         let query = vec![1.0, 0.0, 0.0];
@@ -244,9 +232,11 @@ mod tests {
 
         let content = "Die App soll anonym sein, kein Login nötig";
         let vector = provider.embed(content).await.expect("embed");
-        let node = FractalNode::new_session(content.to_string(), vector, HashMap::from([
-            ("project".to_string(), serde_json::json!("knowwhere")),
-        ]));
+        let node = FractalNode::new_session(
+            content.to_string(),
+            vector,
+            HashMap::from([("project".to_string(), serde_json::json!("knowwhere"))]),
+        );
         let id = node.id;
         store.insert(node).await.expect("insert");
 
@@ -279,12 +269,18 @@ mod tests {
         );
         let id = node.id;
 
-        assert!(node.content.is_none(), "pointer-first: never store raw content");
+        assert!(
+            node.content.is_none(),
+            "pointer-first: never store raw content"
+        );
 
         store.insert(node).await.expect("insert");
         let retrieved = store.get(&id).await.unwrap().unwrap();
 
-        assert!(retrieved.content.is_none(), "pointer-first: content must be None");
+        assert!(
+            retrieved.content.is_none(),
+            "pointer-first: content must be None"
+        );
         assert_eq!(retrieved.original_pointer.as_deref(), Some(pointer));
         assert!(retrieved.multimodal.is_some());
         assert_eq!(retrieved.metadata["source"], "frigate");
@@ -294,11 +290,8 @@ mod tests {
     async fn test_recent_nodes_ordering() {
         let store = MemoryStore::new();
         for i in 0..5u32 {
-            let node = FractalNode::new_session(
-                format!("node-{i}"),
-                vec![i as f32; 4],
-                HashMap::new(),
-            );
+            let node =
+                FractalNode::new_session(format!("node-{i}"), vec![i as f32; 4], HashMap::new());
             store.insert(node).await.unwrap();
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
@@ -453,7 +446,11 @@ mod tests {
         use crate::memory::types::MemoryType;
         let json = r#"{"id":"00000000-0000-0000-0000-000000000000","vector":[],"content":null,"original_pointer":null,"metadata":{},"weight":1.0,"multimodal":null,"children":[],"relations":[],"created_at":"2026-01-01T00:00:00Z","last_accessed":"2026-01-01T00:00:00Z"}"#;
         let node: FractalNode = serde_json::from_str(json).expect("deserialize without node_type");
-        assert_eq!(node.memory_type, MemoryType::Episodic, "default should be Episodic");
+        assert_eq!(
+            node.memory_type,
+            MemoryType::Episodic,
+            "default should be Episodic"
+        );
     }
 
     // -- Phase 1: Task-Prefix Tests --
@@ -565,13 +562,9 @@ mod tests {
         store.insert(n_other).await.unwrap();
 
         let query_vec = vec![0.5, 0.5, 0.5, 0.5];
-        let results = store.hybrid_retrieve(
-            Some("Frigate Haustuer"),
-            &query_vec,
-            5,
-            0,
-            None,
-        ).await;
+        let results = store
+            .hybrid_retrieve(Some("Frigate Haustuer"), &query_vec, 5, 0, None)
+            .await;
 
         assert!(!results.is_empty());
         assert_eq!(

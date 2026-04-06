@@ -19,7 +19,6 @@
 //! 5. Losing memory is marked `superseded_by = winner_id`
 
 #[cfg(feature = "postgres-storage")]
-
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
@@ -27,8 +26,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json;
 use sqlx::PgPool;
-use uuid::Uuid;
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 // =============================================================================
 // Types
@@ -198,8 +197,7 @@ impl ConflictDetector {
         // Detect confidence conflicts (vector-based when available)
         let confidence_conflicts = self.detect_confidence_conflicts().await?;
 
-        let total =
-            entity_conflicts.len() + temporal_conflicts.len() + confidence_conflicts.len();
+        let total = entity_conflicts.len() + temporal_conflicts.len() + confidence_conflicts.len();
 
         // Log the detection run — only possible when we have a direct pool.
         if let Some(pool) = self.pool() {
@@ -227,7 +225,9 @@ impl ConflictDetector {
     /// Strategy: Group memories by entity name (from entities JSONB field),
     /// then for groups with >1 memory, check if they have contradictory claims.
     async fn detect_entity_conflicts(&self) -> Result<Vec<ConflictGroup>> {
-        let pool = self.pool().context("detect_entity_conflicts requires a PgPool")?;
+        let pool = self
+            .pool()
+            .context("detect_entity_conflicts requires a PgPool")?;
 
         // Get all active memories with entities
         let rows = sqlx::query!(
@@ -250,10 +250,7 @@ impl ConflictDetector {
             if let Some(serde_json::Value::Array(entities)) = &row.entities {
                 for entity in entities {
                     if let Some(name) = entity.as_str() {
-                        entity_groups
-                            .entry(name.to_string())
-                            .or_default()
-                            .push(row);
+                        entity_groups.entry(name.to_string()).or_default().push(row);
                         break; // Use first entity only for grouping
                     }
                 }
@@ -267,8 +264,7 @@ impl ConflictDetector {
             }
 
             // Check for content conflicts (different content for same entity)
-            let mut contents: std::collections::HashSet<String> =
-                std::collections::HashSet::new();
+            let mut contents: std::collections::HashSet<String> = std::collections::HashSet::new();
             let mut conflicting_ids = Vec::new();
 
             for mem in &memories {
@@ -365,7 +361,9 @@ impl ConflictDetector {
         use crate::memory::fractal_node::cosine_similarity;
         use crate::storage::{HybridQuery, ScoredNode};
 
-        let pool = self.pool().context("vector conflict detection requires a PgPool")?;
+        let pool = self
+            .pool()
+            .context("vector conflict detection requires a PgPool")?;
         let store = self
             .store
             .as_ref()
@@ -461,10 +459,7 @@ impl ConflictDetector {
                     let conflicting_ids = vec![*mem_id, cand_id];
                     let description = format!(
                         "Similar content (sim={:.2}) has confidence scores {} and {} (diff: {:.2})",
-                        similarity,
-                        confidence,
-                        cand_confidence,
-                        diff
+                        similarity, confidence, cand_confidence, diff
                     );
 
                     let id = Uuid::new_v4();
@@ -514,7 +509,9 @@ impl ConflictDetector {
 
     /// String-based fallback conflict detection (original algorithm).
     async fn detect_confidence_conflicts_string(&self) -> Result<Vec<ConflictGroup>> {
-        let pool = self.pool().context("string conflict detection requires a PgPool")?;
+        let pool = self
+            .pool()
+            .context("string conflict detection requires a PgPool")?;
 
         let rows = sqlx::query!(
             r#"
@@ -546,8 +543,9 @@ impl ConflictDetector {
             // Check if any pair has significantly different confidence
             for k in 0..same_content.len() {
                 for l in (k + 1)..same_content.len() {
-                    let diff =
-                        (same_content[k].confidence.unwrap_or(0.0) - same_content[l].confidence.unwrap_or(0.0)).abs();
+                    let diff = (same_content[k].confidence.unwrap_or(0.0)
+                        - same_content[l].confidence.unwrap_or(0.0))
+                    .abs();
                     if diff > 0.3 {
                         let conflicting_ids: Vec<Uuid> =
                             same_content.iter().map(|m| m.id).collect();
@@ -605,7 +603,9 @@ impl ConflictDetector {
 
     /// List all pending (unresolved) conflicts.
     pub async fn list_pending_conflicts(&self) -> Result<Vec<ConflictGroup>> {
-        let pool = self.pool().context("list_pending_conflicts requires a PgPool")?;
+        let pool = self
+            .pool()
+            .context("list_pending_conflicts requires a PgPool")?;
 
         let rows = sqlx::query!(
             r#"
@@ -636,11 +636,7 @@ impl ConflictDetector {
     ///
     /// The winning memory stays active.
     /// All other memories in the conflict are marked as `superseded_by` the winner.
-    pub async fn resolve_conflict(
-        &self,
-        conflict_id: Uuid,
-        winning_memory_id: Uuid,
-    ) -> Result<()> {
+    pub async fn resolve_conflict(&self, conflict_id: Uuid, winning_memory_id: Uuid) -> Result<()> {
         let pool = self.pool().context("resolve_conflict requires a PgPool")?;
 
         // Get the conflict group
@@ -823,8 +819,16 @@ fn content_contradicts(a: &str, b: &str) -> bool {
         if (a_lower.contains(pat_a) && b_lower.contains(pat_b))
             || (a_lower.contains(pat_b) && b_lower.contains(pat_a))
         {
-            let a_trimmed = a_lower.replace(pat_a, "").replace(pat_b, "").trim().to_string();
-            let b_trimmed = b_lower.replace(pat_b, "").replace(pat_a, "").trim().to_string();
+            let a_trimmed = a_lower
+                .replace(pat_a, "")
+                .replace(pat_b, "")
+                .trim()
+                .to_string();
+            let b_trimmed = b_lower
+                .replace(pat_b, "")
+                .replace(pat_a, "")
+                .trim()
+                .to_string();
             let a_words: Vec<_> = a_trimmed.split_whitespace().take(3).collect();
             let b_words: Vec<_> = b_trimmed.split_whitespace().take(3).collect();
             if !a_words.is_empty() && a_words.iter().any(|w| b_words.contains(w)) {

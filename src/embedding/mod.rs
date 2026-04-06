@@ -1,8 +1,8 @@
 pub mod provider;
 
 pub use provider::{
-    EmbeddingProvider, LocalOllamaProvider,
-    embed_document, embed_query, embed_document_batch, embed_query_batch,
+    embed_document, embed_document_batch, embed_query, embed_query_batch, EmbeddingProvider,
+    LocalOllamaProvider,
 };
 
 use std::sync::Arc;
@@ -48,20 +48,23 @@ impl ProviderKind {
     }
 }
 
-pub fn create_provider(kind: ProviderKind, #[allow(unused)] api_key: Option<String>) -> Arc<dyn EmbeddingProvider> {
+pub fn create_provider(
+    kind: ProviderKind,
+    #[allow(unused)] api_key: Option<String>,
+) -> Arc<dyn EmbeddingProvider> {
     match kind {
         ProviderKind::LocalOllama => Arc::new(provider::LocalOllamaProvider::new()),
-        
+
         #[cfg(feature = "openai-provider")]
         ProviderKind::OpenAI => Arc::new(provider::OpenAIProvider::new(
             api_key.expect("OPENAI_API_KEY must be set when openai-provider feature is enabled"),
         )),
-        
+
         #[cfg(feature = "grok-provider")]
         ProviderKind::Grok => Arc::new(provider::GrokProvider::new(
             api_key.expect("GROK_API_KEY must be set when grok-provider feature is enabled"),
         )),
-        
+
         // Compile-time exhaustiveness: if only LocalOllama is available, the match
         // is already exhaustive without any #[cfg] arms
         #[cfg(not(any(feature = "openai-provider", feature = "grok-provider")))]

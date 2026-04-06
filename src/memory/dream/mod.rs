@@ -30,8 +30,10 @@ pub mod energy_decay;
 #[cfg(feature = "postgres-storage")]
 pub mod deduplication;
 
-pub use audit::{AuditConfig, AuditEngine, AuditFinding, AuditReport, AuditFindingType};
-pub use consolidation::{ConsolidationConfig, ConsolidationEngine, ConsolidationReport, MemoryCluster};
+pub use audit::{AuditConfig, AuditEngine, AuditFinding, AuditFindingType, AuditReport};
+pub use consolidation::{
+    ConsolidationConfig, ConsolidationEngine, ConsolidationReport, MemoryCluster,
+};
 
 // ---------------------------------------------------------------------------
 // Legacy DreamMode (from original dream.rs)

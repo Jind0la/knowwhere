@@ -8,11 +8,11 @@
 //! Both schedulers run entirely in-memory within the tokio runtime.
 //! No external HTTP calls, no new database tables, no additional dependencies.
 
-pub mod consolidation;
 pub mod audit;
+pub mod consolidation;
 
-pub use consolidation::ConsolidationScheduler;
 pub use audit::AuditScheduler;
+pub use consolidation::ConsolidationScheduler;
 
 use serde::{Deserialize, Serialize};
 

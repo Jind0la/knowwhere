@@ -11,8 +11,8 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
-use uuid::Uuid;
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 use super::types::MemoryType;
 
@@ -37,7 +37,10 @@ pub struct MemoryNamespace {
 impl MemoryNamespace {
     /// Returns the last component of the path (e.g. `preferences` from `user/preferences`).
     pub fn name(&self) -> &str {
-        self.path.rsplit_once('/').map(|(_, n)| n).unwrap_or(&self.path)
+        self.path
+            .rsplit_once('/')
+            .map(|(_, n)| n)
+            .unwrap_or(&self.path)
     }
 
     /// Returns the parent path, e.g. `user` from `user/preferences`.
@@ -147,7 +150,7 @@ impl<'a> NamespaceStore<'a> {
         namespace_id: Uuid,
         limit: i32,
     ) -> anyhow::Result<Vec<MemoryRow>> {
-                let rows = sqlx::query_as!(
+        let rows = sqlx::query_as!(
             MemoryRow,
             r#"
             SELECT
@@ -188,7 +191,10 @@ impl<'a> NamespaceStore<'a> {
     }
 
     /// Get a namespace and its direct children (one level).
-    pub async fn with_children(&self, namespace_id: Uuid) -> anyhow::Result<(MemoryNamespace, Vec<MemoryNamespace>)> {
+    pub async fn with_children(
+        &self,
+        namespace_id: Uuid,
+    ) -> anyhow::Result<(MemoryNamespace, Vec<MemoryNamespace>)> {
         let ns = sqlx::query_as!(
             MemoryNamespaceRow,
             r#"
