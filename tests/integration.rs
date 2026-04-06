@@ -773,6 +773,140 @@ async fn postgres_api_key_fingerprint_lookup_and_rotation() {
     pg.delete_auth_user(user_id).await.expect("cleanup user");
 }
 
+#[tokio::test]
+#[cfg(feature = "postgres-storage")]
+#[ignore = "requires DATABASE_URL — run: DATABASE_URL='postgresql://...' cargo test --features postgres-storage -- --include-ignored"]
+async fn postgres_auth_http_e2e_register_login_refresh_rotation() {
+    use knowwhere_server::storage::PostgresStore;
+    use serde_json::Value;
+    use std::env;
+    use uuid::Uuid;
+
+    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set for this test");
+    let pg = Arc::new(
+        PostgresStore::connect(&database_url)
+            .await
+            .expect("failed to connect to PostgreSQL"),
+    );
+    pg.run_auth_migrations().await.expect("auth migrations");
+
+    let user_suffix = Uuid::new_v4();
+    let username = format!("kw_e2e_{user_suffix}");
+    let email = format!("{username}@example.invalid");
+    let password = "s3cret-pass-123";
+
+    let state = test_state();
+    let auth_state = auth::AuthState {
+        admin_key: Arc::new(RwLock::new(None)),
+        pg_store: Some(pg.clone()),
+    };
+    let protected = Router::new()
+        .route("/dream/status", get(routes::dream_status))
+        .route_layer(middleware::from_fn(auth::auth_middleware));
+    let app = Router::new()
+        .route("/register", post(auth::register))
+        .route("/login", post(auth::login))
+        .route("/refresh", post(auth::refresh))
+        .merge(protected)
+        .layer(axum::Extension(auth_state))
+        .layer(axum::Extension(pg.clone()))
+        .with_state(state);
+
+    let register_body = serde_json::json!({
+        "username": username,
+        "email": email,
+        "password": password
+    });
+    let register_resp = app
+        .clone()
+        .oneshot(
+            Request::post("/register")
+                .header("content-type", "application/json")
+                .body(Body::from(register_body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(register_resp.status(), StatusCode::OK);
+
+    let login_body = serde_json::json!({
+        "username": username,
+        "password": password
+    });
+    let login_resp = app
+        .clone()
+        .oneshot(
+            Request::post("/login")
+                .header("content-type", "application/json")
+                .body(Body::from(login_body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(login_resp.status(), StatusCode::OK);
+    let login_json: Value =
+        serde_json::from_str(&body_string(login_resp.into_body()).await).unwrap();
+    let token = login_json["token"].as_str().unwrap().to_string();
+
+    let protected_ok = app
+        .clone()
+        .oneshot(
+            Request::get("/dream/status")
+                .header("authorization", format!("Bearer {}", &token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(protected_ok.status(), StatusCode::OK);
+
+    let refresh_body = serde_json::json!({ "token": token.clone() });
+    let refresh_resp = app
+        .clone()
+        .oneshot(
+            Request::post("/refresh")
+                .header("content-type", "application/json")
+                .body(Body::from(refresh_body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(refresh_resp.status(), StatusCode::OK);
+    let refresh_json: Value =
+        serde_json::from_str(&body_string(refresh_resp.into_body()).await).unwrap();
+    let refreshed = refresh_json["token"].as_str().unwrap().to_string();
+
+    let old_token_rejected = app
+        .clone()
+        .oneshot(
+            Request::get("/dream/status")
+                .header("authorization", format!("Bearer {}", token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(old_token_rejected.status(), StatusCode::UNAUTHORIZED);
+
+    let new_token_ok = app
+        .oneshot(
+            Request::get("/dream/status")
+                .header("authorization", format!("Bearer {}", refreshed))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(new_token_ok.status(), StatusCode::OK);
+
+    let user = pg
+        .get_user_by_username(&format!("kw_e2e_{user_suffix}"))
+        .await
+        .expect("lookup user")
+        .expect("user exists");
+    pg.delete_auth_user(user.id).await.expect("cleanup user");
+}
+
 fn app_with_webhook() -> Router {
     let state = test_state();
 

@@ -84,6 +84,8 @@ pub struct DecayResult {
     pub memories_updated: usize,
     /// Number of memories that hit zero energy (fully decayed).
     pub memories_at_zero: usize,
+    /// Number of active memories transitioned to stale (retention archive tier).
+    pub memories_marked_stale: usize,
 }
 
 /// Result of a compression operation.
@@ -199,6 +201,7 @@ impl<'a> EnergyDecayWorker<'a> {
         Ok(DecayResult {
             memories_updated: result.rows_affected() as usize,
             memories_at_zero: at_zero as usize,
+            memories_marked_stale: 0,
         })
     }
 

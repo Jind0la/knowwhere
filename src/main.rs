@@ -85,6 +85,22 @@ fn auth_router_with_pg_store<S: Clone + Send + Sync + 'static>(
         .layer(axum::Extension(auth_state))
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RateLimitMode {
+    Off,
+    Proxy,
+}
+
+fn rate_limit_mode_from_env() -> RateLimitMode {
+    match std::env::var("RATE_LIMIT_MODE") {
+        Ok(v) if v.eq_ignore_ascii_case("proxy") => RateLimitMode::Proxy,
+        Ok(v) if v.eq_ignore_ascii_case("off") => RateLimitMode::Off,
+        Ok(_) => RateLimitMode::Off,
+        Err(_) if std::env::var("RATE_LIMIT").is_ok() => RateLimitMode::Proxy,
+        Err(_) => RateLimitMode::Off,
+    }
+}
+
 async fn run() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
@@ -356,7 +372,7 @@ async fn run() -> anyhow::Result<()> {
                 post(routes::boost_memory_energy),
             )
             .route("/energy/low", get(routes::list_low_energy_memories))
-            .route("/energy/decay/apply", post(routes::apply_energy_decay))
+            .route("/energy/decay", post(routes::apply_energy_decay))
             .route("/energy/compress", post(routes::compress_memory_cluster))
             // Deduplication routes
             .route(
@@ -391,17 +407,20 @@ async fn run() -> anyhow::Result<()> {
             .route("/skills/match", get(routes::match_skills));
     }
 
-    // Rate-limit middleware — requires RealIpLayer with proxy headers (X-Forwarded-For, X-Real-IP).
-    // Without proxy headers, RealIp can't extract client IP → rate limiter fails.
-    // Enable with RATE_LIMIT=1 when behind a reverse proxy (nginx, cloudflare, etc.)
-    let rate_limit_layer = if std::env::var("RATE_LIMIT").is_ok() {
+    // RATE_LIMIT_MODE=proxy enables IP-based limiting behind reverse proxies.
+    // Backward compatibility: RATE_LIMIT=1 behaves like RATE_LIMIT_MODE=proxy.
+    let rate_limit_mode = rate_limit_mode_from_env();
+    let rate_limit_layer = if rate_limit_mode == RateLimitMode::Proxy {
+        tracing::info!("rate limiting enabled (proxy mode, requires X-Forwarded-For or X-Real-IP)");
         Some(
             ServiceBuilder::new()
                 .layer(RealIpLayer::default())
                 .layer(GovernorLayer::new(auth::protected_governor_config())),
         )
     } else {
-        tracing::warn!("RATE_LIMIT not set — rate limiting disabled (dev mode without proxy)");
+        tracing::warn!(
+            "rate limiting disabled (set RATE_LIMIT_MODE=proxy when running behind a reverse proxy)"
+        );
         None
     };
 

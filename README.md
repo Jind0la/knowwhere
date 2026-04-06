@@ -132,7 +132,7 @@ A background process that periodically clusters related nodes and strengthens co
 |--------|------|-------------|
 | POST | `/memories/{id}/energy/boost` | Boost memory energy (Ebbinghaus access boost) |
 | GET | `/energy/low` | List low-energy memories needing decay |
-| POST | `/energy/decay/apply` | Manually trigger energy decay on all memories |
+| POST | `/energy/decay` | Manually trigger energy decay on all memories |
 | POST | `/energy/compress` | Compress memory cluster via VLM |
 | POST | `/memories/{id}/compact` | Trigger tiered compaction for a memory |
 
@@ -302,7 +302,8 @@ context = memory.get_context_string("When do we deploy?")
 | `OLLAMA_MODEL`       | No       | `snowflake-arctic-embed2`| Local Ollama embedding model name                        |
 | `FRIGATE_URL`        | No       | *(unset)*                | Frigate NVR URL (enables camera event connector)         |
 | `RUST_LOG`           | No       | `info`                   | Tracing log level                                        |
-| `RATE_LIMIT`        | No       | *(unset)*                | Enable rate limiting (requires reverse proxy in front)    |
+| `RATE_LIMIT_MODE`   | No       | `off`                    | `off` or `proxy` (proxy requires `X-Forwarded-For` / `X-Real-IP`) |
+| `RATE_LIMIT`        | No       | *(unset)*                | Legacy fallback: if set, behaves like `RATE_LIMIT_MODE=proxy` |
 | `DATABASE_URL`      | No       | *(unset)*                | PostgreSQL connection (enables postgres-storage feature)   |
 
 If neither `GROK_API_KEY` nor `OPENAI_API_KEY` is set, KnowWhere falls back to local Ollama.
@@ -414,7 +415,7 @@ Note: The `postgres-storage` feature compiles offline using the query cache in `
 
 ## Known Issues
 
-- **Rate Limiting**: Requires a reverse proxy (nginx, Cloudflare) that sets `X-Forwarded-For` headers. Enable with `RATE_LIMIT=1` when behind a proxy.
+- **Rate Limiting**: Use `RATE_LIMIT_MODE=proxy` only behind a reverse proxy (nginx, Cloudflare) that sets `X-Forwarded-For` or `X-Real-IP`. `RATE_LIMIT=1` remains as backward-compatible fallback.
 - **Docker postgres-storage**: The default Docker image does not include `postgres-storage` feature. Build with `docker build --build-arg FEATURES=postgres-storage .` or use the CI-built images for PostgreSQL support.
 
 ## Resolved Issues

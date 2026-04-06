@@ -42,20 +42,20 @@ These are known gaps — some are on the roadmap, others need your feedback:
 
 5. **Session import is selective** — The OpenClaw plugin only imports the last 7 days by default. Full historical import is manual.
 
-6. **Rate limiting needs reverse proxy** — `RATE_LIMIT=1` requires nginx or Cloudflare in front.
+6. **Rate limiting needs reverse proxy** — set `RATE_LIMIT_MODE=proxy` only behind nginx/Cloudflare (or equivalent) with client IP headers.
 
 7. **Docker: no default API key** — If you don't set `KNOWWHERE_API_KEY`, the server runs without auth (anyone can access).
 
-8. **Retention/GC is policy-driven, not automatic by default** — Low-energy memories are surfaced via `/energy/low` and can be processed via `/energy/decay/apply` and `/energy/compress`. Automatic deletion is not enabled in beta by default.
+8. **Retention/GC is policy-driven, not hard-delete** — Energy decay moves low-energy memories into `stale` tier; operators can review via `/energy/low` and consolidate via `/energy/compress`. Automatic deletion is not enabled in beta.
 
 ### Beta Operations Policy (recommended)
 
 - **Auth:** Always set `KNOWWHERE_API_KEY` for self-hosted beta. Use `/register`/`/login` only when PostgreSQL mode is enabled.
-- **Rate limit:** Set `RATE_LIMIT=1` only when running behind a reverse proxy that provides client IP headers.
+- **Rate limit:** Set `RATE_LIMIT_MODE=proxy` only when running behind a reverse proxy that provides `X-Forwarded-For` or `X-Real-IP`.
 - **Retention/GC MVP:** Run a scheduled maintenance job:
-  1) `POST /energy/decay/apply`
+  1) `POST /energy/decay`
   2) `GET /energy/low`
-  3) `POST /energy/compress` for selected clusters
+  3) `POST /energy/compress` for selected stale/low-energy clusters
 
 ---
 
