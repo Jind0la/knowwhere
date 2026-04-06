@@ -197,6 +197,10 @@ ${formatMemoriesForPrompt(memories)}
       log(`agent_end: storing ${transcript.length} chars`);
       await kwStore(cfg.endpoint, cfg.apiKey, transcript, {
         source: "openclaw:agent_end",
+        role: "mixed",
+        derivation: "agent_transcript",
+        retrieval_visibility: "internal",
+        trust_tier: "derived",
         success: event.success,
       });
     });
@@ -227,6 +231,10 @@ ${formatMemoriesForPrompt(memories)}
         log(`before_compaction: storing ${transcript.length} chars from ${event.sessionFile}`);
         await kwStore(cfg.endpoint, cfg.apiKey, transcript, {
           source: "openclaw:before_compaction",
+          role: "mixed",
+          derivation: "agent_transcript",
+          retrieval_visibility: "internal",
+          trust_tier: "derived",
           messageCount: event.messageCount,
           tokenCount: event.tokenCount,
         });

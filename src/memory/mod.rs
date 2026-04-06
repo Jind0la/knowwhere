@@ -23,6 +23,7 @@ mod governance_test;
 
 pub use dream::{audit, consolidation, DreamMode};
 pub use events::{Event, EventStore, EventType, InMemoryEventStore};
+#[allow(deprecated)]
 pub use fractal_node::{cosine_similarity, FractalNode, NodeType, Relation};
 pub use governance::{
     GovernanceCandidate, GovernancePolicy, GovernanceValidator, GovernedScoredNode,

@@ -64,17 +64,5 @@ pub fn create_provider(
         ProviderKind::Grok => Arc::new(provider::GrokProvider::new(
             api_key.expect("GROK_API_KEY must be set when grok-provider feature is enabled"),
         )),
-
-        // Compile-time exhaustiveness: if only LocalOllama is available, the match
-        // is already exhaustive without any #[cfg] arms
-        #[cfg(not(any(feature = "openai-provider", feature = "grok-provider")))]
-        _ => {
-            // Safety: when no cloud providers are enabled, this arm is only reachable
-            // for LocalOllama (which is matched above), so this is unreachable.
-            // We use create_provider in a cfg-gated context in main.rs anyway.
-            let _ = kind;
-            let _ = api_key;
-            unreachable!("create_provider called with cloud provider but no cloud features enabled")
-        }
     }
 }

@@ -3,7 +3,9 @@ use tokio::sync::RwLock;
 mod runtime;
 
 use axum::middleware;
-use axum::routing::{delete, get, post, put};
+#[cfg(feature = "postgres-storage")]
+use axum::routing::put;
+use axum::routing::{delete, get, post};
 use axum::Router;
 use axum_governor::GovernorLayer;
 use real::RealIpLayer;
@@ -109,6 +111,7 @@ async fn run() -> anyhow::Result<()> {
     let embedding = init_embedding_provider();
 
     tracing::info!(provider = embedding.name(), "embedding provider ready");
+    runtime::repair_legacy_embeddings(&store, &embedding).await?;
 
     tokio::spawn(dream.clone().micro_dream_loop());
     tracing::info!("dream mode started (micro-dream every 1h)");
@@ -211,12 +214,13 @@ async fn run() -> anyhow::Result<()> {
         ..Default::default()
     };
 
-    let mut protected = Router::new()
+    let protected = Router::new()
         .route("/embed", post(routes::embed_text))
         .route("/store_session", post(routes::store_session))
         .route("/store_external", post(routes::store_external))
         .route("/retrieve/{id}", get(routes::retrieve))
         .route("/retrieve_fractal", post(routes::retrieve_fractal))
+        .route("/chat/subconscious", post(routes::subconscious_chat))
         .route("/nodes/recent", get(routes::recent_nodes))
         .route("/nodes/purge_dummy", post(routes::purge_dummy))
         .route("/nodes/reembed_all", post(routes::reembed_all))
@@ -234,59 +238,57 @@ async fn run() -> anyhow::Result<()> {
         .route("/webhooks/frigate", post(routes::webhook_frigate));
 
     #[cfg(feature = "postgres-storage")]
-    {
-        protected = protected
-            // -- postgres-storage features (trajectory + tiered context) --
-            .route("/retrieval/runs", get(routes::list_retrieval_runs))
-            .route("/retrieval/runs/{id}", get(routes::get_retrieval_run))
-            .route(
-                "/retrieval/runs/{id}/trajectory",
-                get(routes::get_retrieval_trajectory),
-            )
-            .route("/memories/{id}/compact", post(routes::compact_memory))
-            .route("/memories/{id}", get(routes::get_memory))
-            .route("/conflicts", get(routes::list_conflicts))
-            .route("/conflicts/{id}/resolve", post(routes::resolve_conflict))
-            // Energy decay routes (Ebbinghaus forgetting curve)
-            .route(
-                "/memories/{id}/energy/boost",
-                post(routes::boost_memory_energy),
-            )
-            .route("/energy/low", get(routes::list_low_energy_memories))
-            .route("/energy/decay", post(routes::apply_energy_decay))
-            .route("/energy/compress", post(routes::compress_memory_cluster))
-            // Deduplication routes
-            .route(
-                "/deduplication/candidates",
-                get(routes::list_deduplication_candidates),
-            )
-            .route("/deduplication/run", post(routes::run_deduplication))
-            .route("/deduplication/runs", get(routes::list_deduplication_runs))
-            // Self-healing routes (content hashing for external nodes)
-            .route(
-                "/memories/{id}/reindex",
-                post(routes::reindex_external_node),
-            )
-            .route("/memories/{id}/health", get(routes::memory_health_check))
-            .route("/self-healing/stats", get(routes::self_healing_stats))
-            // Namespace routes
-            .route("/namespaces", get(routes::list_namespaces))
-            .route("/namespaces", post(routes::create_namespace))
-            .route("/namespaces/{path}", get(routes::get_namespace))
-            .route(
-                "/namespaces/{path}/memories",
-                get(routes::namespace_memories),
-            )
-            .route("/namespaces/{path}/search", get(routes::namespace_search))
-            // Skills routes
-            .route("/skills", post(routes::create_skill))
-            .route("/skills", get(routes::list_skills))
-            .route("/skills/{id}", get(routes::get_skill))
-            .route("/skills/{id}", put(routes::update_skill))
-            .route("/skills/{id}", delete(routes::delete_skill))
-            .route("/skills/{id}/use", post(routes::use_skill))
-            .route("/skills/match", get(routes::match_skills));
-    }
+    let protected = protected
+        // -- postgres-storage features (trajectory + tiered context) --
+        .route("/retrieval/runs", get(routes::list_retrieval_runs))
+        .route("/retrieval/runs/{id}", get(routes::get_retrieval_run))
+        .route(
+            "/retrieval/runs/{id}/trajectory",
+            get(routes::get_retrieval_trajectory),
+        )
+        .route("/memories/{id}/compact", post(routes::compact_memory))
+        .route("/memories/{id}", get(routes::get_memory))
+        .route("/conflicts", get(routes::list_conflicts))
+        .route("/conflicts/{id}/resolve", post(routes::resolve_conflict))
+        // Energy decay routes (Ebbinghaus forgetting curve)
+        .route(
+            "/memories/{id}/energy/boost",
+            post(routes::boost_memory_energy),
+        )
+        .route("/energy/low", get(routes::list_low_energy_memories))
+        .route("/energy/decay", post(routes::apply_energy_decay))
+        .route("/energy/compress", post(routes::compress_memory_cluster))
+        // Deduplication routes
+        .route(
+            "/deduplication/candidates",
+            get(routes::list_deduplication_candidates),
+        )
+        .route("/deduplication/run", post(routes::run_deduplication))
+        .route("/deduplication/runs", get(routes::list_deduplication_runs))
+        // Self-healing routes (content hashing for external nodes)
+        .route(
+            "/memories/{id}/reindex",
+            post(routes::reindex_external_node),
+        )
+        .route("/memories/{id}/health", get(routes::memory_health_check))
+        .route("/self-healing/stats", get(routes::self_healing_stats))
+        // Namespace routes
+        .route("/namespaces", get(routes::list_namespaces))
+        .route("/namespaces", post(routes::create_namespace))
+        .route("/namespaces/{path}", get(routes::get_namespace))
+        .route(
+            "/namespaces/{path}/memories",
+            get(routes::namespace_memories),
+        )
+        .route("/namespaces/{path}/search", get(routes::namespace_search))
+        // Skills routes
+        .route("/skills", post(routes::create_skill))
+        .route("/skills", get(routes::list_skills))
+        .route("/skills/{id}", get(routes::get_skill))
+        .route("/skills/{id}", put(routes::update_skill))
+        .route("/skills/{id}", delete(routes::delete_skill))
+        .route("/skills/{id}/use", post(routes::use_skill))
+        .route("/skills/match", get(routes::match_skills));
 
     // RATE_LIMIT_MODE=proxy enables IP-based limiting behind reverse proxies.
     // Backward compatibility: RATE_LIMIT=1 behaves like RATE_LIMIT_MODE=proxy.

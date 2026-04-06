@@ -35,11 +35,19 @@ class KnowWhereMemory(BaseChatMessageHistory):
     def add_message(self, message: BaseMessage) -> None:
         self._messages.append(message)
         content = message.content if isinstance(message.content, str) else str(message.content)
-        role = "Human" if isinstance(message, HumanMessage) else "AI"
+        role = "user" if isinstance(message, HumanMessage) else "assistant"
+        metadata = {"source": "langchain", "role": role}
+        if role == "assistant":
+            metadata["derivation"] = "assistant_output"
+            metadata["retrieval_visibility"] = "internal"
+            metadata["trust_tier"] = "derived"
+        else:
+            metadata["derivation"] = "user_input"
+            metadata["trust_tier"] = "primary"
         try:
             self.client.store_session(
-                content=f"{role}: {content}",
-                metadata={"source": "langchain", "role": role.lower()},
+                content=f"{role.upper()}: {content}",
+                metadata=metadata,
             )
         except Exception as exc:
             print(f"[KnowWhereMemory] store error: {exc}")

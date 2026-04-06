@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { retrieveFractal, storeSession } from '../api/knowwhere';
-import type { ScoredNode, MemoryType } from '../types';
+import type { MemoryType, RetrievalProfile, ScoredNode } from '../types';
 
 interface SearchPanelProps {
   onResults: (nodes: ScoredNode[]) => void;
   onError: (msg: string) => void;
   embedding: number[] | null;
+  tokenRequired?: boolean;
 }
 
 const MEMORY_TYPES: MemoryType[] = [
@@ -16,17 +17,29 @@ const MEMORY_TYPES: MemoryType[] = [
   'meta',
 ];
 
-export function SearchPanel({ onResults, onError, embedding }: SearchPanelProps) {
+const PROFILE_OPTIONS: RetrievalProfile[] = ['user-facing', 'agent-debug', 'full-fidelity'];
+
+export function SearchPanel({ onResults, onError, embedding, tokenRequired = false }: SearchPanelProps) {
   const [queryText, setQueryText] = useState('');
   const [topK, setTopK] = useState(5);
   const [maxDepth, setMaxDepth] = useState(3);
   const [governanceEnabled, setGovernanceEnabled] = useState(true);
   const [typeFilter, setTypeFilter] = useState<MemoryType | ''>('');
+  const [profile, setProfile] = useState<RetrievalProfile>('user-facing');
+  const [includeDebug, setIncludeDebug] = useState(true);
   const [loading, setLoading] = useState(false);
 
   const [storeContent, setStoreContent] = useState('');
   const [storeType, setStoreType] = useState<MemoryType>('episodic');
   const [storing, setStoring] = useState(false);
+
+  if (tokenRequired) {
+    return (
+      <div className="rounded-xl border border-zinc-800 bg-zinc-950/50 p-4">
+        <p className="text-sm text-zinc-300">Search braucht einen API-Token, weil Retrieval und Speichern geschuetzte Routen verwenden.</p>
+      </div>
+    );
+  }
 
   async function handleSearch(e: React.FormEvent) {
     e.preventDefault();
@@ -36,6 +49,7 @@ export function SearchPanel({ onResults, onError, embedding }: SearchPanelProps)
     }
     setLoading(true);
     try {
+      console.log('[search] start', { profile, includeDebug, topK, maxDepth });
       const results = (await retrieveFractal({
         query_vector: embedding,
         query_text: queryText || undefined,
@@ -43,9 +57,13 @@ export function SearchPanel({ onResults, onError, embedding }: SearchPanelProps)
         max_depth: maxDepth,
         governance_enabled: governanceEnabled,
         memory_type_filter: typeFilter || undefined,
+        retrieval_profile: profile,
+        include_debug: includeDebug,
       })) as ScoredNode[];
+      console.log('[search] done', { count: results.length });
       onResults(results);
     } catch (err) {
+      console.error('[search] error', err);
       onError(String(err));
     } finally {
       setLoading(false);
@@ -57,13 +75,16 @@ export function SearchPanel({ onResults, onError, embedding }: SearchPanelProps)
     if (!storeContent.trim()) return;
     setStoring(true);
     try {
+      console.log('[search] store:start', { storeType });
       await storeSession({
         content: storeContent,
         memory_type: storeType,
       });
       setStoreContent('');
+      console.log('[search] store:done');
       onResults([]);
     } catch (err) {
+      console.error('[search] store:error', err);
       onError(String(err));
     } finally {
       setStoring(false);
@@ -119,6 +140,32 @@ export function SearchPanel({ onResults, onError, embedding }: SearchPanelProps)
             />
             Governance
           </label>
+          <label className="text-xs text-gray-600 flex items-center gap-1 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={includeDebug}
+              onChange={(e) => setIncludeDebug(e.target.checked)}
+            />
+            Score-Debug
+          </label>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <span className="text-xs text-gray-500 pt-1">Profil:</span>
+          {PROFILE_OPTIONS.map((entry) => (
+            <button
+              key={entry}
+              type="button"
+              className={`text-xs px-2 py-1 rounded-full border transition ${
+                profile === entry
+                  ? 'bg-blue-100 border-blue-400 text-blue-700'
+                  : 'border-gray-300 text-gray-500 hover:border-gray-400'
+              }`}
+              onClick={() => setProfile(entry)}
+            >
+              {entry}
+            </button>
+          ))}
         </div>
 
         <div className="flex flex-wrap gap-2">

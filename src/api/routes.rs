@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use axum::extract::{Path, State};
@@ -32,6 +31,16 @@ mod vlm_webhooks;
 pub use vlm_webhooks::*;
 
 #[derive(Serialize, ToSchema)]
+pub struct RetrievalScoreDebug {
+    pub profile: RetrievalProfile,
+    pub trust_tier: String,
+    pub base_score: f32,
+    pub multiplier: f32,
+    pub final_score: f32,
+    pub explanation: String,
+}
+
+#[derive(Serialize, ToSchema)]
 pub struct ScoredNode {
     pub score: f32,
     pub id: Uuid,
@@ -44,6 +53,10 @@ pub struct ScoredNode {
     #[schema(value_type = Object)]
     pub metadata: HashMap<String, serde_json::Value>,
     pub created_at: chrono::DateTime<chrono::Utc>,
+    pub retrieval_profile: RetrievalProfile,
+    pub trust_tier: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub score_debug: Option<RetrievalScoreDebug>,
     /// Governance fields (populated when Stage 2 governance is applied)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub confidence: Option<f64>,
@@ -56,7 +69,39 @@ pub struct ScoredNode {
 }
 
 impl ScoredNode {
-    fn from_node(score: f32, n: FractalNode) -> Self {
+    fn from_storage(entry: crate::storage::ScoredNode, include_debug: bool) -> Self {
+        let debug = entry.debug.clone();
+        let score_debug = include_debug.then(|| score_debug_response(debug.as_ref(), &entry.node));
+        Self::from_parts(entry.score, entry.node, debug.as_ref(), score_debug)
+    }
+
+    fn from_governed_storage(
+        entry: crate::storage::ScoredNode,
+        governance_passed: bool,
+        issues: Vec<crate::memory::governance::ValidationIssue>,
+        include_debug: bool,
+    ) -> Self {
+        let confidence = entry.node.confidence;
+        let sensitivity = entry.node.sensitivity;
+        let debug = entry.debug.clone();
+        let score_debug = include_debug.then(|| score_debug_response(debug.as_ref(), &entry.node));
+        Self::from_parts(entry.score, entry.node, debug.as_ref(), score_debug).with_governance(
+            confidence,
+            sensitivity,
+            governance_passed,
+            issues,
+        )
+    }
+
+    fn from_parts(
+        score: f32,
+        n: FractalNode,
+        debug: Option<&crate::storage::ScoreDebug>,
+        score_debug: Option<RetrievalScoreDebug>,
+    ) -> Self {
+        let trust_tier = debug
+            .map(|entry| entry.trust_tier.clone())
+            .unwrap_or_else(|| n.trust_tier().to_string());
         Self {
             score,
             id: n.id,
@@ -66,6 +111,11 @@ impl ScoredNode {
             original_pointer: n.original_pointer,
             metadata: n.metadata,
             created_at: n.created_at,
+            retrieval_profile: debug
+                .map(|entry| entry.profile)
+                .unwrap_or(RetrievalProfile::FullFidelity),
+            trust_tier,
+            score_debug,
             confidence: None,
             sensitivity: None,
             governance_passed: None,
@@ -73,26 +123,18 @@ impl ScoredNode {
         }
     }
 
-    pub(crate) fn from_governed(
-        score: f32,
-        n: FractalNode,
+    fn with_governance(
+        mut self,
+        confidence: f64,
+        sensitivity: Sensitivity,
         governance_passed: bool,
         issues: Vec<crate::memory::governance::ValidationIssue>,
     ) -> Self {
-        Self {
-            score,
-            id: n.id,
-            memory_type: n.memory_type,
-            source: Some(n.source),
-            content: n.content,
-            original_pointer: n.original_pointer,
-            metadata: n.metadata,
-            created_at: n.created_at,
-            confidence: Some(n.confidence),
-            sensitivity: Some(n.sensitivity),
-            governance_passed: Some(governance_passed),
-            governance_issues: issues,
-        }
+        self.confidence = Some(confidence);
+        self.sensitivity = Some(sensitivity);
+        self.governance_passed = Some(governance_passed);
+        self.governance_issues = issues;
+        self
     }
 }
 
@@ -150,7 +192,7 @@ fn clean_for_embedding(text: &str) -> String {
     }
     out
 }
-use crate::storage::{HybridQuery, MemoryStore, StorageBackend};
+use crate::storage::{HybridQuery, RetrievalProfile, StorageBackend};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -282,6 +324,165 @@ fn default_source_str() -> String {
     "conversation".to_string()
 }
 
+fn metadata_text<'a>(metadata: &'a HashMap<String, Value>, key: &str) -> Option<&'a str> {
+    metadata.get(key).and_then(Value::as_str)
+}
+
+fn metadata_matches(metadata: &HashMap<String, Value>, key: &str, values: &[&str]) -> bool {
+    metadata_text(metadata, key).is_some_and(|value| {
+        values
+            .iter()
+            .any(|candidate| value.eq_ignore_ascii_case(candidate))
+    })
+}
+
+fn set_metadata_text(metadata: &mut HashMap<String, Value>, key: &str, value: &str) {
+    metadata.insert(key.to_string(), Value::String(value.to_string()));
+}
+
+fn retrieval_profile_hint(profile: RetrievalProfile) -> &'static str {
+    match profile {
+        RetrievalProfile::UserFacing => {
+            "versteckt interne Artefakte und bevorzugt primaere Kontexte"
+        }
+        RetrievalProfile::AgentDebug => {
+            "zeigt auch interne Agentenspuren, gewichtet sie aber leicht herunter"
+        }
+        RetrievalProfile::FullFidelity => "zeigt rohe Rankings ohne Provenance-Gewichtung",
+    }
+}
+
+fn score_debug_response(
+    debug: Option<&crate::storage::ScoreDebug>,
+    node: &FractalNode,
+) -> RetrievalScoreDebug {
+    let profile = debug
+        .map(|entry| entry.profile)
+        .unwrap_or(RetrievalProfile::FullFidelity);
+    let trust_tier = debug
+        .map(|entry| entry.trust_tier.clone())
+        .unwrap_or_else(|| node.trust_tier().to_string());
+    let base_score = debug.map(|entry| entry.base_score).unwrap_or(1.0);
+    let multiplier = debug.map(|entry| entry.multiplier).unwrap_or(1.0);
+    let final_score = base_score * multiplier;
+    let explanation = format!(
+        "{}; trust={} => {:.2} x {:.2} = {:.2}",
+        retrieval_profile_hint(profile),
+        trust_tier,
+        base_score,
+        multiplier,
+        final_score
+    );
+    RetrievalScoreDebug {
+        profile,
+        trust_tier,
+        base_score,
+        multiplier,
+        final_score,
+        explanation,
+    }
+}
+
+fn default_derivation(metadata: &HashMap<String, Value>) -> Option<&'static str> {
+    if metadata_matches(
+        metadata,
+        "source",
+        &["openclaw:agent_end", "openclaw:before_compaction"],
+    ) {
+        return Some("agent_transcript");
+    }
+    if metadata_matches(metadata, "role", &["assistant", "ai", "system", "mixed"]) {
+        return Some("assistant_output");
+    }
+    metadata_matches(metadata, "role", &["user"]).then_some("user_input")
+}
+
+fn should_hide_from_user_retrieval(
+    memory_type: MemoryType,
+    metadata: &HashMap<String, Value>,
+) -> bool {
+    memory_type == MemoryType::Meta
+        || metadata_matches(
+            metadata,
+            FractalNode::ROLE_KEY,
+            &["assistant", "ai", "system", "mixed"],
+        )
+        || metadata_matches(
+            metadata,
+            "source",
+            &["openclaw:agent_end", "openclaw:before_compaction"],
+        )
+        || metadata_matches(
+            metadata,
+            FractalNode::DERIVATION_KEY,
+            &[
+                "assistant_output",
+                "retrieval_compose",
+                "chat_query",
+                "agent_transcript",
+            ],
+        )
+}
+
+fn default_trust_tier(
+    memory_type: MemoryType,
+    source: MemorySource,
+    metadata: &HashMap<String, Value>,
+) -> &'static str {
+    if should_hide_from_user_retrieval(memory_type, metadata)
+        || source == MemorySource::Consolidation
+    {
+        return FractalNode::TRUST_DERIVED;
+    }
+    let primary_import = metadata_text(metadata, "import_type").is_some_and(|import_type| {
+        matches!(
+            import_type,
+            "openclaw_workspace" | "openclaw_session" | "langchain_memory" | "custom_import"
+        )
+    }) || metadata_text(metadata, "original_file")
+        .is_some_and(|file| matches!(file, "MEMORY.md" | "USER.md" | "IDENTITY.md" | "SOUL.md"));
+    if source == MemorySource::Import
+        || metadata.contains_key("imported_from")
+        || metadata.contains_key("import_type")
+        || metadata_text(metadata, "source").is_some_and(|value| value.starts_with("import:"))
+    {
+        return if primary_import {
+            FractalNode::TRUST_PRIMARY
+        } else {
+            FractalNode::TRUST_REFERENCE
+        };
+    }
+    match source {
+        MemorySource::Conversation => FractalNode::TRUST_PRIMARY,
+        MemorySource::Document | MemorySource::Manual => FractalNode::TRUST_REFERENCE,
+        MemorySource::Consolidation => FractalNode::TRUST_DERIVED,
+        MemorySource::Import => FractalNode::TRUST_REFERENCE,
+    }
+}
+
+fn normalize_session_metadata(
+    memory_type: MemoryType,
+    source: MemorySource,
+    metadata: &mut HashMap<String, Value>,
+) {
+    if let Some(derivation) = default_derivation(metadata) {
+        metadata
+            .entry(FractalNode::DERIVATION_KEY.to_string())
+            .or_insert_with(|| Value::String(derivation.to_string()));
+    }
+    let trust_tier = default_trust_tier(memory_type, source, metadata);
+    if should_hide_from_user_retrieval(memory_type, metadata) {
+        set_metadata_text(metadata, FractalNode::TRUST_TIER_KEY, trust_tier);
+        metadata
+            .entry(FractalNode::RETRIEVAL_VISIBILITY_KEY.to_string())
+            .or_insert_with(|| Value::String(FractalNode::INTERNAL_VISIBILITY.to_string()));
+        return;
+    }
+    metadata
+        .entry(FractalNode::TRUST_TIER_KEY.to_string())
+        .or_insert_with(|| Value::String(trust_tier.to_string()));
+}
+
 #[derive(Serialize, ToSchema)]
 pub struct StoreNodeResponse {
     pub id: Uuid,
@@ -349,11 +550,13 @@ pub async fn store_session(
     let memory_type = MemoryType::parse(&req.memory_type).unwrap_or(MemoryType::Episodic);
     let source = MemorySource::parse(&req.source).unwrap_or(MemorySource::Conversation);
 
+    let mut metadata = req.metadata;
+    normalize_session_metadata(memory_type, source, &mut metadata);
     let mut node = FractalNode::new_typed(
         Some(req.content),
         None,
         vector,
-        req.metadata,
+        metadata,
         memory_type,
         source,
     );
@@ -546,6 +749,10 @@ pub struct RetrieveFractalRequest {
     /// Only memories at or below this tier are returned (default: "overview").
     #[serde(default = "default_max_tier")]
     pub max_tier: Option<String>,
+    #[serde(default = "default_retrieval_profile")]
+    pub retrieval_profile: RetrievalProfile,
+    #[serde(default)]
+    pub include_debug: bool,
 }
 
 fn default_top_k() -> usize {
@@ -561,6 +768,225 @@ fn default_max_tier() -> Option<String> {
     // Default to None (show all tiers) — users can opt-in to tier filtering
     // by explicitly passing "summary" or "overview" in their request.
     None
+}
+
+fn default_retrieval_profile() -> RetrievalProfile {
+    RetrievalProfile::UserFacing
+}
+
+// -- Subconscious Chat --
+
+#[derive(Deserialize, ToSchema)]
+pub struct SubconsciousChatRequest {
+    pub message: String,
+    #[serde(default = "default_top_k")]
+    pub top_k: usize,
+    #[serde(default = "default_max_depth")]
+    pub max_depth: usize,
+    #[serde(default = "default_governance_enabled")]
+    pub governance_enabled: bool,
+    #[serde(default)]
+    pub persist: bool,
+    #[serde(default = "default_retrieval_profile")]
+    pub retrieval_profile: RetrievalProfile,
+    #[serde(default)]
+    pub include_debug: bool,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct SubconsciousSource {
+    pub id: Uuid,
+    pub score: f32,
+    pub memory_type: MemoryType,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub snippet: String,
+    pub retrieval_profile: RetrievalProfile,
+    pub trust_tier: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub score_debug: Option<RetrievalScoreDebug>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct SubconsciousChatResponse {
+    pub answer: String,
+    pub sources: Vec<SubconsciousSource>,
+    pub stored: bool,
+}
+
+fn source_snippet(node: &FractalNode) -> String {
+    let raw = node
+        .content
+        .as_deref()
+        .or(node.original_pointer.as_deref())
+        .unwrap_or("(no content)");
+    if raw.len() > 180 {
+        format!("{}...", &raw[..180])
+    } else {
+        raw.to_string()
+    }
+}
+
+fn chat_persist_metadata(role: &str, derivation: &str) -> HashMap<String, Value> {
+    let mut metadata = HashMap::new();
+    set_metadata_text(&mut metadata, FractalNode::ROLE_KEY, role);
+    set_metadata_text(&mut metadata, FractalNode::DERIVATION_KEY, derivation);
+    set_metadata_text(
+        &mut metadata,
+        FractalNode::TRUST_TIER_KEY,
+        FractalNode::TRUST_DERIVED,
+    );
+    set_metadata_text(
+        &mut metadata,
+        FractalNode::RETRIEVAL_VISIBILITY_KEY,
+        FractalNode::INTERNAL_VISIBILITY,
+    );
+    set_metadata_text(&mut metadata, "channel", "subconscious_chat");
+    metadata
+}
+
+fn compose_subconscious_answer(message: &str, sources: &[SubconsciousSource]) -> String {
+    if sources.is_empty() {
+        return format!(
+            "Ich finde dazu noch keine passende Memory-Spur: \"{}\".",
+            message
+        );
+    }
+    let mut lines = vec!["Ich antworte aus deinem aktuellen Memory-Kontext:".to_string()];
+    for (idx, source) in sources.iter().enumerate() {
+        lines.push(format!("{}. {}", idx + 1, source.snippet));
+    }
+    lines.join("\n")
+}
+
+async fn persist_chat_exchange(
+    state: &AppState,
+    question: &str,
+    answer: &str,
+) -> Result<(), StatusCode> {
+    let question_vec = embed_document(&*state.embedding, question)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let answer_vec = embed_document(&*state.embedding, answer)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let question_node = FractalNode::new_typed(
+        Some(format!("USER: {question}")),
+        None,
+        question_vec,
+        chat_persist_metadata("user", "chat_query"),
+        MemoryType::Episodic,
+        MemorySource::Conversation,
+    );
+    let answer_node = FractalNode::new_typed(
+        Some(format!("ASSISTANT: {answer}")),
+        None,
+        answer_vec,
+        chat_persist_metadata("assistant", "retrieval_compose"),
+        MemoryType::Meta,
+        MemorySource::Conversation,
+    );
+    state
+        .store
+        .insert(question_node)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    state
+        .store
+        .insert(answer_node)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(())
+}
+
+#[utoipa::path(
+    post,
+    path = "/chat/subconscious",
+    tag = "chat",
+    request_body = SubconsciousChatRequest,
+    responses(
+        (status = 200, description = "Subconscious answer", body = SubconsciousChatResponse),
+        (status = 400, description = "Invalid request", body = String),
+        (status = 500, description = "Server error", body = String)
+    )
+)]
+pub async fn subconscious_chat(
+    State(state): State<AppState>,
+    Json(req): Json<SubconsciousChatRequest>,
+) -> Result<Json<SubconsciousChatResponse>, (StatusCode, String)> {
+    if req.message.trim().is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "message must not be empty".into()));
+    }
+
+    let top_k = req.top_k.clamp(1, 20);
+    let query_vector = embed_query(&*state.embedding, &req.message)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let query = HybridQuery::hybrid(
+        req.message.clone(),
+        query_vector,
+        top_k.saturating_mul(2),
+        req.max_depth.clamp(1, 6),
+    )
+    .with_profile(req.retrieval_profile);
+    let results = state
+        .store
+        .hybrid_retrieve(&query)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let validator = GovernanceValidator::new(state.governance_policy.read().await.clone());
+    let sources: Vec<SubconsciousSource> = results
+        .into_iter()
+        .filter(|entry| {
+            if !req.governance_enabled {
+                return true;
+            }
+            let validation = validator.validate(&entry.node.to_governance_candidate());
+            !validation.has_hard_block()
+        })
+        .take(top_k)
+        .map(|entry| {
+            let score_debug = req
+                .include_debug
+                .then(|| score_debug_response(entry.debug.as_ref(), &entry.node));
+            let retrieval_profile = entry
+                .debug
+                .as_ref()
+                .map(|debug| debug.profile)
+                .unwrap_or(req.retrieval_profile);
+            let trust_tier = entry
+                .debug
+                .as_ref()
+                .map(|debug| debug.trust_tier.clone())
+                .unwrap_or_else(|| entry.node.trust_tier().to_string());
+            SubconsciousSource {
+                id: entry.node.id,
+                score: entry.score,
+                memory_type: entry.node.memory_type,
+                created_at: entry.node.created_at,
+                snippet: source_snippet(&entry.node),
+                retrieval_profile,
+                trust_tier,
+                score_debug,
+            }
+        })
+        .collect();
+
+    let answer = compose_subconscious_answer(&req.message, &sources);
+    let mut stored = false;
+    if req.persist {
+        persist_chat_exchange(&state, &req.message, &answer)
+            .await
+            .map_err(|e| (e, "failed to persist chat exchange".into()))?;
+        stored = true;
+    }
+
+    Ok(Json(SubconsciousChatResponse {
+        answer,
+        sources,
+        stored,
+    }))
 }
 
 #[utoipa::path(
@@ -615,6 +1041,7 @@ pub async fn retrieve_fractal(
         query_vector: Some(query_vector),
         top_k: req.top_k,
         max_depth: req.max_depth,
+        profile: req.retrieval_profile,
     };
     let results = state.store.hybrid_retrieve(&query).await.map_err(|e| {
         tracing::error!("hybrid_retrieve failed: {}", e);
@@ -639,7 +1066,7 @@ pub async fn retrieve_fractal(
     if !req.governance_enabled {
         let scored: Vec<ScoredNode> = results
             .into_iter()
-            .map(|s| ScoredNode::from_node(s.score, s.node))
+            .map(|entry| ScoredNode::from_storage(entry, req.include_debug))
             .collect();
         return Ok(Json(scored));
     }
@@ -672,11 +1099,11 @@ pub async fn retrieve_fractal(
                 return None;
             }
 
-            Some(ScoredNode::from_governed(
-                s.score,
-                s.node,
+            Some(ScoredNode::from_governed_storage(
+                s,
                 validation.passed,
                 validation.issues,
+                req.include_debug,
             ))
         })
         .collect();
@@ -2089,6 +2516,7 @@ pub async fn namespace_search(
         query_vector: Some(query_vector),
         top_k: q.top_k,
         max_depth: 3,
+        profile: RetrievalProfile::UserFacing,
     };
     let all_results = state.store.hybrid_retrieve(&query).await.map_err(|e| {
         (
@@ -2101,7 +2529,7 @@ pub async fn namespace_search(
     let filtered: Vec<ScoredNode> = all_results
         .into_iter()
         .filter(|s| memory_ids.contains(&s.node.id))
-        .map(|s| ScoredNode::from_node(s.score, s.node))
+        .map(|entry| ScoredNode::from_storage(entry, false))
         .collect();
 
     Ok(Json(filtered))

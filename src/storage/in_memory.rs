@@ -1,5 +1,5 @@
 use std::cmp::Ordering;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
@@ -12,11 +12,47 @@ use tokio::sync::RwLock;
 use usearch::{new_index, Index, IndexOptions, MetricKind, ScalarKind};
 use uuid::Uuid;
 
+use crate::embedding::{embed_document, EmbeddingProvider};
 use crate::memory::FractalNode;
+use crate::storage::backend::EmbeddingRepairReport;
 use crate::storage::{HybridQuery, ScoredNode, StorageBackend, UpdateOperation};
 
 const USEARCH_THRESHOLD: usize = 50;
 const SAVE_DEBOUNCE_SECS: u64 = 5;
+
+fn node_dimension(node: &FractalNode) -> Option<usize> {
+    (!node.vector.is_empty()).then_some(node.vector.len())
+}
+
+fn repair_text(node: &FractalNode) -> Option<&str> {
+    node.content
+        .as_deref()
+        .or(node.original_pointer.as_deref())
+        .filter(|text| !text.trim().is_empty())
+}
+
+fn dominant_dimension(nodes: &HashMap<Uuid, FractalNode>) -> Option<usize> {
+    let mut counts = HashMap::new();
+    for dim in nodes.values().filter_map(node_dimension) {
+        *counts.entry(dim).or_insert(0usize) += 1;
+    }
+    counts
+        .into_iter()
+        .max_by_key(|(_, count)| *count)
+        .map(|(dim, _)| dim)
+}
+
+fn index_options(dimension: usize) -> IndexOptions {
+    IndexOptions {
+        dimensions: dimension,
+        metric: MetricKind::Cos,
+        quantization: ScalarKind::F32,
+        connectivity: 0,
+        expansion_add: 0,
+        expansion_search: 0,
+        multi: false,
+    }
+}
 
 struct CachedBm25 {
     embedder: Embedder,
@@ -113,24 +149,25 @@ impl StorageBackend for MemoryStore {
 
     async fn hybrid_retrieve(&self, query: &HybridQuery) -> anyhow::Result<Vec<ScoredNode>> {
         let vector = query.query_vector.as_deref().unwrap_or(&[]);
+        let fetch_k = query.profile.fetch_k(query.top_k);
         let results = self
             .hybrid_retrieve(
                 query.query_text.as_deref(),
                 vector,
-                query.top_k,
+                fetch_k,
                 query.max_depth,
                 #[cfg(feature = "postgres-storage")]
                 None,
             )
             .await;
-        Ok(results
+        let mut weighted: Vec<_> = results
             .into_iter()
-            .map(|(score, node)| ScoredNode {
-                id: node.id,
-                score,
-                node,
-            })
-            .collect())
+            .filter(|(_, node)| query.profile.allows(node))
+            .map(|(score, node)| query.profile.score_node(score, node))
+            .collect();
+        weighted.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(Ordering::Equal));
+        weighted.truncate(query.top_k);
+        Ok(weighted)
     }
 
     async fn retrieve_fractal(&self, query: &HybridQuery) -> anyhow::Result<Vec<ScoredNode>> {
@@ -152,6 +189,7 @@ impl StorageBackend for MemoryStore {
             .map(|node| ScoredNode {
                 id: node.id,
                 score: 1.0,
+                debug: None,
                 node,
             })
             .collect())
@@ -179,6 +217,37 @@ impl StorageBackend for MemoryStore {
 
     async fn purge_dummy_vectors(&self) -> usize {
         self.purge_dummy_vectors().await
+    }
+
+    async fn repair_embedding_dimensions(
+        &self,
+        provider: &dyn EmbeddingProvider,
+    ) -> anyhow::Result<EmbeddingRepairReport> {
+        let target_dimension = provider.dimension();
+        let nodes = self.list_all().await?;
+        let mut report = EmbeddingRepairReport {
+            scanned: nodes.len(),
+            repaired: 0,
+            skipped: 0,
+            target_dimension,
+        };
+        for node in nodes {
+            if node_dimension(&node) == Some(target_dimension) {
+                continue;
+            }
+            let Some(text) = repair_text(&node) else {
+                report.skipped += 1;
+                continue;
+            };
+            let vector = embed_document(provider, text).await?;
+            if self.update_vector(&node.id, vector).await? {
+                report.repaired += 1;
+            } else {
+                report.skipped += 1;
+            }
+        }
+        let _ = self.rebuild_index_for_dimension(target_dimension).await?;
+        Ok(report)
     }
 }
 
@@ -243,41 +312,29 @@ impl MemoryStore {
         self.next_key = Arc::new(AtomicU64::new(state.next_key));
 
         // Rebuild USearch index from vectors
-        let mut dimension = None;
-        for node in state.nodes.values() {
-            if !node.vector.is_empty() {
-                dimension = Some(node.vector.len());
-                break;
-            }
-        }
+        let dimension = dominant_dimension(&state.nodes);
 
         if let Some(dim) = dimension {
-            let options = IndexOptions {
-                dimensions: dim,
-                metric: MetricKind::Cos,
-                quantization: ScalarKind::F32,
-                connectivity: 0,
-                expansion_add: 0,
-                expansion_search: 0,
-                multi: false,
-            };
-            if let Ok(index) = SendableIndex::new(&options) {
+            if let Ok(index) = SendableIndex::new(&index_options(dim)) {
                 let cap = state.nodes.len().max(1024);
                 let _ = index.reserve(cap);
+                let mut skipped = 0usize;
 
                 for (&uuid, &key) in &state.uuid_to_key {
                     if let Some(node) = state.nodes.get(&uuid) {
-                        if !node.vector.is_empty() {
+                        if node_dimension(node) == Some(dim) {
                             if let Err(e) = index.add(key, &node.vector) {
                                 tracing::warn!(%uuid, "rebuild index skip: {e}");
                             }
+                        } else if node_dimension(node).is_some() {
+                            skipped += 1;
                         }
                     }
                 }
 
                 *self.usearch_index.lock().unwrap() = Some(index);
                 *self.index_dimension.lock().unwrap() = Some(dim);
-                tracing::info!(dim, "usearch index rebuilt from persisted state");
+                tracing::info!(dim, skipped, "usearch index rebuilt from persisted state");
             }
         }
 
@@ -385,22 +442,54 @@ impl MemoryStore {
         };
 
         if need_rebuild {
-            let options = IndexOptions {
-                dimensions: dimension,
-                metric: MetricKind::Cos,
-                quantization: ScalarKind::F32,
-                connectivity: 0,
-                expansion_add: 0,
-                expansion_search: 0,
-                multi: false,
-            };
-            let index = SendableIndex::new(&options)?;
+            let index = SendableIndex::new(&index_options(dimension))?;
             index.reserve(1024)?;
             *guard = Some(index);
             *dim_guard = Some(dimension);
             tracing::info!(dimension, "usearch index initialized");
         }
         Ok(())
+    }
+
+    fn index_key(
+        &self,
+        id: Uuid,
+        uuid_to_key: &mut HashMap<Uuid, u64>,
+        key_to_uuid: &mut HashMap<u64, Uuid>,
+    ) -> u64 {
+        if let Some(key) = uuid_to_key.get(&id).copied() {
+            return key;
+        }
+        let key = self.next_key.fetch_add(1, AtomicOrdering::Relaxed);
+        uuid_to_key.insert(id, key);
+        key_to_uuid.insert(key, id);
+        key
+    }
+
+    async fn rebuild_index_for_dimension(&self, dimension: usize) -> Result<usize> {
+        let nodes = self.nodes.read().await.clone();
+        let ids: HashSet<Uuid> = nodes
+            .iter()
+            .filter(|(_, node)| node_dimension(node) == Some(dimension))
+            .map(|(id, _)| *id)
+            .collect();
+        let mut uuid_to_key = self.uuid_to_key.write().await;
+        let mut key_to_uuid = self.key_to_uuid.write().await;
+        uuid_to_key.retain(|id, _| ids.contains(id));
+        key_to_uuid.retain(|_, id| ids.contains(id));
+        let index = SendableIndex::new(&index_options(dimension))?;
+        index.reserve(ids.len().max(1024))?;
+        let mut indexed = 0usize;
+        for id in ids {
+            let key = self.index_key(id, &mut uuid_to_key, &mut key_to_uuid);
+            if index.add(key, &nodes[&id].vector).is_ok() {
+                indexed += 1;
+            }
+        }
+        *self.usearch_index.lock().unwrap() = Some(index);
+        *self.index_dimension.lock().unwrap() = Some(dimension);
+        tracing::info!(dimension, indexed, "usearch index rebuilt");
+        Ok(indexed)
     }
 
     pub async fn insert(&self, node: FractalNode) -> Result<Uuid> {
@@ -642,7 +731,7 @@ impl MemoryStore {
             &'a crate::storage::TrajectoryStore<'_>,
         >,
     ) -> Vec<(f32, FractalNode)> {
-        let start = Instant::now();
+        let _start = Instant::now();
 
         #[cfg(feature = "postgres-storage")]
         let mut trajectory = trajectory_store.map(|_ts| {

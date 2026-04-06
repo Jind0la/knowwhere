@@ -131,3 +131,21 @@ pub fn init_embedding_provider() -> Arc<dyn EmbeddingProvider> {
         Arc::new(LocalOllamaProvider::new())
     }
 }
+
+pub async fn repair_legacy_embeddings(
+    store: &Arc<dyn StorageBackend>,
+    provider: &Arc<dyn EmbeddingProvider>,
+) -> anyhow::Result<()> {
+    let report = store.repair_embedding_dimensions(provider.as_ref()).await?;
+    if report.is_empty() {
+        return Ok(());
+    }
+    tracing::info!(
+        scanned = report.scanned,
+        repaired = report.repaired,
+        skipped = report.skipped,
+        target_dimension = report.target_dimension,
+        "legacy embedding repair finished"
+    );
+    Ok(())
+}

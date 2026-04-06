@@ -217,8 +217,12 @@ async function importRecentSessions(endpoint, apiKey, agentId, lookbackDays) {
         await kwStore(endpoint, apiKey, msg.content, {
           source: "openclaw:import",
           session_file: fname,
+          imported_from: fpath,
+          import_type: "openclaw_session",
           agent: agentId,
           role: msg.role,
+          derivation: "user_input",
+          trust_tier: "primary",
         });
         total++;
       }
@@ -336,6 +340,9 @@ ${formatMemoriesForPrompt(memories)}
         source: "openclaw:message_received",
         sender: event.from ?? "unknown",
         channel,
+        role: "user",
+        derivation: "user_input",
+        trust_tier: "primary",
         timestamp: event.timestamp
           ? new Date(event.timestamp).toISOString()
           : undefined,
@@ -394,6 +401,8 @@ ${formatMemoriesForPrompt(memories)}
               source: "openclaw:before_reset",
               session_id: event.sessionId,
               role: msg.role,
+              derivation: "user_input",
+              trust_tier: "primary",
             });
             stored++;
           }
@@ -459,6 +468,8 @@ ${formatMemoriesForPrompt(memories)}
               source: "openclaw:session_end",
               session_id: event.sessionId,
               role: msg.role,
+              derivation: "user_input",
+              trust_tier: "primary",
             });
             stored++;
           }

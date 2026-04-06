@@ -101,7 +101,7 @@ impl AuditScheduler {
     async fn run(&self) {
         let start = Instant::now();
         let mut total_updated = 0;
-        let mut total_issues = 0;
+        let total_issues = 0;
 
         // -- 1. Energy Decay --
         if self.config.decay_enabled {

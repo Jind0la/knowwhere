@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use axum::body::Body;
@@ -11,9 +12,29 @@ use tower::ServiceExt;
 use knowwhere_server::api::{auth, routes, webhooks::DedupCache};
 use knowwhere_server::embedding::{EmbeddingProvider, LocalOllamaProvider};
 use knowwhere_server::memory::governance::GovernancePolicy;
-use knowwhere_server::memory::{events::InMemoryEventStore, DreamMode};
-use knowwhere_server::storage::{MemoryStore, StorageBackend};
+use knowwhere_server::memory::types::{MemorySource, MemoryType};
+use knowwhere_server::memory::{events::InMemoryEventStore, DreamMode, FractalNode};
+use knowwhere_server::storage::{HybridQuery, MemoryStore, RetrievalProfile, StorageBackend};
 use tokio::sync::RwLock;
+
+struct FixedEmbeddingProvider {
+    dim: usize,
+}
+
+#[async_trait::async_trait]
+impl EmbeddingProvider for FixedEmbeddingProvider {
+    async fn embed(&self, text: &str) -> anyhow::Result<Vec<f32>> {
+        Ok(vec![text.len() as f32; self.dim])
+    }
+
+    fn dimension(&self) -> usize {
+        self.dim
+    }
+
+    fn name(&self) -> &str {
+        "fixed-test"
+    }
+}
 
 /// Creates the embedding provider for tests.
 /// Always uses LocalOllama — tests are designed and validated against Ollama embeddings.
@@ -77,6 +98,7 @@ fn app_with_auth(key: &str) -> Router {
         .route("/store_external", post(routes::store_external))
         .route("/retrieve/{id}", get(routes::retrieve))
         .route("/retrieve_fractal", post(routes::retrieve_fractal))
+        .route("/chat/subconscious", post(routes::subconscious_chat))
         .route("/nodes/recent", get(routes::recent_nodes))
         .route("/dream/status", get(routes::dream_status))
         .route_layer(middleware::from_fn(auth::auth_middleware))
@@ -91,6 +113,22 @@ fn app_with_auth(key: &str) -> Router {
 async fn body_string(body: Body) -> String {
     let bytes = body.collect().await.unwrap().to_bytes();
     String::from_utf8(bytes.to_vec()).unwrap()
+}
+
+fn trust_node(content: &str, source: MemorySource, tier: &str) -> FractalNode {
+    let mut metadata = HashMap::new();
+    metadata.insert(
+        "trust_tier".to_string(),
+        serde_json::Value::String(tier.to_string()),
+    );
+    FractalNode::new_typed(
+        Some(content.to_string()),
+        None,
+        vec![1.0; 4],
+        metadata,
+        MemoryType::Semantic,
+        source,
+    )
 }
 
 // -- Health --
@@ -157,6 +195,393 @@ async fn auth_rejects_wrong_token() {
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn memory_store_repairs_legacy_embedding_dimensions() {
+    let store = MemoryStore::new();
+    let legacy_id = store
+        .insert(FractalNode::new_typed(
+            Some("legacy memory".to_string()),
+            None,
+            vec![0.2; 3],
+            Default::default(),
+            MemoryType::Episodic,
+            MemorySource::Conversation,
+        ))
+        .await
+        .unwrap();
+    let healthy_id = store
+        .insert(FractalNode::new_typed(
+            Some("healthy memory".to_string()),
+            None,
+            vec![0.4; 4],
+            Default::default(),
+            MemoryType::Semantic,
+            MemorySource::Conversation,
+        ))
+        .await
+        .unwrap();
+    let provider = FixedEmbeddingProvider { dim: 4 };
+
+    let report = store.repair_embedding_dimensions(&provider).await.unwrap();
+    assert_eq!(report.target_dimension, 4);
+    assert_eq!(report.repaired, 1);
+    assert_eq!(
+        store.get(&legacy_id).await.unwrap().unwrap().vector.len(),
+        4
+    );
+    assert_eq!(
+        store.get(&healthy_id).await.unwrap().unwrap().vector.len(),
+        4
+    );
+
+    let results = StorageBackend::hybrid_retrieve(&store, &HybridQuery::vector(vec![1.0; 4], 5, 0))
+        .await
+        .unwrap();
+    assert!(!results.is_empty());
+}
+
+#[tokio::test]
+async fn subconscious_chat_accepts_api_token_and_returns_sources() {
+    let app = app_with_auth("test-key");
+    let _ = app
+        .clone()
+        .oneshot(
+            Request::post("/store_session")
+                .header("authorization", "Bearer test-key")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"content":"Ich arbeite an einem neuen KnowWhere Dashboard."}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let resp = app
+        .oneshot(
+            Request::post("/chat/subconscious")
+                .header("authorization", "Bearer test-key")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"message":"Woran arbeite ich gerade?","persist":false}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let body = body_string(resp.into_body()).await;
+    let payload: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert!(payload["answer"]
+        .as_str()
+        .unwrap()
+        .contains("Memory-Kontext"));
+    assert!(!payload["sources"].as_array().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn user_facing_retrieval_prioritizes_primary_trust_tiers() {
+    let store = MemoryStore::new();
+    store
+        .insert(trust_node(
+            "primary trust memory",
+            MemorySource::Conversation,
+            FractalNode::TRUST_PRIMARY,
+        ))
+        .await
+        .unwrap();
+    store
+        .insert(trust_node(
+            "reference trust memory",
+            MemorySource::Import,
+            FractalNode::TRUST_REFERENCE,
+        ))
+        .await
+        .unwrap();
+    store
+        .insert(trust_node(
+            "derived trust memory",
+            MemorySource::Consolidation,
+            FractalNode::TRUST_DERIVED,
+        ))
+        .await
+        .unwrap();
+
+    let results = StorageBackend::hybrid_retrieve(
+        &store,
+        &HybridQuery {
+            query_text: None,
+            query_vector: Some(vec![1.0; 4]),
+            top_k: 3,
+            max_depth: 0,
+            profile: RetrievalProfile::UserFacing,
+        },
+    )
+    .await
+    .unwrap();
+
+    let labels: Vec<_> = results
+        .iter()
+        .map(|entry| entry.node.content.clone().unwrap())
+        .collect();
+    assert_eq!(
+        labels,
+        vec![
+            "primary trust memory",
+            "reference trust memory",
+            "derived trust memory",
+        ]
+    );
+    assert!(results[0].score > results[1].score);
+    assert!(results[1].score > results[2].score);
+}
+
+#[tokio::test]
+async fn retrieve_fractal_returns_score_debug_when_requested() {
+    let app = app_without_auth();
+    let _ = app
+        .clone()
+        .oneshot(
+            Request::post("/store_session")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"content":"Primärer Import","source":"import","memory_type":"semantic","vector":[1,1,1,1],"metadata":{"import_type":"openclaw_session","original_file":"MEMORY.md"}}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let resp = app
+        .oneshot(
+            Request::post("/retrieve_fractal")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"query_vector":[1,1,1,1],"top_k":5,"max_depth":0,"governance_enabled":false,"include_debug":true,"retrieval_profile":"user-facing"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let body = body_string(resp.into_body()).await;
+    let payload = serde_json::from_str::<serde_json::Value>(&body).unwrap();
+
+    assert_eq!(payload[0]["retrieval_profile"], "user-facing");
+    assert_eq!(payload[0]["trust_tier"], "primary");
+    assert_eq!(payload[0]["score_debug"]["profile"], "user-facing");
+    assert!(payload[0]["score_debug"]["explanation"]
+        .as_str()
+        .unwrap()
+        .contains("primaere Kontexte"));
+}
+
+#[tokio::test]
+async fn full_fidelity_profile_surfaces_internal_assistant_artifacts() {
+    let app = app_without_auth();
+    let _ = app
+        .clone()
+        .oneshot(
+            Request::post("/store_session")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"content":"ASSISTANT: Interner Agentenhinweis","memory_type":"episodic","vector":[1,1,1,1],"metadata":{"role":"assistant","trust_tier":"primary"}}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let resp = app
+        .oneshot(
+            Request::post("/retrieve_fractal")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"query_vector":[1,1,1,1],"top_k":5,"max_depth":0,"governance_enabled":false,"include_debug":true,"retrieval_profile":"full-fidelity"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let body = body_string(resp.into_body()).await;
+    let payload = serde_json::from_str::<serde_json::Value>(&body).unwrap();
+
+    assert!(body.contains("ASSISTANT: Interner Agentenhinweis"));
+    assert_eq!(payload[0]["retrieval_profile"], "full-fidelity");
+    assert_eq!(payload[0]["trust_tier"], "derived");
+    assert_eq!(payload[0]["score_debug"]["multiplier"], 1.0);
+}
+
+#[tokio::test]
+async fn store_session_assigns_primary_trust_to_imported_user_sessions() {
+    let app = app_without_auth();
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::post("/store_session")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"content":"Importierte User-Session","source":"import","metadata":{"import_type":"openclaw_session","original_file":"MEMORY.md"}}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let store_body = body_string(resp.into_body()).await;
+    let id = serde_json::from_str::<serde_json::Value>(&store_body).unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let resp = app
+        .oneshot(
+            Request::get(format!("/retrieve/{id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let body = body_string(resp.into_body()).await;
+    let payload = serde_json::from_str::<serde_json::Value>(&body).unwrap();
+
+    assert_eq!(payload["source"], "import");
+    assert_eq!(payload["metadata"]["trust_tier"], "primary");
+}
+
+#[tokio::test]
+async fn store_session_marks_assistant_outputs_as_derived_and_internal() {
+    let app = app_without_auth();
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::post("/store_session")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"content":"Agent summary","metadata":{"role":"assistant","source":"langchain","trust_tier":"primary"},"memory_type":"episodic"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let store_body = body_string(resp.into_body()).await;
+    let id = serde_json::from_str::<serde_json::Value>(&store_body).unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let resp = app
+        .oneshot(
+            Request::get(format!("/retrieve/{id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let body = body_string(resp.into_body()).await;
+    let payload = serde_json::from_str::<serde_json::Value>(&body).unwrap();
+
+    assert_eq!(payload["metadata"]["trust_tier"], "derived");
+    assert_eq!(payload["metadata"]["retrieval_visibility"], "internal");
+}
+
+#[tokio::test]
+async fn store_session_keeps_consolidation_visible_but_derived() {
+    let app = app_without_auth();
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::post("/store_session")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"content":"System summary","source":"consolidation","metadata":{"derivation":"system_summary"},"memory_type":"semantic","vector":[1,1,1,1]}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let store_body = body_string(resp.into_body()).await;
+    let id = serde_json::from_str::<serde_json::Value>(&store_body).unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let resp = app
+        .oneshot(
+            Request::post("/retrieve_fractal")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"query_vector":[1,1,1,1],"top_k":5,"max_depth":0,"governance_enabled":false}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let body = body_string(resp.into_body()).await;
+    let results = serde_json::from_str::<serde_json::Value>(&body).unwrap();
+
+    assert!(body.contains(&id));
+    assert_eq!(results[0]["metadata"]["trust_tier"], "derived");
+    assert!(results[0]["metadata"]["retrieval_visibility"].is_null());
+}
+
+#[tokio::test]
+async fn retrieve_fractal_hides_internal_assistant_artifacts() {
+    let app = app_without_auth();
+    let _ = app
+        .clone()
+        .oneshot(
+            Request::post("/store_session")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"content":"Das Dashboard hat einen stabilen API-Token-Flow fuer den Chat.","memory_type":"semantic"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let _ = app
+        .clone()
+        .oneshot(
+            Request::post("/store_session")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"content":"ASSISTANT: Das Dashboard hat einen stabilen API-Token-Flow fuer den Chat.","metadata":{"role":"assistant","source":"langchain"},"memory_type":"episodic"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let _ = app
+        .clone()
+        .oneshot(
+            Request::post("/store_session")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"content":"USER: Welche Dashboard-Aenderungen gibt es?","memory_type":"episodic"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let resp = app
+        .oneshot(
+            Request::post("/retrieve_fractal")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"query_text":"API-Token-Flow Chat","top_k":5,"max_depth":2,"governance_enabled":true}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let body = body_string(resp.into_body()).await;
+    assert!(!body.contains("USER: Welche Dashboard-Aenderungen"));
+    assert!(!body.contains("ASSISTANT:"));
+    assert!(body.contains("Dashboard hat einen stabilen API-Token-Flow"));
 }
 
 #[tokio::test]
@@ -360,6 +785,7 @@ async fn fractal_retrieve_with_query_text_returns_valid_json() {
     let body = body_string(resp.into_body()).await;
     // Should be a valid JSON array (empty or with results)
     let results: Vec<serde_json::Value> = serde_json::from_str(&body).unwrap();
+    assert!(results.iter().all(serde_json::Value::is_object));
     // We don't assert !results.is_empty() because embedding similarity may vary
     // We just assert the endpoint works and returns valid JSON
 }
@@ -419,6 +845,7 @@ async fn fractal_retrieve_with_vector_only() {
 
     let body = body_string(resp.into_body()).await;
     let results: Vec<serde_json::Value> = serde_json::from_str(&body).unwrap();
+    assert!(results.iter().all(serde_json::Value::is_object));
     // Node was stored with same dimension — should at least get the node back
     // (similarity depends on embedding quality)
 }
@@ -584,6 +1011,7 @@ async fn postgres_store_hybrid_retrieve_bm25_only() {
         query_vector: None,
         top_k: 5,
         max_depth: 0,
+        profile: knowwhere_server::storage::RetrievalProfile::FullFidelity,
     };
 
     let results = store
@@ -644,6 +1072,7 @@ async fn postgres_store_hybrid_retrieve_with_vector() {
         query_vector: Some(vector),
         top_k: 3,
         max_depth: 0,
+        profile: knowwhere_server::storage::RetrievalProfile::FullFidelity,
     };
 
     let results = store
