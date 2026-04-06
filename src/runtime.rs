@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use knowwhere_server::embedding::EmbeddingProvider;
-#[cfg(not(any(feature = "openai-provider", feature = "grok-provider")))]
 use knowwhere_server::embedding::LocalOllamaProvider;
 #[cfg(any(feature = "openai-provider", feature = "grok-provider"))]
 use knowwhere_server::embedding::{create_provider, ProviderKind};
