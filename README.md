@@ -305,6 +305,8 @@ context = memory.get_context_string("When do we deploy?")
 | `RATE_LIMIT_MODE`   | No       | `off`                    | `off` or `proxy` (proxy requires `X-Forwarded-For` / `X-Real-IP`) |
 | `RATE_LIMIT`        | No       | *(unset)*                | Legacy fallback: if set, behaves like `RATE_LIMIT_MODE=proxy` |
 | `DATABASE_URL`      | No       | *(unset)*                | PostgreSQL connection (enables postgres-storage feature)   |
+| `AUTH_SESSION_TTL_DAYS` | No   | `30`                     | Session token TTL for `/login` and `/refresh` in PostgreSQL mode |
+| `AUTH_STRICT_MIGRATIONS` | No | `false`                  | If `true`/`1`, startup fails when auth migrations fail |
 
 If neither `GROK_API_KEY` nor `OPENAI_API_KEY` is set, KnowWhere falls back to local Ollama.
 
@@ -326,6 +328,9 @@ KnowWhere supports two beta auth modes:
 
 1. **Static admin key (default/self-hosted):** set `KNOWWHERE_API_KEY` and use it as Bearer token.
 2. **Self-service users (PostgreSQL mode):** `/register`, `/login`, `/refresh` are enabled only with `postgres-storage` + `DATABASE_URL`.
+   - `/login` returns a session token with finite TTL (`AUTH_SESSION_TTL_DAYS`, default 30).
+   - `/refresh` rotates the session token and re-applies TTL.
+   - `admin` login via `/login` is intentionally disabled; use `KNOWWHERE_API_KEY` directly as Bearer token.
 
 If `postgres-storage` is not enabled, auth routes return `503`.
 

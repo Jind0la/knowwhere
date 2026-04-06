@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use tokio::sync::RwLock;
+mod runtime;
 
 use axum::middleware;
 use axum::routing::{delete, get, post, put};
@@ -17,20 +18,14 @@ use utoipa_swagger_ui::SwaggerUi;
 use knowwhere_server::api::{auth, auth::ApiKey, docs::ApiDoc, routes, webhooks::DedupCache};
 use knowwhere_server::connectors::frigate::FrigateConnector;
 use knowwhere_server::connectors::store_external_event;
-use knowwhere_server::embedding::EmbeddingProvider;
-#[cfg(not(any(feature = "openai-provider", feature = "grok-provider")))]
-use knowwhere_server::embedding::LocalOllamaProvider;
-#[cfg(any(feature = "openai-provider", feature = "grok-provider"))]
-use knowwhere_server::embedding::{create_provider, ProviderKind};
 use knowwhere_server::memory::events::InMemoryEventStore;
 use knowwhere_server::memory::{DreamMode, GovernancePolicy};
 use knowwhere_server::scheduler::{AuditScheduler, ConsolidationScheduler, SchedulerConfig};
-use knowwhere_server::storage::MemoryStore;
 #[cfg(feature = "postgres-storage")]
 use knowwhere_server::storage::PostgresStore;
-use knowwhere_server::storage::StorageBackend;
 use knowwhere_server::vlm::{VlmConfig, VlmWorker};
 use lazy_limit::{init_rate_limiter, Duration, RuleConfig};
+use runtime::{init_embedding_provider, rate_limit_mode_from_env, RateLimitMode};
 
 fn main() {
     std::thread::Builder::new()
@@ -85,22 +80,6 @@ fn auth_router_with_pg_store<S: Clone + Send + Sync + 'static>(
         .layer(axum::Extension(auth_state))
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum RateLimitMode {
-    Off,
-    Proxy,
-}
-
-fn rate_limit_mode_from_env() -> RateLimitMode {
-    match std::env::var("RATE_LIMIT_MODE") {
-        Ok(v) if v.eq_ignore_ascii_case("proxy") => RateLimitMode::Proxy,
-        Ok(v) if v.eq_ignore_ascii_case("off") => RateLimitMode::Off,
-        Ok(_) => RateLimitMode::Off,
-        Err(_) if std::env::var("RATE_LIMIT").is_ok() => RateLimitMode::Proxy,
-        Err(_) => RateLimitMode::Off,
-    }
-}
-
 async fn run() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
@@ -117,95 +96,17 @@ async fn run() -> anyhow::Result<()> {
     )
     .await;
 
-    // ------------------------------------------------------------------
-    // Storage: PostgreSQL (if DATABASE_URL) or MemoryStore (JSON fallback)
-    // ------------------------------------------------------------------
     #[cfg(feature = "postgres-storage")]
-    let (store, pg_store_for_auth): (Arc<dyn StorageBackend>, Option<Arc<PostgresStore>>) =
-        if let Ok(database_url) = std::env::var("DATABASE_URL") {
-            match PostgresStore::connect(&database_url).await {
-                Ok(pg_store) => {
-                    tracing::info!(
-                        "storage: PostgreSQL (primary store — data will persist in PostgreSQL)"
-                    );
-                    let pg_arc = Arc::new(pg_store);
-                    // Run auth migrations on startup
-                    if let Err(e) = pg_arc.run_auth_migrations().await {
-                        tracing::warn!("auth migrations failed ({e}), continuing anyway");
-                    }
-                    (Arc::clone(&pg_arc) as Arc<dyn StorageBackend>, Some(pg_arc))
-                }
-                Err(e) => {
-                    tracing::warn!("postgres connection failed ({e}), falling back to MemoryStore");
-                    let data_dir =
-                        std::env::var("KNOWWHERE_DATA_DIR").unwrap_or_else(|_| "./data".into());
-                    let mem = Arc::new(MemoryStore::with_persistence(&data_dir).unwrap_or_else(
-                        |e| {
-                            tracing::warn!("persistence init failed ({e}), using in-memory only");
-                            MemoryStore::new()
-                        },
-                    ));
-                    (mem as Arc<dyn StorageBackend>, None)
-                }
-            }
-        } else {
-            tracing::info!("DATABASE_URL not set — using MemoryStore (JSON persistence)");
-            let data_dir = std::env::var("KNOWWHERE_DATA_DIR").unwrap_or_else(|_| "./data".into());
-            let mem = Arc::new(
-                MemoryStore::with_persistence(&data_dir).unwrap_or_else(|e| {
-                    tracing::warn!("persistence init failed ({e}), using in-memory only");
-                    MemoryStore::new()
-                }),
-            );
-            (mem as Arc<dyn StorageBackend>, None)
-        };
-
+    let (store, pg_store_for_auth) = runtime::init_store().await?;
     #[cfg(not(feature = "postgres-storage"))]
-    let store: Arc<dyn StorageBackend> = {
-        let data_dir = std::env::var("KNOWWHERE_DATA_DIR").unwrap_or_else(|_| "./data".into());
-        Arc::new(
-            MemoryStore::with_persistence(&data_dir).unwrap_or_else(|e| {
-                tracing::warn!("persistence init failed ({e}), using in-memory only");
-                MemoryStore::new()
-            }),
-        )
-    };
+    let store = runtime::init_store().await?;
 
     // Concrete store for VLM worker, schedulers, DreamMode, and FrigateConnector.
     let dream_store = store.clone();
     let connector_store = store.clone();
     let dream = DreamMode::new(dream_store.clone());
 
-    let embedding: Arc<dyn EmbeddingProvider> = if let Ok(key) = std::env::var("GROK_API_KEY") {
-        #[cfg(feature = "grok-provider")]
-        {
-            tracing::info!("using Grok embedding provider");
-            create_provider(ProviderKind::Grok, Some(key))
-        }
-        #[cfg(not(feature = "grok-provider"))]
-        {
-            drop(key);
-            tracing::warn!("GROK_API_KEY is set but grok-provider feature is not enabled — falling back to Ollama");
-            Arc::new(LocalOllamaProvider::new())
-        }
-    } else if let Ok(key) = std::env::var("OPENAI_API_KEY") {
-        #[cfg(feature = "openai-provider")]
-        {
-            tracing::info!("using OpenAI embedding provider");
-            create_provider(ProviderKind::OpenAI, Some(key))
-        }
-        #[cfg(not(feature = "openai-provider"))]
-        {
-            drop(key);
-            tracing::warn!("OPENAI_API_KEY is set but openai-provider feature is not enabled — falling back to Ollama");
-            Arc::new(LocalOllamaProvider::new())
-        }
-    } else {
-        let model =
-            std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "nomic-embed-text-v2-moe".into());
-        tracing::info!(model, "using local ollama embedding provider");
-        Arc::new(LocalOllamaProvider::new())
-    };
+    let embedding = init_embedding_provider();
 
     tracing::info!(provider = embedding.name(), "embedding provider ready");
 
@@ -242,27 +143,7 @@ async fn run() -> anyhow::Result<()> {
     }
 
     #[cfg(feature = "postgres-storage")]
-    let trajectory_pool: Option<std::sync::Arc<sqlx::PgPool>> = if let Ok(database_url) =
-        std::env::var("DATABASE_URL")
-    {
-        match sqlx::postgres::PgPoolOptions::new()
-            .max_connections(5)
-            .connect(&database_url)
-            .await
-        {
-            Ok(pool) => {
-                tracing::info!("postgres storage enabled (trajectory logging + tiered context)");
-                Some(std::sync::Arc::new(pool))
-            }
-            Err(e) => {
-                tracing::warn!("DATABASE_URL set but connection failed ({e}), running without postgres-storage features");
-                None
-            }
-        }
-    } else {
-        tracing::info!("DATABASE_URL not set — postgres-storage features disabled");
-        None
-    };
+    let trajectory_pool = runtime::init_trajectory_pool().await;
 
     // -- VLM Background Worker (4-stage fallback: GPT-5-nano → GPT-4o-mini → Grok-4-fast → Ollama) --
     let vlm_config = VlmConfig::from_env();

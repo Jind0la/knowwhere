@@ -73,8 +73,24 @@ pub struct MemoryEnergyInfo {
     pub id: Uuid,
     pub energy: Option<i32>,
     pub last_energy_update: Option<DateTime<Utc>>,
+    pub status: Option<String>,
     pub memory_type: Option<String>,
     pub content: Option<String>,
+}
+
+#[derive(Debug, Clone, sqlx::FromRow)]
+struct CompressionMemoryRow {
+    id: Uuid,
+    memory_type: String,
+    content: Option<String>,
+    importance: Option<i32>,
+    confidence: Option<f64>,
+    entities: Option<serde_json::Value>,
+    tags: Option<Vec<String>>,
+    provenance: Option<serde_json::Value>,
+    source: Option<String>,
+    summary_content: Option<String>,
+    overview_content: Option<String>,
 }
 
 /// Result of an energy decay application pass.
@@ -191,9 +207,24 @@ impl<'a> EnergyDecayWorker<'a> {
         .await?;
         let at_zero = at_zero_row.count.unwrap_or(0);
 
+        // Retention policy: no hard delete. Move low-energy active memories to stale.
+        let stale_result = sqlx::query(
+            r#"
+            UPDATE memories
+            SET status = 'stale',
+                updated_at = NOW()
+            WHERE status = 'active'
+              AND energy < $1
+            "#,
+        )
+        .bind(self.min_energy_threshold)
+        .execute(self.pool)
+        .await?;
+
         tracing::info!(
             updated = result.rows_affected(),
             at_zero = at_zero,
+            stale_marked = stale_result.rows_affected(),
             halflife_hours = self.halflife_hours,
             "energy decay applied (exponential)"
         );
@@ -201,7 +232,7 @@ impl<'a> EnergyDecayWorker<'a> {
         Ok(DecayResult {
             memories_updated: result.rows_affected() as usize,
             memories_at_zero: at_zero as usize,
-            memories_marked_stale: 0,
+            memories_marked_stale: stale_result.rows_affected() as usize,
         })
     }
 
@@ -209,20 +240,24 @@ impl<'a> EnergyDecayWorker<'a> {
     ///
     /// Returns up to `limit` memory IDs with `energy < min_energy_threshold`.
     pub async fn find_low_energy_memories(&self, limit: i32) -> Result<Vec<MemoryEnergyInfo>> {
-        let rows = sqlx::query_as!(
-            MemoryEnergyInfo,
+        let rows = sqlx::query_as::<_, MemoryEnergyInfo>(
             r#"
-            SELECT id, energy::integer as energy, last_energy_update, memory_type, COALESCE(content, '') as content
+            SELECT id,
+                   energy::integer as energy,
+                   last_energy_update,
+                   status,
+                   memory_type,
+                   COALESCE(content, '') as content
             FROM memories
-            WHERE status = 'active'
+            WHERE status IN ('active', 'stale')
               AND energy < $1
               AND energy >= 0
             ORDER BY energy ASC, last_energy_update ASC
             LIMIT $2
             "#,
-            self.min_energy_threshold,
-            limit as i64
         )
+        .bind(self.min_energy_threshold)
+        .bind(limit as i64)
         .fetch_all(self.pool)
         .await?;
 
@@ -254,15 +289,15 @@ impl<'a> EnergyDecayWorker<'a> {
         }
 
         // Fetch all memories in the cluster
-        let rows = sqlx::query!(
+        let rows = sqlx::query_as::<_, CompressionMemoryRow>(
             r#"
             SELECT id, memory_type, content, importance, confidence, entities, tags,
                    provenance, source, summary_content, overview_content
             FROM memories
-            WHERE id = ANY($1) AND status = 'active'
+            WHERE id = ANY($1) AND status IN ('active', 'stale')
             "#,
-            memory_ids as _
         )
+        .bind(memory_ids)
         .fetch_all(self.pool)
         .await?;
 
@@ -283,8 +318,9 @@ impl<'a> EnergyDecayWorker<'a> {
         let mut provenance_parts: Vec<serde_json::Value> = Vec::new();
 
         for row in &rows {
-            if !row.content.is_empty() {
-                combined_parts.push(row.content.clone());
+            let content = row.content.clone().unwrap_or_default();
+            if !content.is_empty() {
+                combined_parts.push(content.clone());
             }
             max_importance = max_importance.max(row.importance.unwrap_or(0));
             max_confidence = max_confidence.max(row.confidence.unwrap_or(0.0));
@@ -301,9 +337,10 @@ impl<'a> EnergyDecayWorker<'a> {
             provenance_parts.push(serde_json::json!({
                 "source_memory_id": row.id.to_string(),
                 "memory_type": row.memory_type,
-                "original_content": row.content,
+                "original_content": content,
                 "summary_content": row.summary_content,
                 "overview_content": row.overview_content,
+                "provenance": row.provenance,
             }));
         }
 

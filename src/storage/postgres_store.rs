@@ -60,6 +60,11 @@ impl PostgresStore {
         self.pool.close().await;
     }
 
+    /// Expose pool for internal integration tests and maintenance workers.
+    pub fn pool(&self) -> &PgPool {
+        &self.pool
+    }
+
     // -------------------------------------------------------------------------
     // Event Log (Layer 0 — immutable)
     // -------------------------------------------------------------------------
@@ -859,17 +864,30 @@ impl PostgresStore {
     ///
     /// `key_hash` must be [`stored_api_key_fingerprint`] of the plaintext key (BLAKE3 hex).
     pub async fn create_api_key(&self, user_id: Uuid, key_hash: &str, name: &str) -> Result<Uuid> {
+        self.create_api_key_with_expiry(user_id, key_hash, name, None)
+            .await
+    }
+
+    /// Create an API key for a user with optional expiration.
+    pub async fn create_api_key_with_expiry(
+        &self,
+        user_id: Uuid,
+        key_hash: &str,
+        name: &str,
+        expires_at: Option<DateTime<Utc>>,
+    ) -> Result<Uuid> {
         let id = Uuid::new_v4();
         sqlx::query(
             r#"
-            INSERT INTO auth_api_keys (id, user_id, key_hash, name, created_at)
-            VALUES ($1, $2, $3, $4, NOW())
+            INSERT INTO auth_api_keys (id, user_id, key_hash, name, created_at, expires_at, revoked_at)
+            VALUES ($1, $2, $3, $4, NOW(), $5, NULL)
             "#,
         )
         .bind(id)
         .bind(user_id)
         .bind(key_hash)
         .bind(name)
+        .bind(expires_at)
         .execute(&self.pool)
         .await?;
         Ok(id)
@@ -879,9 +897,11 @@ impl PostgresStore {
     pub async fn get_api_key_by_hash(&self, key_hash: &str) -> Result<Option<AuthApiKeyRow>> {
         let row = sqlx::query_as(
             r#"
-            SELECT id, user_id, key_hash, name, created_at, last_used_at
+            SELECT id, user_id, key_hash, name, created_at, last_used_at, expires_at, revoked_at
             FROM auth_api_keys
             WHERE key_hash = $1
+              AND revoked_at IS NULL
+              AND (expires_at IS NULL OR expires_at > NOW())
             "#,
         )
         .bind(key_hash)
@@ -902,9 +922,11 @@ impl PostgresStore {
 
         let legacy = sqlx::query_as::<_, AuthApiKeyRow>(
             r#"
-            SELECT id, user_id, key_hash, name, created_at, last_used_at
+            SELECT id, user_id, key_hash, name, created_at, last_used_at, expires_at, revoked_at
             FROM auth_api_keys
             WHERE key_hash LIKE '$2%'
+              AND revoked_at IS NULL
+              AND (expires_at IS NULL OR expires_at > NOW())
             "#,
         )
         .fetch_all(&self.pool)
@@ -934,6 +956,7 @@ impl PostgresStore {
         user_id: Uuid,
         key_name: &str,
         new_fingerprint: &str,
+        expires_at: Option<DateTime<Utc>>,
     ) -> Result<()> {
         let mut tx = self.pool.begin().await?;
         let deleted = sqlx::query(r#"DELETE FROM auth_api_keys WHERE id = $1 AND user_id = $2"#)
@@ -947,14 +970,15 @@ impl PostgresStore {
         let new_id = Uuid::new_v4();
         sqlx::query(
             r#"
-            INSERT INTO auth_api_keys (id, user_id, key_hash, name, created_at)
-            VALUES ($1, $2, $3, $4, NOW())
+            INSERT INTO auth_api_keys (id, user_id, key_hash, name, created_at, expires_at, revoked_at)
+            VALUES ($1, $2, $3, $4, NOW(), $5, NULL)
             "#,
         )
         .bind(new_id)
         .bind(user_id)
         .bind(new_fingerprint)
         .bind(key_name)
+        .bind(expires_at)
         .execute(&mut *tx)
         .await?;
         tx.commit().await?;
@@ -1020,8 +1044,28 @@ impl PostgresStore {
                 key_hash        VARCHAR(255) NOT NULL,
                 name            VARCHAR(255) DEFAULT 'default',
                 created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                last_used_at    TIMESTAMPTZ
+                last_used_at    TIMESTAMPTZ,
+                expires_at      TIMESTAMPTZ,
+                revoked_at      TIMESTAMPTZ
             )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            r#"
+            ALTER TABLE auth_api_keys
+            ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            r#"
+            ALTER TABLE auth_api_keys
+            ADD COLUMN IF NOT EXISTS revoked_at TIMESTAMPTZ
             "#,
         )
         .execute(&self.pool)
@@ -1518,4 +1562,6 @@ pub struct AuthApiKeyRow {
     pub name: String,
     pub created_at: DateTime<Utc>,
     pub last_used_at: Option<DateTime<Utc>>,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub revoked_at: Option<DateTime<Utc>>,
 }

@@ -755,7 +755,7 @@ async fn postgres_api_key_fingerprint_lookup_and_rotation() {
 
     let new_key = format!("kw_{u}_rotated");
     let new_fp = stored_api_key_fingerprint(&new_key);
-    pg.replace_api_key(row.id, user_id, "default", &new_fp)
+    pg.replace_api_key(row.id, user_id, "default", &new_fp, None)
         .await
         .expect("rotate");
 
@@ -771,6 +771,75 @@ async fn postgres_api_key_fingerprint_lookup_and_rotation() {
         .is_some());
 
     pg.delete_auth_user(user_id).await.expect("cleanup user");
+}
+
+#[tokio::test]
+#[cfg(feature = "postgres-storage")]
+#[ignore = "requires DATABASE_URL — run: DATABASE_URL='postgresql://...' cargo test --features postgres-storage -- --include-ignored"]
+async fn postgres_retention_flow_decay_low_energy_and_compress() {
+    use knowwhere_server::memory::dream::energy_decay::EnergyDecayWorker;
+    use knowwhere_server::memory::types::{MemorySource, MemoryType};
+    use knowwhere_server::memory::FractalNode;
+    use knowwhere_server::storage::PostgresStore;
+    use std::env;
+
+    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set for this test");
+    let store = PostgresStore::connect(&database_url)
+        .await
+        .expect("failed to connect to PostgreSQL");
+
+    let node1 = FractalNode::new_typed(
+        Some("retention decay test 1".to_string()),
+        None,
+        vec![0.11; 768],
+        Default::default(),
+        MemoryType::Episodic,
+        MemorySource::Conversation,
+    );
+    let node2 = FractalNode::new_typed(
+        Some("retention decay test 2".to_string()),
+        None,
+        vec![0.12; 768],
+        Default::default(),
+        MemoryType::Episodic,
+        MemorySource::Conversation,
+    );
+
+    let id1 = store.insert(node1).await.expect("insert node1");
+    let id2 = store.insert(node2).await.expect("insert node2");
+    let ids = vec![id1, id2];
+
+    sqlx::query(
+        r#"
+        UPDATE memories
+        SET energy = 5,
+            last_energy_update = NOW() - INTERVAL '72 hours'
+        WHERE id = ANY($1)
+        "#,
+    )
+    .bind(&ids)
+    .execute(store.pool())
+    .await
+    .expect("seed low energy");
+
+    let worker = EnergyDecayWorker::with_defaults(store.pool());
+    let decay = worker.apply_decay().await.expect("apply decay");
+    assert!(decay.memories_marked_stale >= 2);
+
+    let low = worker
+        .find_low_energy_memories(10)
+        .await
+        .expect("list low energy");
+    let low_ids: std::collections::HashSet<_> = low.into_iter().map(|m| m.id).collect();
+    assert!(low_ids.contains(&id1));
+    assert!(low_ids.contains(&id2));
+
+    let compressed = worker.compress_cluster(&ids).await.expect("compress stale");
+    assert_eq!(compressed.superseded_ids.len(), 2);
+
+    let _ = store.delete(compressed.new_memory_id).await;
+    let _ = store.delete(id1).await;
+    let _ = store.delete(id2).await;
 }
 
 #[tokio::test]

@@ -1227,9 +1227,9 @@ use crate::memory::dream::deduplication::{
     DeduplicationResult, DeduplicationRunRow, DeduplicationWorker, DuplicatePair,
 };
 #[cfg(feature = "postgres-storage")]
-use crate::memory::dream::energy_decay::{
-    CompressionResult, DecayResult, EnergyDecayWorker, MemoryEnergyInfo,
-};
+use crate::memory::dream::energy_decay::{CompressionResult, DecayResult, MemoryEnergyInfo};
+#[cfg(feature = "postgres-storage")]
+use crate::services::lifecycle::LifecycleService;
 
 /// GET /conflicts — list all pending (unresolved) conflicts.
 #[cfg(feature = "postgres-storage")]
@@ -1333,6 +1333,15 @@ pub async fn resolve_conflict(
 // Energy Decay Routes (Ebbinghaus forgetting curve)
 // =============================================================================
 
+#[cfg(feature = "postgres-storage")]
+fn lifecycle_service(state: &AppState) -> Result<LifecycleService, (StatusCode, String)> {
+    let pool = state.trajectory_pool.as_ref().cloned().ok_or((
+        StatusCode::SERVICE_UNAVAILABLE,
+        "postgres-storage not configured".into(),
+    ))?;
+    Ok(LifecycleService::new(pool))
+}
+
 /// Request body for energy boost.
 #[cfg(feature = "postgres-storage")]
 #[derive(Deserialize, ToSchema)]
@@ -1372,18 +1381,8 @@ pub async fn boost_memory_energy(
     Path(id): Path<Uuid>,
     Json(req): Json<BoostEnergyRequest>,
 ) -> Result<Json<BoostEnergyResponse>, (StatusCode, String)> {
-    let pool = match &state.trajectory_pool {
-        Some(p) => p.clone(),
-        None => {
-            return Err((
-                StatusCode::SERVICE_UNAVAILABLE,
-                "postgres-storage not configured".into(),
-            ))
-        }
-    };
-
-    let worker = EnergyDecayWorker::with_defaults(&pool);
-    match worker.boost_energy(id, req.boost).await {
+    let service = lifecycle_service(&state)?;
+    match service.boost_energy(id, req.boost).await {
         Ok(()) => Ok(Json(BoostEnergyResponse {
             memory_id: id,
             boost: req.boost,
@@ -1429,18 +1428,8 @@ pub async fn list_low_energy_memories(
     State(state): State<AppState>,
     axum::extract::Query(query): axum::extract::Query<LowEnergyQuery>,
 ) -> Result<Json<Vec<MemoryEnergyInfo>>, (StatusCode, String)> {
-    let pool = match &state.trajectory_pool {
-        Some(p) => p.clone(),
-        None => {
-            return Err((
-                StatusCode::SERVICE_UNAVAILABLE,
-                "postgres-storage not configured".into(),
-            ))
-        }
-    };
-
-    let worker = EnergyDecayWorker::with_defaults(&pool);
-    match worker.find_low_energy_memories(query.limit).await {
+    let service = lifecycle_service(&state)?;
+    match service.list_low_energy(query.limit).await {
         Ok(memories) => Ok(Json(memories)),
         Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
     }
@@ -1460,18 +1449,8 @@ pub async fn list_low_energy_memories(
 pub async fn apply_energy_decay(
     State(state): State<AppState>,
 ) -> Result<Json<DecayResult>, (StatusCode, String)> {
-    let pool = match &state.trajectory_pool {
-        Some(p) => p.clone(),
-        None => {
-            return Err((
-                StatusCode::SERVICE_UNAVAILABLE,
-                "postgres-storage not configured".into(),
-            ))
-        }
-    };
-
-    let worker = EnergyDecayWorker::with_defaults(&pool);
-    match worker.apply_decay().await {
+    let service = lifecycle_service(&state)?;
+    match service.apply_decay().await {
         Ok(result) => Ok(Json(result)),
         Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
     }
@@ -1502,16 +1481,6 @@ pub async fn compress_memory_cluster(
     State(state): State<AppState>,
     Json(req): Json<CompressClusterRequest>,
 ) -> Result<Json<CompressionResult>, (StatusCode, String)> {
-    let pool = match &state.trajectory_pool {
-        Some(p) => p.clone(),
-        None => {
-            return Err((
-                StatusCode::SERVICE_UNAVAILABLE,
-                "postgres-storage not configured".into(),
-            ))
-        }
-    };
-
     if req.memory_ids.len() < 2 {
         return Err((
             StatusCode::BAD_REQUEST,
@@ -1519,8 +1488,8 @@ pub async fn compress_memory_cluster(
         ));
     }
 
-    let worker = EnergyDecayWorker::with_defaults(&pool);
-    match worker.compress_cluster(&req.memory_ids).await {
+    let service = lifecycle_service(&state)?;
+    match service.compress_cluster(&req.memory_ids).await {
         Ok(result) => Ok(Json(result)),
         Err(e) => Err((StatusCode::BAD_REQUEST, e.to_string())),
     }

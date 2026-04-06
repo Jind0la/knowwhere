@@ -34,7 +34,7 @@ These are known gaps — some are on the roadmap, others need your feedback:
 
 1. **No web UI for memory management** — Currently only API + Swagger UI. A dashboard is planned.
 
-2. **Auth depends on deployment mode** — Without `postgres-storage`, only static `KNOWWHERE_API_KEY` is available. With `postgres-storage` + `DATABASE_URL`, `/register` + `/login` + `/refresh` are enabled.
+2. **Auth depends on deployment mode** — Without `postgres-storage`, only static `KNOWWHERE_API_KEY` is available. With `postgres-storage` + `DATABASE_URL`, `/register` + `/login` + `/refresh` are enabled with session TTL (`AUTH_SESSION_TTL_DAYS`, default 30).
 
 3. **Embedding provider lock-in** — Switching between Ollama/OpenAI/Grok requires restarting the server.
 
@@ -50,12 +50,14 @@ These are known gaps — some are on the roadmap, others need your feedback:
 
 ### Beta Operations Policy (recommended)
 
-- **Auth:** Always set `KNOWWHERE_API_KEY` for self-hosted beta. Use `/register`/`/login` only when PostgreSQL mode is enabled.
+- **Auth:** Always set `KNOWWHERE_API_KEY` for self-hosted beta. Use `/register`/`/login` only when PostgreSQL mode is enabled. Admin access uses `KNOWWHERE_API_KEY` directly (not `/login`).
+- **Startup safety:** Set `AUTH_STRICT_MIGRATIONS=true` in production-like environments to fail startup on auth migration errors.
 - **Rate limit:** Set `RATE_LIMIT_MODE=proxy` only when running behind a reverse proxy that provides `X-Forwarded-For` or `X-Real-IP`.
 - **Retention/GC MVP:** Run a scheduled maintenance job:
   1) `POST /energy/decay`
   2) `GET /energy/low`
   3) `POST /energy/compress` for selected stale/low-energy clusters
+  - Erwartetes Verhalten: `energy/decay` markiert niedrige Energie als `stale`, `energy/low` zeigt `active` + `stale` Kandidaten, `energy/compress` verdichtet ausgewählte Cluster (kein Hard-Delete).
 
 ---
 

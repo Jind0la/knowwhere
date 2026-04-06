@@ -50,6 +50,9 @@ jobs:
           RUST_LOG: info
         run: cargo test --lib
 
+      - name: OpenAPI contract smoke test
+        run: cargo test --test openapi_contract
+
       - name: cargo audit
         run: |
           curl -LsSf https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-x86_64-unknown-linux-gnu.tgz | tar xz
@@ -117,6 +120,9 @@ jobs:
           RUST_LOG: info
         run: |
           cargo test --test integration --features postgres-storage -- --include-ignored
+
+      - name: OpenAPI contract smoke test (postgres-storage)
+        run: cargo test --test openapi_contract --features postgres-storage
 
       - name: cargo check (postgres-storage)
         run: cargo check --all-targets --features postgres-storage
