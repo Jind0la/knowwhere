@@ -654,3 +654,40 @@ CREATE INDEX IF NOT EXISTS idx_self_healing_status
 
 INSERT INTO schema_migrations (version) VALUES ('009_add_content_hash')
 ON CONFLICT (version) DO NOTHING;
+
+-- === 010_add_auth_users.sql ===
+-- =============================================================================
+-- Migration 010: User Authentication Tables
+--
+-- Replaces the in-memory HashMap auth with PostgreSQL-backed user + API key storage.
+-- API keys are bcrypt hashes of the actual key (kw_xxx format, like Stripe).
+-- =============================================================================
+
+-- Users table (beta user accounts)
+CREATE TABLE IF NOT EXISTS auth_users (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    username        VARCHAR(255) UNIQUE NOT NULL,
+    email           VARCHAR(255) UNIQUE NOT NULL,
+    password_hash   VARCHAR(255) NOT NULL,  -- bcrypt hash of password
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_users_username ON auth_users(username);
+CREATE INDEX IF NOT EXISTS idx_auth_users_email ON auth_users(email);
+
+-- API keys table (BLAKE3 hex fingerprint of kw_… secret; legacy rows may still hold bcrypt until first use)
+CREATE TABLE IF NOT EXISTS auth_api_keys (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id         UUID NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+    key_hash        VARCHAR(255) NOT NULL,  -- hex(BLAKE3(plaintext key)); legacy: bcrypt string starting with $2
+    name            VARCHAR(255) DEFAULT 'default',
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_used_at    TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_api_keys_key_hash ON auth_api_keys(key_hash);
+CREATE INDEX IF NOT EXISTS idx_auth_api_keys_user ON auth_api_keys(user_id);
+
+-- Schema version
+INSERT INTO schema_migrations (version) VALUES ('010_add_auth_users')
+ON CONFLICT (version) DO NOTHING;

@@ -112,7 +112,7 @@ Das Plugin befindet sich in:
 | Plan-Punkt | Status | Anmerkung |
 |-----------|--------|-----------|
 | **Webhook-Infrastruktur** (DedupCache, Secret-Check) | ✅ | `src/api/webhooks.rs` existiert |
-| **POST /webhooks/frigate** | ❌ FEHLT | Nicht in `routes.rs` |
+| **POST /webhooks/frigate** | ✅ | Implementiert in `routes.rs:2562` |
 | **POST /webhooks/homeassistant** | ❌ FEHLT | Nicht in `routes.rs` |
 | **POST /dream/full** Admin-Endpoint | ❌ FEHLT | Nicht in `routes.rs` |
 | **Google Drive Connector** | ⚠️ PLACEHOLDER | `drive.rs` gibt nur Dummy-Daten |

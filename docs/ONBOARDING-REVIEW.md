@@ -2,7 +2,8 @@
 
 **Review Date:** 2026-04-04
 **Reviewer:** Research Engineer — KnowWhere Investigation & Features
-**Status:** Ready for beta with 5 critical fixes needed
+**Last Update:** 2026-04-04 (Session 6 fixes applied)
+**Status:** Ready for beta — 3 of 6 blockers fixed, 3 remaining
 
 ---
 
@@ -365,9 +366,12 @@ Using Docker means:
 ## 8. What's Blocker vs Nice-to-Have
 
 ### Blockers (Must Fix Before Beta)
-1. API key acquisition flow (Issue 1)
-2. docker-compose.yml broken env var (Issue 2)
-3. Plugin config/schema mismatch (Issue 3)
+1. ~~API key acquisition flow (Issue 1)~~ ✅ FIXED — /register endpoint exists + documented in WALKTHROUGH.md
+2. ~~docker-compose.yml broken env var (Issue 2)~~ ✅ FIXED — `${KNOWWHERE_API_KEY:-}` korrekt, CMD-SHELL typo gefixt
+3. ~~Plugin config/schema mismatch (Issue 3)~~ ✅ FIXED — storeOnCompaction aus Doku entfernt, /webhooks/frigate Route existiert
+4. ❌ Auth Keys in-memory (nach Restart weg) — in-memory HashMap, nicht PostgreSQL
+5. ❌ Rate Limiting opt-in (RATE_LIMIT=1 nötig, nicht default)
+6. ❌ Retention/Garbage Collection fehlt — keine automatische Bereinigung
 
 ### High Priority (Should Fix)
 4. Create consolidated quickstart guide (Issue 5)
@@ -385,11 +389,13 @@ Using Docker means:
 
 | Area | Status | Notes |
 |------|--------|-------|
-| README clarity | ⚠️ Needs Work | No OpenClaw quickstart, no API key flow |
-| docker-compose | ❌ Broken | Malformed env var, port 5433 confusing |
-| Plugin README | ⚠️ Inconsistent | storeOnCompaction vs importLookbackDays mismatch |
+| README clarity | ✅ OK | Port/Modell Infos korrigiert, WALKTHROUGH.md neu |
+| docker-compose | ✅ Fixed | `${KNOWWHERE_API_KEY:-}` korrekt, CMD-SHELL |
+| Plugin README | ✅ Fixed | storeOnCompaction entfernt, /webhooks/frigate existiert |
 | Plugin code | ✅ Working | 6 hooks all functional per PHASE-2-STATUS |
-| API key flow | ❌ Missing | No self-service or documented distribution |
-| Quickstart guide | ❌ Missing | None exists |
+| API key flow | ✅ Working | /register + /login existieren, in WALKTHROUGH.md dokumentiert |
+| Quickstart guide | ✅ Exists | docs/QUICKSTART.md + docs/WALKTHROUGH.md |
 | Graceful degradation | ✅ Good | Server down = plugin continues |
-| Auth (JWT vs static) | ⚠️ Confusing | Two systems, not clearly differentiated |
+| Auth persistence | ❌ In-memory | User/Keys in HashMap — nach Restart weg |
+| Rate Limiting | ⚠️ Opt-in | RATE_LIMIT=1 nötig, nicht default |
+| Retention/GC | ❌ Missing | Kein Auto-Cleanup für energy=0 Nodes |
