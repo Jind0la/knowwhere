@@ -731,7 +731,8 @@ impl MemoryStore {
             &'a crate::storage::TrajectoryStore<'_>,
         >,
     ) -> Vec<(f32, FractalNode)> {
-        let _start = Instant::now();
+        #[cfg(feature = "postgres-storage")]
+        let start = Instant::now();
 
         #[cfg(feature = "postgres-storage")]
         let mut trajectory = trajectory_store.map(|_ts| {

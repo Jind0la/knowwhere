@@ -101,6 +101,9 @@ impl AuditScheduler {
     async fn run(&self) {
         let start = Instant::now();
         let mut total_updated = 0;
+        #[cfg(feature = "postgres-storage")]
+        let mut total_issues = 0;
+        #[cfg(not(feature = "postgres-storage"))]
         let total_issues = 0;
 
         // -- 1. Energy Decay --

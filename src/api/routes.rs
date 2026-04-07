@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+#[cfg(feature = "postgres-storage")]
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use axum::extract::{Extension, Path, State};

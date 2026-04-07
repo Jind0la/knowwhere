@@ -87,7 +87,9 @@ fn embedding_provider_from_env_override() -> Option<Arc<dyn EmbeddingProvider>> 
     let p = raw.trim().to_ascii_lowercase();
     match p.as_str() {
         "" => None,
-        "ollama" | "local" => Some(local_ollama_provider_with_log("KNOWWHERE_EMBEDDING_PROVIDER")),
+        "ollama" | "local" => Some(local_ollama_provider_with_log(
+            "KNOWWHERE_EMBEDDING_PROVIDER",
+        )),
         "grok" | "xai" => {
             #[cfg(feature = "grok-provider")]
             {
