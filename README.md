@@ -2,11 +2,11 @@
 
 # KnowWhere
 
-### Dein KI-Gedaechtnis, das nie vergisst.
+### Dein KI-Gedaechtnis, das Pointer statt Rohdaten speichert.
 
 **Pointer-first fractal memory service for AI agents.**
 
-[![CI](https://github.com/NimarMoradbakhti/knowwhere/actions/workflows/ci.yml/badge.svg)](https://github.com/NimarMoradbakhti/knowwhere/actions)
+[![CI](https://github.com/Jind0la/knowwhere/actions/workflows/ci.yml/badge.svg)](https://github.com/Jind0la/knowwhere/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Rust 1.85+](https://img.shields.io/badge/Rust-1.85%2B-orange.svg)](https://www.rust-lang.org)
 
@@ -14,434 +14,270 @@
 
 ---
 
-## Start Here (New to KnowWhere?)
+KnowWhere is a long-term memory backend for AI agents. It stores session data as full text plus embeddings, but stores external sources as **pointers only**. Retrieval combines semantic vector search, BM25 keyword search, reciprocal rank fusion, and optional fractal zooming.
 
-**5-Minute Setup:** See [docs/QUICKSTART.md](docs/QUICKSTART.md) — Docker, API key, OpenClaw plugin, and your first test query.
+## Start Here
 
-**Beta Testers:** See [docs/BETA-README.md](docs/BETA-README.md) — known limitations, how to report issues, roadmap.
+- **5-minute setup:** [docs/QUICKSTART.md](docs/QUICKSTART.md)
+- **Full first-run walkthrough:** [docs/WALKTHROUGH.md](docs/WALKTHROUGH.md)
+- **Beta scope, limitations, roadmap:** [docs/BETA-README.md](docs/BETA-README.md)
+- **Product scope:** [docs/PRD.md](docs/PRD.md)
+- **Technical architecture:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
----
+## Current main status
 
-KnowWhere is a long-term memory backend for AI agents. It stores session data (full text + embeddings) and references external data sources via **pointers only** — never raw files. It features **hybrid retrieval** (semantic vector search + BM25 keyword search fused via Reciprocal Rank Fusion), fractal zooming through memory clusters, a "Dream Mode" for organic cluster formation, and pluggable embedding providers.
+- Repository/package version on `main`: `0.1.0`
+- Core REST API is live: store, retrieve, chat, governance, dream status, events
+- Auth exposes token capabilities via `GET /auth/me`
+- Retrieval profiles are enforced server-side: `user-facing`, `agent-debug`, `full-fidelity`
+- Storage works in two modes: default `MemoryStore` with JSON persistence, optional `PostgresStore` behind `postgres-storage`
+- React operator dashboard lives in `dashboard/` and is built in CI
+- A minimal static fallback UI still exists in `frontend/`, but it is not the primary dashboard surface
 
-## How It Works
+## How it works
 
+```text
+User / Agent message -> store_session -> embedding + BM25 index
+Next query           -> retrieve_fractal -> hybrid retrieval -> ranked context
+Optional chat        -> chat/subconscious -> answer + cited sources
+External data        -> store_external -> pointer + metadata only
 ```
-User Message ──→ store_session ──→ [Embedding + BM25 Index]
-                                          │
-Next Prompt  ──→ retrieve_fractal ──→ [Hybrid Search] ──→ Ranked Context
-                                          │
-AI Response  ──→ store_session ──→ [Embedding + BM25 Index]
-```
 
-Every user message and AI response is embedded and indexed. On the next query, KnowWhere performs hybrid retrieval (vector similarity + keyword matching), returning ranked results with relevance scores. The full conversation loop is preserved.
+## Quick start
 
-## Quickstart
+### Local Rust server
 
-### Local (recommended for development)
+Requires [Rust 1.85+](https://rustup.rs) and [Ollama](https://ollama.ai).
 
 ```bash
-git clone https://github.com/NimarMoradbakhti/knowwhere.git
+git clone https://github.com/Jind0la/knowwhere.git
 cd knowwhere
-cargo run
+ollama pull nomic-embed-text-v2-moe
+KNOWWHERE_API_KEY=my-secret-key cargo run
 ```
 
-Requires Rust 1.85+ via [rustup](https://rustup.rs) and [Ollama](https://ollama.ai) running locally with the `snowflake-arctic-embed2` model:
+Open [http://localhost:3737/swagger-ui/](http://localhost:3737/swagger-ui/) for the API docs.
+
+If you want a different local embedding model, set it explicitly before startup:
 
 ```bash
-ollama pull snowflake-arctic-embed2
+export OLLAMA_MODEL=snowflake-arctic-embed2
+export OLLAMA_EMBEDDING_DIMENSION=1024
+KNOWWHERE_API_KEY=my-secret-key cargo run
 ```
 
-Open [http://localhost:3737/swagger-ui/](http://localhost:3737/swagger-ui/) for the interactive API docs.
+### Dashboard
+
+The active operator UI lives in `dashboard/` and talks to the backend through Vite's `/api` proxy.
+
+```bash
+cd dashboard
+npm ci
+npm run dev
+```
+
+By default the dashboard proxies to `http://localhost:3737`. Override that for local testing if needed:
+
+```bash
+VITE_API_TARGET=http://localhost:3750 npm run dev
+```
+
+Open [http://localhost:5173](http://localhost:5173), paste a Bearer token into the UI, and the dashboard will load capabilities from `GET /auth/me`.
 
 ### Docker
 
+Quick test, default build:
+
 ```bash
-# Default build (in-memory storage only)
 docker build -t knowwhere-server:local .
 docker run -d --name knowwhere -p 3737:3737 \
-  -e KNOWWHERE_API_KEY=*** \
-  -e OPENAI_API_KEY=*** \
-  -e KNOWWHERE_PORT=3737 \
+  -e KNOWWHERE_API_KEY=my-secret-key \
+  -e OLLAMA_URL=http://host.docker.internal:11434 \
   -e RUST_LOG=info \
   knowwhere-server:local
-
-# With PostgreSQL support (postgres-storage feature)
-docker build --build-arg FEATURES=postgres-storage -t knowwhere-server:postgres .
-docker run -d --name knowwhere -p 3737:3737 \
-  -e KNOWWHERE_API_KEY=*** \
-  -e DATABASE_URL=postgresql://user:***@host:5432/knowwhere \
-  -e KNOWWHERE_PORT=3737 \
-  -e RUST_LOG=info \
-  knowwhere-server:postgres
 ```
 
-Note: `postgres-storage` feature enables PostgreSQL persistence with full-text search, deduplication, and conflict detection. Without it, KnowWhere runs with in-memory storage (data lost on container restart). Schema migrations are in `migrations/` (run automatically on startup).
-
-## Core Concepts
-
-### Pointer-First Principle
-- **Session nodes** (`store_session`): Full text + embedding stored. Used for conversations, decisions, notes.
-- **External nodes** (`store_external`): Only a pointer string + embedding + metadata. Never raw files. Used for cameras, sensors, documents.
-
-### Hybrid Retrieval
-KnowWhere combines two search strategies for optimal results:
-1. **Semantic search** via USearch (cosine similarity on embeddings)
-2. **Keyword search** via BM25 (exact term matching, German-optimized)
-3. **Reciprocal Rank Fusion (RRF)** merges both ranked lists into a single result
-
-### Fractal Zooming
-Nodes can have children. During retrieval, KnowWhere "zooms" into the best-matching child nodes up to `max_depth` levels, finding increasingly specific context.
-
-### Dream Mode
-A background process that periodically clusters related nodes and strengthens connections — making retrieval organically better over time.
-
-## API Endpoints
-
-### Public Endpoints (no auth required)
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/health` | Server status + node count |
-| GET | `/swagger-ui/*` | Interactive OpenAPI documentation |
-| POST | `/login` | Login with credentials (requires `postgres-storage`) |
-| POST | `/register` | Register new account (requires `postgres-storage`) |
-| POST | `/refresh` | Rotate token (requires `postgres-storage`) |
-
-### Core Memory (auth required)
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/embed` | Generate embedding vector for text |
-| POST | `/store_session` | Store session node (full content + embedding) |
-| POST | `/store_external` | Store external pointer (no raw data) |
-| GET | `/retrieve/{id}` | Retrieve single node by UUID |
-| POST | `/retrieve_fractal` | Hybrid fractal search (vector + BM25 + RRF) |
-| GET | `/nodes/recent` | Recent nodes (sorted by `created_at`) |
-| DELETE | `/nodes/{id}` | Delete node by UUID |
-| POST | `/nodes/purge_dummy` | Remove nodes with placeholder vectors |
-| POST | `/nodes/reembed_all` | Re-embed all nodes with current provider |
-
-### Dream Mode & VLM (auth required)
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/dream/status` | Dream mode scheduler status |
-| GET | `/vlm/status` | VLM summarization worker status |
-| POST | `/vlm/summarize` | Enqueue text for VLM summarization |
-
-### Memory Lifecycle — Energy & Compaction (auth required, postgres-storage)
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/memories/{id}/energy/boost` | Boost memory energy (Ebbinghaus access boost) |
-| GET | `/energy/low` | List low-energy memories needing decay |
-| POST | `/energy/decay` | Manually trigger energy decay on all memories |
-| POST | `/energy/compress` | Compress memory cluster via VLM |
-| POST | `/memories/{id}/compact` | Trigger tiered compaction for a memory |
-
-### Deduplication & Conflicts (auth required, postgres-storage)
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/deduplication/candidates` | List potential duplicate memories |
-| POST | `/deduplication/run` | Run deduplication merge |
-| GET | `/deduplication/runs` | List past deduplication runs |
-| GET | `/conflicts` | List memory conflicts (competing versions) |
-| POST | `/conflicts/{id}/resolve` | Resolve a conflict |
-
-### Retrieval Analytics (auth required, postgres-storage)
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/retrieval/runs` | List retrieval runs (paginated) |
-| GET | `/retrieval/runs/{id}` | Get specific retrieval run details |
-| GET | `/retrieval/runs/{id}/trajectory` | Get full retrieval trajectory (steps + scores) |
-
-### Self-Healing (auth required, postgres-storage)
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/memories/{id}/reindex` | Re-index external node (update pointer hash) |
-| GET | `/memories/{id}/health` | Check memory health / pointer validity |
-| GET | `/self-healing/stats` | Self-healing statistics (broken vs repaired) |
-
-### Namespaces (auth required)
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/namespaces` | List all namespaces |
-| POST | `/namespaces` | Create a new namespace |
-| GET | `/namespaces/{path}` | Get namespace details |
-| GET | `/namespaces/{path}/memories` | List memories in namespace |
-| GET | `/namespaces/{path}/search` | Search within namespace |
-
-### Skills (auth required)
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/skills` | Create a new skill |
-| GET | `/skills` | List all skills |
-| GET | `/skills/{id}` | Get skill by ID |
-| PUT | `/skills/{id}` | Update skill |
-| DELETE | `/skills/{id}` | Delete skill |
-| POST | `/skills/{id}/use` | Execute a skill |
-| GET | `/skills/match` | Find skills matching a query |
-
-### Key Response Types
-
-**ScoredNode** (returned by `/retrieve_fractal`):
-```json
-{
-  "score": 0.032,
-  "id": "uuid",
-  "memory_type": "episodic",
-  "source": "conversation",
-  "content": "The app should be anonymous...",
-  "original_pointer": null,
-  "metadata": { "source": "user:Nimar" },
-  "created_at": "2026-03-02T14:20:28Z"
-}
-```
-
-Note: The `vector` field is intentionally excluded from retrieval responses to save bandwidth.
-
-**MemoryType**: `episodic`, `semantic`, `preference`, `procedural`, `meta`.
-
-## Integration Philosophy
-
-**KnowWhere is additive, never destructive.**
-
-When connecting KnowWhere to an existing agent system, it must:
-
-1. **Discover** — scan the host system for existing memories, identity files, agent knowledge, and session history
-2. **Import** — bring all existing knowledge into KnowWhere as Session nodes with full provenance metadata
-3. **Preserve** — all original files stay untouched. Nothing gets deleted, overwritten, or reset
-4. **Layer** — KnowWhere adds a retrieval layer on top. The host's memory system keeps running
-5. **Degrade gracefully** — if KnowWhere goes offline, the host system works normally
-
-This means: no deleting `MEMORY.md`, no resetting conversation history, no overwriting identity files. Import first, then enhance.
-
-### Proven Import Results (OpenClaw)
-
-Our first integration imported 100 nodes from OpenClaw covering personal info, agent identity, 5 sub-agent workspaces (research, business strategy, design, dev, marketing), daily logs, conversation history, and project context. All knowledge is now retrievable via a single hybrid search query. See `docs/IMPORT_GUIDE.md` for the full playbook.
-
-## Agent Integration (OpenClaw)
-
-KnowWhere integrates with OpenClaw via the official `knowwhere` plugin. The plugin is pre-installed at `~/.openclaw/extensions/knowwhere/` and handles all memory operations automatically.
-
-**Plugin source code:** [`openclaw-plugin/`](openclaw-plugin/) — fork or contribute there.
-
-### Plugin Hooks
-
-| Hook | What It Does |
-|------|-------------|
-| `before_prompt_build` | Retrieves relevant memories and injects them as `prependContext` before every LLM call |
-| `message_received` | Stores every incoming user message (Gateway mode: Telegram, Discord, etc.) |
-| `gateway_start` | Imports all session messages from the last 7 days on startup |
-| `before_reset` | Saves the session before `/reset` wipes it |
-| `session_start` / `session_end` | Tracks session-to-file mapping for session-level storage |
-| `message_sent` | Stores agent responses after sending (Gateway mode) |
-
-### Plugin Configuration
-
-In `~/.openclaw/openclaw.json`:
-```json
-{
-  "plugins": {
-    "allow": ["knowwhere"],
-    "slots": { "memory": "knowwhere" },
-    "entries": {
-      "knowwhere": {
-        "enabled": true,
-        "config": {
-          "endpoint": "http://127.0.0.1:3737",
-          "apiKey": "",
-          "autoRecall": true,
-          "autoCapture": true,
-          "topK": 5,
-          "importLookbackDays": 7
-        }
-      }
-    }
-  }
-}
-```
-
-See `docs/PHASE-2-STATUS.md` for the full E2E test results.
-
-## Python SDK
-
-### Installation
+Persistent PostgreSQL setup via the checked-in compose file:
 
 ```bash
-pip install -e sdk/python
+export KNOWWHERE_API_KEY=my-secret-key
+export POSTGRES_PASSWORD=kw
+docker compose up -d
 ```
 
-### Basic Usage
+Notes:
 
-```python
-from knowwhere import KnowWhereClient
+- `docker-compose.yml` builds with `FEATURES=postgres-storage`
+- The compose file defaults `OLLAMA_MODEL` to `snowflake-arctic-embed2`
+- On Linux, set `OLLAMA_URL` to a reachable host address if `host.docker.internal` is unavailable
 
-client = KnowWhereClient()
-client.store_session("The app should be anonymous, no login needed")
-results = client.retrieve_fractal("What was the design decision?")
-```
+## Pointer-first data model
 
-### LangChain Integration
+- `store_session`: full text plus embedding for conversations, notes, decisions
+- `store_external`: pointer string plus embedding plus metadata, never raw external payloads
+- Retrieval responses intentionally omit raw vectors to keep payloads small
 
-```python
-from knowwhere import KnowWhereClient, KnowWhereMemory
+## Auth and retrieval profiles
 
-client = KnowWhereClient()
-memory = KnowWhereMemory(client=client)
-memory.add_user_message("Remember: deploy on Friday")
-context = memory.get_context_string("When do we deploy?")
-```
+Protected routes require a Bearer token whenever `KNOWWHERE_API_KEY` is set. If no key is set, KnowWhere runs with auth disabled for local development only.
 
-## Environment Variables
+`GET /auth/me` returns:
 
-| Variable             | Required | Default                  | Description                                              |
-|----------------------|----------|--------------------------|----------------------------------------------------------|
-| `KNOWWHERE_PORT`     | No       | `3737`                   | Server listen port                                       |
-| `KNOWWHERE_API_KEY`  | No       | *(unset)*                | If set, all routes except `/health` require Bearer token |
-| `KNOWWHERE_DATA_DIR` | No       | `./data`                 | Directory for persisted state (`state.json`)             |
-| `GROK_API_KEY`       | No       | *(unset)*                | Grok/xAI embedding provider API key                      |
-| `OPENAI_API_KEY`     | No       | *(unset)*                | OpenAI embedding provider API key                        |
-| `OLLAMA_MODEL`       | No       | `snowflake-arctic-embed2`| Local Ollama embedding model name                        |
-| `FRIGATE_URL`        | No       | *(unset)*                | Frigate NVR URL (enables camera event connector)         |
-| `RUST_LOG`           | No       | `info`                   | Tracing log level                                        |
-| `RATE_LIMIT_MODE`   | No       | `off`                    | `off` or `proxy` (proxy requires `X-Forwarded-For` / `X-Real-IP`) |
-| `RATE_LIMIT`        | No       | *(unset)*                | Legacy fallback: if set, behaves like `RATE_LIMIT_MODE=proxy` |
-| `DATABASE_URL`      | No       | *(unset)*                | PostgreSQL connection (enables postgres-storage feature)   |
-| `AUTH_SESSION_TTL_DAYS` | No   | `30`                     | Session token TTL for `/login` and `/refresh` in PostgreSQL mode |
-| `AUTH_STRICT_MIGRATIONS` | No | `false`                  | If `true`/`1`, startup fails when auth migrations fail |
+- `token_kind`: `admin` or `user`
+- `allowed_retrieval_profiles`: the profiles the current token may request
 
-If neither `GROK_API_KEY` nor `OPENAI_API_KEY` is set, KnowWhere falls back to local Ollama.
+Current behavior:
 
-## Authentication
+- **Static admin key** via `KNOWWHERE_API_KEY`: full access plus all retrieval profiles
+- **Self-service user tokens** via `POST /register`, `POST /login`, `POST /refresh`: available only when built with `postgres-storage` and started with `DATABASE_URL`
+- **Admin login through `/login` is intentionally disabled**. The admin key must be used directly as Bearer token
+
+Profile access today:
+
+- `admin` tokens: `user-facing`, `agent-debug`, `full-fidelity`
+- `user` tokens: `user-facing`
+
+## API overview
+
+### Public
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/health` | Liveness plus node count |
+| `GET` | `/swagger-ui/*` | OpenAPI / Swagger UI |
+| `POST` | `/register` | Create user plus initial API key (`postgres-storage` only) |
+| `POST` | `/login` | Mint session token (`postgres-storage` only) |
+| `POST` | `/refresh` | Rotate session token (`postgres-storage` only) |
+
+### Protected core memory routes
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/auth/me` | Token capabilities |
+| `POST` | `/embed` | Embedding helper |
+| `POST` | `/store_session` | Store full-text session memory |
+| `POST` | `/store_external` | Store external pointer memory |
+| `GET` | `/retrieve/{id}` | Fetch a single node |
+| `POST` | `/retrieve_fractal` | Hybrid retrieval |
+| `POST` | `/chat/subconscious` | Retrieval-backed chat response with sources |
+| `GET` | `/nodes/recent` | Recent nodes |
+| `POST` | `/nodes/reembed_all` | Re-embed all nodes with the active provider |
+| `GET` | `/dream/status` | Dream-mode status |
+| `GET` | `/events` | Event stream snapshot |
+| `GET` / `POST` | `/governance/policy` | Read / update governance policy |
+
+### Protected Postgres-only routes
+
+When `postgres-storage` is enabled and a working `DATABASE_URL` is present, KnowWhere also exposes:
+
+- retrieval analytics: `/retrieval/runs`, `/retrieval/runs/{id}`, `/retrieval/runs/{id}/trajectory`
+- lifecycle operations: `/memories/{id}`, `/memories/{id}/compact`, `/memories/{id}/energy/boost`
+- energy management: `/energy/low`, `/energy/decay`, `/energy/compress`
+- deduplication and conflicts: `/deduplication/*`, `/conflicts/*`
+- self-healing: `/memories/{id}/reindex`, `/memories/{id}/health`, `/self-healing/stats`
+- namespaces and skills: `/namespaces/*`, `/skills/*`
+
+## Embedding providers
+
+Selection order at runtime:
+
+1. `KNOWWHERE_EMBEDDING_PROVIDER` if explicitly set
+2. Grok when `GROK_API_KEY` is present and the `grok-provider` feature is enabled
+3. OpenAI when `OPENAI_API_KEY` is present and the `openai-provider` feature is enabled
+4. Local Ollama otherwise
+
+Local Ollama details:
+
+- default model in code: `nomic-embed-text-v2-moe`
+- override model with `OLLAMA_MODEL`
+- override dimension with `OLLAMA_EMBEDDING_DIMENSION`
+- override base URL with `OLLAMA_URL`
+
+## Storage modes
+
+### Default mode
+
+- Backend: `MemoryStore`
+- Persistence: JSON state under `KNOWWHERE_DATA_DIR`
+- Good for local development and single-node testing
+
+### PostgreSQL mode
+
+- Build with `--features postgres-storage`
+- Start with a working `DATABASE_URL`
+- Enables `PostgresStore`, auth-backed user tokens, analytics, deduplication, conflicts, energy management, self-healing, namespaces, and skills
+
+## Environment variables
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `KNOWWHERE_PORT` | `3737` | HTTP port |
+| `KNOWWHERE_API_KEY` | unset | Static admin Bearer token; if unset, auth is disabled |
+| `KNOWWHERE_DATA_DIR` | `./data` | JSON persistence directory |
+| `DATABASE_URL` | unset | Enables PostgreSQL-backed runtime when compiled with `postgres-storage` |
+| `KNOWWHERE_EMBEDDING_PROVIDER` | unset | Force `ollama`, `openai`, or `grok` selection |
+| `OLLAMA_URL` | `http://localhost:11434` | Local Ollama base URL |
+| `OLLAMA_MODEL` | `nomic-embed-text-v2-moe` | Local embedding model |
+| `OLLAMA_EMBEDDING_DIMENSION` | unset | Manual embedding dimension override |
+| `OLLAMA_VLM_MODEL` | `llama3.2` | Ollama VLM model for summarization worker |
+| `OPENAI_API_KEY` | unset | OpenAI embeddings |
+| `GROK_API_KEY` | unset | Grok/xAI embeddings |
+| `FRIGATE_URL` | unset | Enables Frigate connector |
+| `AUTH_SESSION_TTL_DAYS` | `30` | Session token lifetime in PostgreSQL auth mode |
+| `AUTH_STRICT_MIGRATIONS` | `false` | Fail startup on auth migration problems |
+| `RATE_LIMIT_MODE` | `off` | Set to `proxy` behind a reverse proxy |
+| `RATE_LIMIT` | unset | Legacy fallback that behaves like `RATE_LIMIT_MODE=proxy` |
+| `RUST_LOG` | `info` | Tracing verbosity |
+
+## Integration rules
+
+KnowWhere is additive, never destructive:
+
+1. Import existing memories first
+2. Keep original host files untouched
+3. Append to host configuration instead of replacing it
+4. Let the host memory system continue to run in parallel
+5. Degrade gracefully if KnowWhere is offline
+
+## SDK and integrations
+
+- Python SDK: `sdk/python`
+- OpenClaw plugin: `openclaw-plugin/`
+- Import guide: [docs/IMPORT_GUIDE.md](docs/IMPORT_GUIDE.md)
+
+## CI
+
+`/.github/workflows/ci.yml` currently validates:
+
+- `cargo fmt`, `cargo clippy`, `cargo check`, `cargo test --lib`
+- OpenAPI contract smoke tests
+- PostgreSQL integration tests with `pgvector` plus local Ollama
+- feature-matrix builds for `openai-provider`, `grok-provider`, and PostgreSQL combinations
+- `dashboard` production build
+- Docker image build
+
+## Build matrix
+
+| Feature flag | Effect |
+|--------------|--------|
+| default | `MemoryStore` plus local Ollama |
+| `postgres-storage` | PostgreSQL storage and the extended memory lifecycle routes |
+| `openai-provider` | OpenAI embeddings |
+| `grok-provider` | Grok/xAI embeddings |
+
+Examples:
 
 ```bash
-export KNOWWHERE_API_KEY=my-secret-key-123
-cargo run
-```
-
-```bash
-curl -H "Authorization: Bearer my-secret-key-123" http://localhost:3737/embed \
-  -d '{"text":"hello"}' -H "Content-Type: application/json"
-```
-
-Public endpoints (no token): `/health`, `/swagger-ui/*`
-
-KnowWhere supports two beta auth modes:
-
-1. **Static admin key (default/self-hosted):** set `KNOWWHERE_API_KEY` and use it as Bearer token.
-2. **Self-service users (PostgreSQL mode):** `/register`, `/login`, `/refresh` are enabled only with `postgres-storage` + `DATABASE_URL`.
-   - `/login` returns a session token with finite TTL (`AUTH_SESSION_TTL_DAYS`, default 30).
-   - `/refresh` rotates the session token and re-applies TTL.
-   - `admin` login via `/login` is intentionally disabled; use `KNOWWHERE_API_KEY` directly as Bearer token.
-
-If `postgres-storage` is not enabled, auth routes return `503`.
-
-## Architecture
-
-- **Backend:** Rust 1.85+ (Axum 0.8, Tokio, Tower)
-- **Embeddings:** Pluggable — Grok (xAI), OpenAI, local Ollama (`snowflake-arctic-embed2`)
-- **Vector Store:** USearch (cosine similarity, HNSW)
-- **Keyword Search:** BM25 with cached scorer (German-optimized)
-- **Fusion:** Reciprocal Rank Fusion (RRF, k=60)
-- **Graph:** In-memory fractal graph with Dream Mode clustering
-- **Persistence:** JSON state file with debounced auto-save + graceful shutdown
-- **Connectors:** Frigate NVR (optional, pointer-only)
-- **SDK:** Python 3.11+ with LangChain/LlamaIndex compatibility
-- **Docs:** OpenAPI 3.0 via utoipa + Swagger UI
-- **Principle:** Pointer-First — external data is never stored, only referenced
-
-## Deployment
-
-### Railway
-
-```bash
-railway login && railway init && railway up
-```
-
-### Fly.io
-
-```bash
-fly launch
-fly secrets set KNOWWHERE_API_KEY=your-secret
-fly deploy
-```
-
-### Local
-
-```bash
-cargo run
-```
-
-## Running Tests
-
-```bash
-cargo test
-```
-
-## Building
-
-### Feature Flags
-
-| Feature | Effect |
-|---------|--------|
-| *(default, no flag)* | In-memory storage, Ollama embeddings only |
-| `postgres-storage` | PostgreSQL persistence (dedup, conflict detection, full-text search) |
-| `openai-provider` | Enable OpenAI `text-embedding-3-small` provider (1536-dim) |
-| `grok-provider` | Enable xAI Grok embedding provider (1536-dim) |
-
-At most one cloud embedding provider should be enabled at a time. Ollama is always compiled in.
-
-**Build examples:**
-```bash
-# Default (Ollama only, in-memory) — the tested default setup
 cargo build
-
-# With PostgreSQL persistence
 cargo build --features postgres-storage
-
-# With OpenAI cloud embeddings
 cargo build --features openai-provider
-
-# All features
-cargo build --features "postgres-storage,openai-provider"
+cargo build --features "postgres-storage,grok-provider"
 ```
-
-**Running tests:**
-```bash
-# In-memory tests (always works)
-cargo test --lib
-cargo test --test integration
-
-# PostgreSQL tests (requires DATABASE_URL at runtime, but NOT at compile time)
-DATABASE_URL="postgres://postgres:password@localhost:5433/kw" \
-  SQLX_OFFLINE=true \
-  cargo test --features postgres-storage --test integration
-```
-
-Note: The `postgres-storage` feature compiles offline using the query cache in `.sqlx/`. You only need a running PostgreSQL database when **running** tests, not when **compiling** them.
-
-## Known Issues
-
-- **Rate Limiting**: Use `RATE_LIMIT_MODE=proxy` only behind a reverse proxy (nginx, Cloudflare) that sets `X-Forwarded-For` or `X-Real-IP`. `RATE_LIMIT=1` remains as backward-compatible fallback.
-- **Docker postgres-storage**: The default Docker image does not include `postgres-storage` feature. Build with `docker build --build-arg FEATURES=postgres-storage .` or use the CI-built images for PostgreSQL support.
-
-## Resolved Issues
-
-- **Governance Default (BUG-003)**: Unit tests (2026-03-25) confirmed this was a false alarm. New nodes with default values (confidence=0.5, status=Active, sensitivity=Normal) pass governance validation. See [`docs/BUG-TRACKING.md`](docs/BUG-TRACKING.md) for details.
-
-## Lesson Learned
-
-**Always run `git pull origin main` before testing or building.** The codebase evolves quickly; local copies may contain outdated code that doesn't match CI.
 
 ## Contributing
 
-Contributions are welcome! Please open an issue or pull request on [GitHub](https://github.com/NimarMoradbakhti/knowwhere).
-
----
-
-> **Beta Notice**
->
-> KnowWhere is currently in **Beta (v0.3.0)**. We are actively looking for early testers and feedback.
-> Reach out to **@NimarMoradbakhti** on X or via email to get involved!
+Contributions are welcome. Please open an issue or pull request on [GitHub](https://github.com/Jind0la/knowwhere).
 
 ## License
 
-[MIT](LICENSE) — 2026 Nimar Moradbakhti & KnowWhere Contributors
+[MIT](LICENSE) — 2026 KnowWhere contributors

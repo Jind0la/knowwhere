@@ -1,102 +1,116 @@
 # KnowWhere Quickstart Guide
 
-Get KnowWhere running and connected to OpenClaw in under 10 minutes.
+Get KnowWhere running and usable in under 10 minutes.
 
 ---
 
-## What is KnowWhere?
+## What you are starting
 
-KnowWhere is a **long-term memory service** for AI agents. It stores what your agent learns and retrieves it when relevant — like giving your AI a persistent memory that never forgets.
+KnowWhere is a long-term memory service for AI agents:
 
-**Use case:** You tell your agent "I prefer dark mode." Later, without any configuration, it remembers. You ask "What was I working on last week?" and it knows.
+- session memories are stored as full text plus embeddings
+- external sources are stored as pointers plus metadata only
+- retrieval uses semantic search, BM25, and reciprocal rank fusion
 
 ---
 
-## Step 1: Choose Your Setup
+## Step 1: Choose a runtime
 
-### Option A — Docker (Recommended for Most Users)
+### Option A: Local Rust server
 
-Requires: [Docker Desktop](https://docker.com) installed and running.
-
-**1a. Quick test (in-memory, data lost on restart):**
+Best for development and debugging.
 
 ```bash
-git clone https://github.com/NimarMoradbakhti/knowwhere.git
+git clone https://github.com/Jind0la/knowwhere.git
 cd knowwhere
+ollama pull nomic-embed-text-v2-moe
+KNOWWHERE_API_KEY=my-secret-key cargo run
+```
 
-# Build the Docker image
+If you want a different Ollama embedding model:
+
+```bash
+export OLLAMA_MODEL=snowflake-arctic-embed2
+export OLLAMA_EMBEDDING_DIMENSION=1024
+KNOWWHERE_API_KEY=my-secret-key cargo run
+```
+
+### Option B: Docker quick test
+
+Good for a fast single-container smoke test.
+
+```bash
+git clone https://github.com/Jind0la/knowwhere.git
+cd knowwhere
 docker build -t knowwhere-server:local .
-
-# Run the server
 docker run -d --name knowwhere -p 3737:3737 \
-  -e KNOWWHERE_API_KEY=my-secret-key-123 \
+  -e KNOWWHERE_API_KEY=my-secret-key \
+  -e OLLAMA_URL=http://host.docker.internal:11434 \
   -e RUST_LOG=info \
   knowwhere-server:local
 ```
 
-**1b. With persistent storage (PostgreSQL, data survives restarts):**
+### Option C: Docker Compose with PostgreSQL
+
+Good when you want persistence plus the self-service auth flow.
 
 ```bash
-git clone https://github.com/NimarMoradbakhti/knowwhere.git
+git clone https://github.com/Jind0la/knowwhere.git
 cd knowwhere
-
-# Start KnowWhere + PostgreSQL together
-docker-compose up -d
+export KNOWWHERE_API_KEY=my-secret-key
+export POSTGRES_PASSWORD=kw
+docker compose up -d
 ```
 
-**Note:** `docker-compose.yml` sets `KNOWWHERE_API_KEY` from your local Docker environment. Set it first:
+Notes:
 
-```bash
-export KNOWWHERE_API_KEY=my-secret-key-123
-docker-compose up -d
-```
+- `docker-compose.yml` builds with `FEATURES=postgres-storage`
+- it defaults `OLLAMA_MODEL` to `snowflake-arctic-embed2`
+- on Linux, replace `host.docker.internal` with a reachable host IP if required
 
-**Verify the server is running:**
+### Verify the server
 
 ```bash
 curl http://localhost:3737/health
 ```
 
-You should see JSON with `"status": "ok"` and a `node_count`.
+Expected shape:
+
+```json
+{"status":"ok","node_count":0}
+```
+
+API docs: [http://localhost:3737/swagger-ui/](http://localhost:3737/swagger-ui/)
 
 ---
 
-### Option B — Local Development (Rust)
+## Step 2: Choose your auth mode
 
-Requires: [Rust 1.85+](https://rustup.rs) and [Ollama](https://ollama.ai) running locally.
+KnowWhere currently supports two practical modes.
 
-```bash
-git clone https://github.com/NimarMoradbakhti/knowwhere.git
-cd knowwhere
+### Mode A: Static admin key
 
-# Download the embedding model (one-time setup)
-ollama pull snowflake-arctic-embed2
+Works in every deployment mode.
 
-# Start the server
-KNOWWHERE_API_KEY=my-secret-key-123 cargo run
-```
+- set `KNOWWHERE_API_KEY` before startup
+- use that exact value as `Authorization: Bearer ...`
+- admin tokens can use all retrieval profiles
 
-**Verify the server is running:**
+Quick capability check:
 
 ```bash
-curl http://localhost:3737/health
+curl http://localhost:3737/auth/me \
+  -H "Authorization: Bearer my-secret-key"
 ```
 
----
+### Mode B: Self-service user token
 
-## Step 2: Get Your API Key
+Available only when:
 
-KnowWhere supports two beta modes:
+- the binary was built with `postgres-storage`
+- `DATABASE_URL` is configured and reachable
 
-1) **Static admin key (works with and without PostgreSQL)**
-- Set `KNOWWHERE_API_KEY` when starting the server.
-- Use that exact value as `Authorization: Bearer ...` and in OpenClaw `apiKey`.
-
-2) **Self-service users (requires `postgres-storage` + `DATABASE_URL`)**
-- `/register`, `/login`, `/refresh` are available only in this mode.
-- API keys are persisted in PostgreSQL.
-
-Register/login example:
+Register:
 
 ```bash
 curl -X POST http://localhost:3737/register \
@@ -106,40 +120,94 @@ curl -X POST http://localhost:3737/register \
     "email": "beta_user@example.com",
     "password": "very-secret-password"
   }'
+```
 
-# response contains: api_key, user_id, message
+Login:
 
+```bash
 curl -X POST http://localhost:3737/login \
   -H "Content-Type: application/json" \
   -d '{
     "username": "beta_user",
     "password": "very-secret-password"
   }'
-
-# response contains: token
 ```
 
-If `postgres-storage` is disabled, these endpoints return `503 Service Unavailable`.
+Important:
 
-
-**API documentation:** Open [http://localhost:3737/swagger-ui/](http://localhost:3737/swagger-ui/) in your browser.
+- `/register`, `/login`, and `/refresh` return `503` when `postgres-storage` is not active
+- user tokens currently get only the `user-facing` retrieval profile
+- admin login through `/login` is intentionally disabled; use `KNOWWHERE_API_KEY` directly
 
 ---
 
-## Step 3: Configure OpenClaw Plugin
+## Step 3: Optional dashboard
 
-The OpenClaw plugin connects your AI agent to KnowWhere so memories are stored and retrieved automatically.
-
-**1. Find your OpenClaw config file:**
+The current operator UI is the React dashboard in `dashboard/`.
 
 ```bash
-# Usually at:
+cd dashboard
+npm ci
+npm run dev
+```
+
+Open [http://localhost:5173](http://localhost:5173), paste your token into the UI, and the app will read `GET /auth/me` to decide which retrieval profiles to show in Search and Chat.
+
+---
+
+## Step 4: Store and retrieve one memory
+
+Store:
+
+```bash
+curl -X POST http://localhost:3737/store_session \
+  -H "Authorization: Bearer my-secret-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "content": "My favorite color is blue",
+    "memory_type": "preference",
+    "metadata": { "source": "quickstart" }
+  }'
+```
+
+Retrieve:
+
+```bash
+curl -X POST http://localhost:3737/retrieve_fractal \
+  -H "Authorization: Bearer my-secret-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query_text": "what is my favorite color?",
+    "top_k": 5,
+    "max_depth": 3,
+    "retrieval_profile": "user-facing"
+  }'
+```
+
+Chat on top of retrieved memories:
+
+```bash
+curl -X POST http://localhost:3737/chat/subconscious \
+  -H "Authorization: Bearer my-secret-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "What do you know about my preferences?",
+    "retrieval_profile": "user-facing",
+    "persist": false
+  }'
+```
+
+---
+
+## Step 5: Connect OpenClaw
+
+Open your OpenClaw config, usually:
+
+```bash
 ~/.openclaw/openclaw.json
 ```
 
-**2. Add the KnowWhere plugin configuration:**
-
-Open `openclaw.json` and add the `plugins` section inside the existing JSON. Your file should look like:
+Add the KnowWhere plugin entry:
 
 ```json
 {
@@ -153,7 +221,7 @@ Open `openclaw.json` and add the `plugins` section inside the existing JSON. You
         "enabled": true,
         "config": {
           "endpoint": "http://127.0.0.1:3737",
-          "apiKey": "my-secret-key-123",
+          "apiKey": "my-secret-key",
           "autoRecall": true,
           "autoCapture": true,
           "topK": 5,
@@ -165,113 +233,46 @@ Open `openclaw.json` and add the `plugins` section inside the existing JSON. You
 }
 ```
 
-**Config options explained:**
-
-| Option | What it does | Default |
-|--------|-------------|---------|
-| `endpoint` | Where KnowWhere is running | `http://127.0.0.1:3737` |
-| `apiKey` | Your KnowWhere API key | (empty) |
-| `autoRecall` | Retrieve memories before each AI response | `true` |
-| `autoCapture` | Store conversations automatically | `true` |
-| `topK` | Max memories to retrieve per query | `5` |
-| `importLookbackDays` | How many days of history to import on startup | `7` |
-
-**3. Restart OpenClaw gateway:**
+Restart OpenClaw and verify KnowWhere has recent nodes:
 
 ```bash
-openclaw gateway restart
-```
-
-**4. Verify the plugin is connected:**
-
-```bash
-# Check KnowWhere has memories
-curl -H "Authorization: Bearer my-secret-key-123" http://localhost:3737/nodes/recent
-
-# Should return JSON with your memories
+curl http://localhost:3737/nodes/recent?limit=10 \
+  -H "Authorization: Bearer my-secret-key"
 ```
 
 ---
 
-## Step 4: Test It
+## Common issues
 
-Try asking your OpenClaw agent something that references what you told it before. For example:
+### 401 or unauthorized
 
-```
-You: Remember that my cat is named Miau.
-Agent: (confirms it)
+1. Verify the token matches the running server
+2. Check capabilities via `GET /auth/me`
+3. Remember: user tokens do not expose `agent-debug` or `full-fidelity`
 
-You: What's the name of my cat?
-Agent: Your cat is named Miau.
-```
+### `503` on `/register` or `/login`
 
-Or test directly via API:
+The server is not running with PostgreSQL auth support. Start it with:
 
-```bash
-# Store a memory
-curl -X POST http://localhost:3737/store_session \
-  -H "Authorization: Bearer my-secret-key-123" \
-  -H "Content-Type: application/json" \
-  -d '{"content": "My favorite color is blue", "metadata": {"source": "test"}}'
+- `--features postgres-storage`
+- a valid `DATABASE_URL`
 
-# Retrieve it
-curl -X POST http://localhost:3737/retrieve_fractal \
-  -H "Authorization: Bearer my-secret-key-123" \
-  -H "Content-Type: application/json" \
-  -d '{"query_text": "what is my favorite color?"}'
-```
+### Ollama connection fails
+
+1. Check Ollama is running: `curl http://localhost:11434/api/tags`
+2. Verify `OLLAMA_URL`
+3. Verify the chosen model exists with `ollama list`
+
+### First request is slow
+
+Cold-start embedding on Ollama can take a second or two. Subsequent requests are usually faster.
 
 ---
 
-## Step 5: Import Existing Memories (Optional)
+## Next steps
 
-If you have an existing OpenClaw setup with memories, import them:
-
-```bash
-# Check what memories exist
-curl -H "Authorization: Bearer my-secret-key-123" \
-  http://localhost:3737/nodes/recent?limit=10
-```
-
-The OpenClaw plugin imports the last 7 days of sessions automatically on startup (`importLookbackDays: 7`).
-
-For full import of existing workspace files, see [docs/IMPORT_GUIDE.md](./IMPORT_GUIDE.md).
-
----
-
-## Common Issues
-
-### "Connection refused" or 401 errors
-
-1. Check KnowWhere is running: `curl http://localhost:3737/health`
-2. Check your API key matches between `KNOWWHERE_API_KEY` env var and the OpenClaw plugin config
-3. Restart KnowWhere if needed: `docker restart knowwhere`
-
-### Ollama embedding is slow (first query)
-
-Cold-start embedding takes 1–3 seconds. This is normal — subsequent queries are faster. The plugin has a 5-second timeout to handle this.
-
-### Docker: port already in use
-
-If port 3737 is busy, change the mapping:
-
-```bash
-docker run -d --name knowwhere -p 3738:3737 ...
-```
-
-Then update the OpenClaw config endpoint to `http://127.0.0.1:3738`.
-
-### No memories retrieved
-
-1. Check the gateway log: `tail ~/.openclaw/logs/gateway.log | grep knowwhere`
-2. Verify the plugin registered: look for `registered: before_prompt_build` in the log
-3. Try storing a test memory and retrieving it via curl (Step 4 above)
-
----
-
-## Next Steps
-
-- **API docs:** [http://localhost:3737/swagger-ui/](http://localhost:3737/swagger-ui/)
-- **Architecture overview:** [ARCHITECTURE.md](./ARCHITECTURE.md)
-- **OpenClaw plugin details:** [openclaw-plugin/README.md](../openclaw-plugin/README.md)
-- **Importing existing memories:** [IMPORT_GUIDE.md](./IMPORT_GUIDE.md)
+- API docs: [http://localhost:3737/swagger-ui/](http://localhost:3737/swagger-ui/)
+- Full walkthrough: [WALKTHROUGH.md](./WALKTHROUGH.md)
+- Architecture: [ARCHITECTURE.md](./ARCHITECTURE.md)
+- Import guide: [IMPORT_GUIDE.md](./IMPORT_GUIDE.md)
+- OpenClaw plugin: [../openclaw-plugin/README.md](../openclaw-plugin/README.md)

@@ -1,9 +1,11 @@
 # KnowWhere — OpenClaw Integration Test Report
 
+> Historischer Testbericht vom 27.03.2026. Fuer den aktuellen Repo-Stand bitte die zentralen Doku-Dateien auf `main` lesen.
+
 > **Datum:** 27. Maerz 2026
 > **Test-Typ:** Integration Test (Core Memory Loop)
 > **Tester:** Hermes / Claude Code
-> **System:** KnowWhere v0.3.0, OpenClaw 2026.2.17
+> **System:** damaliger KnowWhere-Beta-Stand, OpenClaw 2026.2.17
 
 ---
 

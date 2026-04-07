@@ -1,285 +1,336 @@
 # KnowWhere Architecture
 
-> Stand: 25. Maerz 2026 — v0.3.0
+> Stand: April 2026 — Repository `main`, Paketversion `0.1.0`
 
-## High-Level Overview
+## 1. High-level overview
 
-KnowWhere is a standalone memory service for AI agents. It runs as a single Rust binary, exposes a REST API, and persists state to disk as JSON. Agents connect via HTTP; there is no direct library coupling.
+KnowWhere ist ein eigenstaendiger Memory-Service als Rust-Binary mit HTTP-API. Clients integrieren sich ueber REST und muessen nicht direkt an interne Bibliotheken gekoppelt werden.
 
+Aktuell besteht die Architektur aus vier Hauptschichten:
+
+1. **Client-Schicht**
+   - Agenten, SDKs, OpenClaw-Plugin, React-Dashboard
+
+2. **API- und Auth-Schicht**
+   - Axum-Router
+   - Bearer-Token-Middleware
+   - Capability-Endpoint `GET /auth/me`
+
+3. **Memory- und Retrieval-Schicht**
+   - StorageBackend
+   - EmbeddingProvider
+   - Hybrid Retrieval mit Profilen
+
+4. **Operations-Schicht**
+   - Dream status
+   - Events
+   - Governance
+   - PostgreSQL-Lifecycle-Routen bei aktivem `postgres-storage`
+
+## 2. Laufzeittopologie
+
+```text
+Agent / SDK / Dashboard
+        |
+        v
+Axum Router
+  |- public routes: /health, /swagger-ui, /register, /login, /refresh
+  |- protected routes: /auth/me, /embed, /store_*, /retrieve_*, /chat/subconscious, ...
+        |
+        v
+Auth middleware -> AuthContext(token_kind, allowed_retrieval_profiles)
+        |
+        v
+StorageBackend + EmbeddingProvider
+  |- MemoryStore (default, JSON-backed)
+  |- PostgresStore (optional, postgres-storage)
+  |- Local Ollama / OpenAI / Grok
+        |
+        v
+Operational workers
+  |- Dream-related status and schedulers
+  |- VLM worker (optional)
+  |- Frigate connector (optional)
 ```
-┌──────────────────────────────────────────────────────────┐
-│  Agent (OpenClaw, LangChain, custom)                     │
-│                                                          │
-│  message_received → POST /store_session (user msg)       │
-│  before_prompt    → POST /embed + POST /retrieve_fractal │
-│  llm_output       → POST /store_session (ai response)    │
-└────────────────────────┬─────────────────────────────────┘
-                         │ HTTP / REST
-┌────────────────────────▼─────────────────────────────────┐
-│  KnowWhere Server (Axum 0.8 + Tokio)                    │
-│                                                          │
-│  ┌─────────────┐  ┌──────────────┐  ┌────────────────┐  │
-│  │  API Routes  │  │  Auth Layer  │  │  Swagger UI    │  │
-│  └──────┬──────┘  └──────────────┘  └────────────────┘  │
-│         │                                                │
-│  ┌──────▼──────────────────────────────────────────────┐ │
-│  │  MemoryStore                                        │ │
-│  │  ┌────────────┐ ┌──────────┐ ┌───────────────────┐ │ │
-│  │  │ USearch    │ │ BM25     │ │ HashMap<Uuid,Node>│ │ │
-│  │  │ (vectors)  │ │ (tokens) │ │ (node storage)    │ │ │
-│  │  └─────┬──────┘ └────┬─────┘ └─────────┬─────────┘ │ │
-│  │        └──────┬───────┘               │           │ │
-│  │               ▼                       │           │ │
-│  │        RRF Fusion ────────────────────┘           │ │
-│  └───────────────────────────────────────────────────┘ │
-│                                                          │
-│  ┌───────────────┐  ┌──────────────┐  ┌──────────────┐  │
-│  │ Embedding     │  │ Dream Mode   │  │ Persistence  │  │
-│  │ Provider      │  │ (clustering) │  │ (state.json) │  │
-│  └───────────────┘  └──────────────┘  └──────────────┘  │
-│                                                          │
-│  ┌───────────────────────────────────────────────────┐   │
-│  │ Connectors (optional)                             │   │
-│  │  Frigate NVR → store_external (pointer only)      │   │
-│  └───────────────────────────────────────────────────┘   │
-└──────────────────────────────────────────────────────────┘
-```
 
-## Ordnerstruktur
+## 3. Repository structure
 
-```
+```text
 knowwhere/
 ├── Cargo.toml
 ├── src/
-│   ├── main.rs              # Entry point, server setup, graceful shutdown
+│   ├── main.rs
 │   ├── api/
-│   │   ├── mod.rs
-│   │   ├── routes.rs         # All REST endpoints, ScoredNode, clean_for_embedding
-│   │   ├── auth.rs           # Bearer token middleware
-│   │   └── docs.rs           # OpenAPI schema (utoipa)
-│   ├── memory/
-│   │   ├── mod.rs
-│   │   ├── fractal_node.rs   # FractalNode, NodeType, Relation, zoom_retrieve
-│   │   ├── tiered.rs        # TieredCompactionWorker (VLM-based, async)
-│   │   ├── dream/           # DreamMode (consolidation, audit, conflict, dedup, energy)
-│   │   ├── governance.rs    # Governance Policy Layer
-│   │   ├── namespaces.rs    # Directory namespace system
-│   │   ├── skills.rs        # Skills management
-│   │   ├── self_healing.rs # Self-healing + content hashing
-│   │   └── types.rs         # MemoryType, NodeType, etc.
+│   │   ├── auth.rs
+│   │   ├── docs.rs
+│   │   └── routes.rs
 │   ├── embedding/
-│   │   ├── mod.rs            # ProviderKind, create_provider
-│   │   └── provider.rs       # Grok, OpenAI, LocalOllama + task prefixes
+│   │   ├── mod.rs
+│   │   └── provider.rs
+│   ├── memory/
+│   │   ├── fractal_node.rs
+│   │   ├── governance.rs
+│   │   ├── namespaces.rs
+│   │   ├── skills.rs
+│   │   ├── self_healing.rs
+│   │   └── dream/
 │   ├── storage/
-│   │   ├── mod.rs
-│   │   ├── backend.rs        # StorageBackend trait (backend-agnostic interface)
-│   │   ├── in_memory.rs     # MemoryStore (impl StorageBackend, USearch, BM25, RRF)
-│   │   └── postgres_store.rs # PostgresStore (impl StorageBackend, SQL, RRF, ts_rank)
-│   ├── connectors/
-│   │   ├── mod.rs
-│   │   └── frigate.rs        # Frigate NVR poller (pointer-first)
+│   │   ├── backend.rs
+│   │   ├── in_memory.rs
+│   │   └── postgres_store.rs
 │   ├── scheduler/
-│   │   ├── mod.rs            # SchedulerConfig, SchedulerHandle
-│   │   ├── consolidation.rs  # ConsolidationScheduler
-│   │   ├── audit.rs          # AuditScheduler
-│   │   └── timers.rs         # Interval timer utilities
-│   ├── vlm/
-│   │   └── mod.rs           # VlmWorker, VlmWorkerHandle, VlmClient, SummaryContext
-│   └── multimodal.rs         # MultimodalData (image/audio/sensor)
-├── frontend/                 # Dashboard (vanilla JS + Tailwind)
-├── data/                     # Persisted state (state.json)
-├── docs/
-│   ├── PRD.md
-│   ├── ARCHITECTURE.md       # This file
-│   ├── IMPORT_GUIDE.md       # Host-system memory import playbook
-│   ├── DREAM-MODE-SCHEDULER.md
-│   ├── CRIT-003-postgresql-architecture.md
-│   ├── FEEDBACK_INTEGRATION.md
-│   └── OPENVIKING_UPGRADES_PLAN.md
+│   ├── connectors/
+│   └── vlm/
+├── dashboard/              # React/Vite operator UI
+├── frontend/               # minimal static fallback served by the backend
 ├── sdk/python/
-│   └── knowwhere/
-│       ├── client.py
-│       └── langchain.py
-└── .cursor/rules/knowwhere.mdc
+├── docs/
+└── .github/workflows/ci.yml
 ```
 
-## Datenstruktur
+Wichtige Klarstellung:
 
-### FractalNode
+- `dashboard/` ist die aktive Entwicklungsoberflaeche
+- `frontend/` wird weiterhin vom Backend via `ServeDir::new("frontend")` als einfacher Fallback ausgeliefert
+
+## 4. API-Aufbau
+
+### 4.1 Oeffentliche Routen
+
+- `GET /health`
+- `GET /swagger-ui/*`
+- `POST /register`
+- `POST /login`
+- `POST /refresh`
+
+Die drei Auth-Mutationsrouten sind nur funktional, wenn der Prozess mit `postgres-storage` plus erreichbarem `DATABASE_URL` laeuft. Sonst liefern sie `503`.
+
+### 4.2 Geschuetzte Kernrouten
+
+- `GET /auth/me`
+- `POST /embed`
+- `POST /store_session`
+- `POST /store_external`
+- `GET /retrieve/{id}`
+- `POST /retrieve_fractal`
+- `POST /chat/subconscious`
+- `GET /nodes/recent`
+- `POST /nodes/reembed_all`
+- `GET /dream/status`
+- `GET /events`
+- `GET` / `POST /governance/policy`
+
+### 4.3 Geschuetzte PostgreSQL-Routen
+
+Nur bei aktivem `postgres-storage`:
+
+- Retrieval runs und trajectories
+- conflict management
+- energy operations
+- deduplication
+- self-healing
+- namespaces
+- skills
+
+## 5. Auth- und Capability-Modell
+
+Die Auth-Schicht baut fuer jeden autorisierten Request einen `AuthContext` auf:
 
 ```rust
-pub enum NodeType { Session, External }
+pub struct AuthContext {
+    pub token_kind: AuthTokenKind,
+    pub user_id: Option<Uuid>,
+    pub allowed_retrieval_profiles: Vec<RetrievalProfile>,
+}
+```
 
+### 5.1 Token-Arten
+
+- `admin`
+  - stammt aus `KNOWWHERE_API_KEY`
+  - darf `user-facing`, `agent-debug`, `full-fidelity`
+
+- `user`
+  - stammt aus PostgreSQL-Auth
+  - darf aktuell nur `user-facing`
+
+### 5.2 Warum `GET /auth/me` architektonisch wichtig ist
+
+Das Dashboard und andere Clients raten nicht mehr, welche Profile erlaubt sind. Sie lesen den Ist-Zustand direkt vom Server und rendern Optionen entsprechend. Dadurch liegen Rechte und UI nicht auseinander.
+
+## 6. Datenmodell
+
+Die zentrale Datenstruktur ist `FractalNode`.
+
+```rust
 pub struct FractalNode {
     pub id: Uuid,
-    pub node_type: NodeType,           // Session = full content, External = pointer only
-    pub vector: Vec<f32>,              // Embedding (768-dim for nomic-embed-text-v2-moe)
-    pub content: Option<String>,       // Full text (Session nodes only)
-    pub original_pointer: Option<String>, // URI/path (External nodes only)
+    pub node_type: NodeType,
+    pub vector: Vec<f32>,
+    pub content: Option<String>,
+    pub original_pointer: Option<String>,
     pub metadata: HashMap<String, Value>,
-    pub weight: f64,
-    pub multimodal: Option<MultimodalData>,
-    pub children: Vec<FractalNode>,    // Fractal children for zoom-retrieval
-    pub relations: Vec<Relation>,      // Named edges to other nodes
+    pub children: Vec<FractalNode>,
+    pub relations: Vec<Relation>,
     pub created_at: DateTime<Utc>,
     pub last_accessed: DateTime<Utc>,
 }
 ```
 
-### ScoredNode (API response)
+### 6.1 Pointer-first Regel
 
-Retrieval endpoints return `ScoredNode` instead of raw `FractalNode`. This struct **excludes the vector** to save bandwidth and includes a relevance score:
+- Session-Nodes: `content` ist gefuellt
+- External-Nodes: `original_pointer` ist gefuellt
+- Externe Rohdaten gehoeren nicht in den Store
 
-```rust
-pub struct ScoredNode {
-    pub score: f32,
-    pub id: Uuid,
-    pub node_type: NodeType,
-    pub content: Option<String>,
-    pub original_pointer: Option<String>,
-    pub metadata: HashMap<String, Value>,
-    pub created_at: DateTime<Utc>,
-}
-```
+### 6.2 API-Retrieval-Form
 
-## Hybrid Retrieval Pipeline
+Die API gibt keine rohen Vektoren in Retrieval-Antworten zurueck. Stattdessen werden `ScoredNode`-artige Antworten mit Score, Node-Daten und optionalem Score-Debug geliefert.
 
-1. **Vector search** (USearch): Cosine similarity over HNSW index → top `2*k` candidates
-2. **BM25 search**: Keyword scoring over cached German tokenizer → top `2*k` candidates
-3. **Fractal zoom**: Each vector candidate expands via `zoom_retrieve(max_depth)`
-4. **RRF fusion**: `score(d) = Σ 1/(k + rank_i)` with `k=60` across both lists
-5. **Return** top `k` as `ScoredNode[]` with RRF scores
+## 7. Retrieval-Pipeline
 
-The BM25 scorer is cached and only rebuilt when the corpus changes (`bm25_dirty` flag), avoiding the O(n) rebuild cost on every query.
+Der aktuelle Flow fuer `POST /retrieve_fractal` ist:
 
-## Embedding Pipeline
+1. Query-Text und/oder Query-Vektor entgegennehmen
+2. Embedding berechnen, falls nur Text gegeben ist
+3. Kandidaten ueber Vector Search holen
+4. Kandidaten ueber BM25 holen
+5. Kandidaten ggf. ueber Fractal Zoom vertiefen
+6. Rankings ueber RRF fusionieren
+7. Ergebnisse profilabhaengig gewichten und filtern
+8. Ergebnisse mit optionalem Debug zurueckgeben
 
-### Providers
+### 7.1 Retrieval-Profile
 
-| Provider     | Model                       | Dimensions | Task Prefixes |
-|--------------|-----------------------------|------------|---------------|
-| LocalOllama  | `nomic-embed-text-v2-moe`   | 768        | Yes           |
-| Grok (xAI)   | Grok embedding API          | varies     | No            |
-| OpenAI       | text-embedding-3-small      | varies     | No            |
+`RetrievalProfile` ist ein Architekturhebel, kein UI-Detail:
 
-### Task Prefixes (Nomic models)
+- `user-facing`
+  - filtert interne-only Inhalte
+  - gewichtet Trust-Tiers konservativer
 
-Documents are prefixed with `search_document:` before embedding. Queries are prefixed with `search_query:`. This asymmetric embedding improves retrieval quality for the nomic model family.
+- `agent-debug`
+  - bleibt konsumierbar, zeigt aber mehr Debug-Signale
 
-### Content Cleaning
+- `full-fidelity`
+  - keine zusaetzliche Profilgewichtung
+  - fuer rohe Operator- und Debug-Sicht
 
-Before embedding, content passes through `clean_for_embedding()` which:
-- Strips markdown formatting (`**`, `##`, `|`, `` ``` ``)
-- Removes emoji characters
-- Collapses whitespace
-- Truncates to 1024 characters
+## 8. Embedding-Architektur
 
-## Persistence
+### 8.1 Provider
 
-- **Format:** Single `state.json` file (nodes + USearch key mappings)
-- **Auto-save:** Debounced every 5 seconds on write operations
-- **Graceful shutdown:** SIGINT/SIGTERM triggers final save before exit
-- **Recovery:** On startup, state is loaded and USearch index is rebuilt from stored vectors
+Aktuell verfuegbar:
 
-## Agent Integration Pattern
+- `LocalOllamaProvider`
+- `OpenAIProvider`
+- `GrokProvider`
 
-### OpenClaw Integration
+### 8.2 Auswahlreihenfolge
 
-KnowWhere integrates with OpenClaw via the official `knowwhere` plugin (`~/.openclaw/extensions/knowwhere/`):
+1. `KNOWWHERE_EMBEDDING_PROVIDER`, wenn gesetzt
+2. Grok bei `GROK_API_KEY` plus Feature
+3. OpenAI bei `OPENAI_API_KEY` plus Feature
+4. Lokales Ollama als Default
 
-| Hook | What It Does |
-|------|-------------|
-| `before_prompt_build` | Retrieves relevant memories → injects as `prependContext` before every LLM call |
-| `message_received` | Stores every incoming user message (Gateway mode) |
-| `gateway_start` | Imports all sessions from the last 7 days on startup |
-| `before_reset` | Saves session before `/reset` wipes it |
-| `session_start` / `session_end` | Session lifecycle tracking |
-| `message_sent` | Stores agent responses after sending |
+### 8.3 Wichtige Env-Vars
 
-See `docs/PHASE-2-STATUS.md` for E2E test results.
+- `OLLAMA_URL`
+- `OLLAMA_MODEL`
+- `OLLAMA_EMBEDDING_DIMENSION`
+- `KNOWWHERE_EMBEDDING_PROVIDER`
 
-### Generic Integration Pattern
+Das ist architektonisch wichtig, weil die Vektordimension nicht hart auf `768` festgelegt ist. Der Provider muss zum gewaehlten Modell passen.
 
-Any agent platform can integrate via these steps:
+## 9. Storage-Backends
 
-1. **Health check** — `GET /health` before first operation
-2. **Import existing memories** — Read the host system's existing memory files and session history, store them as Session nodes with `metadata.source: "import:<system>"` and `metadata.imported_from: "<original_path>"`
-3. **Store messages** — `POST /store_session` with `{ content, metadata: { source } }`
-4. **Retrieve context** — `POST /embed` + `POST /retrieve_fractal` with vector + query text
-5. **Circuit breaker** — After N failures, pause and retry with exponential backoff
-6. **Notify user** — Report when memory goes offline/online
+### 9.1 `MemoryStore`
 
-### Integration Rules (Non-Negotiable)
+Default-Backend:
 
-When connecting KnowWhere to an existing agent system:
+- in-memory Datenstruktur
+- JSON-Persistenz im Datenverzeichnis
+- geeignet fuer lokale Entwicklung und einfache Single-Node-Deployments
 
-- **NEVER delete, overwrite, or reset** the host system's existing memories, session history, identity files, or configuration
-- **ALWAYS import** existing memories into KnowWhere first — they become additional nodes
-- **ALWAYS add** to host config files (e.g. append a section to SOUL.md) — never replace content
-- **ALWAYS keep** the host's original memory system running alongside KnowWhere
-- KnowWhere is an **additive layer**, not a replacement
+### 9.2 `PostgresStore`
 
-## Memory Import Pipeline
+Optionales erweitertes Backend:
 
-When KnowWhere connects to an existing agent system, it must import the host's existing memories before activating the live memory loop. The import follows a structured pipeline:
+- aktiviert ueber `postgres-storage`
+- braucht ein funktionierendes `DATABASE_URL`
+- liefert erweiterte Features fuer Retrieval-Analytik, Lifecycle, Dedup, Konflikte und Auth
 
-```
-┌─────────────────────────────────────────────────────┐
-│  Host System (OpenClaw, LangChain, etc.)            │
-│                                                     │
-│  ┌──────────┐ ┌──────────┐ ┌────────────────────┐  │
-│  │ Identity │ │ Memory   │ │ Agent Knowledge    │  │
-│  │ Files    │ │ Files    │ │ (research, output) │  │
-│  └────┬─────┘ └────┬─────┘ └────────┬───────────┘  │
-└───────┼─────────────┼────────────────┼──────────────┘
-        │             │                │
-        ▼             ▼                ▼
-┌─────────────────────────────────────────────────────┐
-│  Import Pipeline                                    │
-│                                                     │
-│  1. Discover  → Scan paths for known systems        │
-│  2. Classify  → Identity / Memory / Research / Noise│
-│  3. Filter    → Skip cron, system msgs, duplicates  │
-│  4. Import    → POST /store_session with metadata   │
-│  5. Verify    → Test queries across all domains     │
-└─────────────────────────────────────────────────────┘
-```
+Architektonisch wichtig:
 
-### Import Metadata Schema
+- Die API bleibt weitgehend gleich
+- Der Funktionsumfang der Routes aendert sich je nach aktivem Backend und Feature-Set
 
-Every imported node carries structured metadata for traceability:
+## 10. Frontend-Architektur
 
-```json
-{
-  "source": "import:openclaw:business-agent:konkurrenzanalyse.md",
-  "imported_from": "~/.openclaw/workspace-business-agent/research/konkurrenzanalyse.md",
-  "import_type": "openclaw_agent_knowledge",
-  "agent": "business-agent",
-  "original_file": "konkurrenzanalyse.md"
-}
-```
+### 10.1 React-Dashboard in `dashboard/`
 
-### Known Host Systems
+Das aktuelle Dashboard ist eine Vite-App mit `/api`-Proxy zum Backend.
 
-| System | Detection | Memory Location | Noise Sources |
-|--------|-----------|-----------------|---------------|
-| OpenClaw | `~/.openclaw/openclaw.json` | `workspace/MEMORY.md`, `memory/*.md`, sub-agent workspaces | Cron jobs, system messages, heartbeat |
-| LangChain | `langchain` in deps | In-memory or SQLite/Redis | Intermediate chain outputs |
-| LlamaIndex | `storage/` dir | `docstore.json`, `chat_store.json` | Index rebuild artifacts |
-| CrewAI | `crewai` in deps | Task results, agent memory | Delegation logs |
-| Cursor | `.cursor/rules/` | `agent-transcripts/*.jsonl` | Tool call metadata |
+Es bietet aktuell:
 
-Full import documentation: `docs/IMPORT_GUIDE.md`
+- Overview
+- Memory stream
+- Search
+- Subconscious chat
+- Governance view
 
-## Connectors
+Designentscheidung:
 
-### Frigate NVR (optional)
+- Capabilities werden ueber `/auth/me` geladen
+- Search und Chat rendern Retrieval-Profile nur, wenn der Token sie wirklich darf
 
-When `FRIGATE_URL` is set, a background poller fetches camera events every 30s and stores them as **External nodes** (pointer-first — no images stored, only `frigate://` URIs with metadata like camera name, label, confidence).
+### 10.2 Minimales Fallback-Frontend in `frontend/`
 
-## Security
+Das Backend serviert weiterhin `frontend/` als einfache statische Oberflaeche. Diese ist funktional begrenzt und kein vollwertiger Ersatz fuer das React-Dashboard.
 
-- Bearer token auth on all routes except `/health` and `/swagger-ui`
-- CORS enabled (configurable)
-- No credentials in code or state files
-- State file contains only embeddings + text + metadata (no secrets)
+## 11. Operations und Nebenprozesse
+
+### 11.1 Dream und Scheduler
+
+KnowWhere besitzt Scheduler-/Dream-bezogene Komponenten fuer Wartung und organische Verbesserung der Memory-Struktur. Der aktuelle Operator-Zugriff erfolgt vor allem ueber Status-Endpunkte.
+
+### 11.2 VLM Worker
+
+Ein optionaler VLM-Worker kann Summarization-/Compression-bezogene Aufgaben uebernehmen, wenn passende Provider-Variablen gesetzt sind, z. B. `OLLAMA_VLM_MODEL`.
+
+### 11.3 Connectoren
+
+Beispiel: Frigate. Wenn `FRIGATE_URL` gesetzt ist, koennen Ereignisse als External-Nodes pointer-first gespeichert werden.
+
+## 12. CI und Verifikation
+
+Die Architektur wird in CI auf mehreren Ebenen abgesichert:
+
+- Rust fmt, clippy, check, unit tests
+- OpenAPI contract smoke tests
+- PostgreSQL-Integrationstests mit `pgvector`
+- Ollama-gestuetzte Testpfade
+- Feature-Matrix fuer Provider-/Storage-Kombinationen
+- Dashboard-Build
+- Docker-Build
+
+Das ist wichtig, weil die Architektur absichtlich feature-gated ist und Default- sowie PostgreSQL-Modus beide valide bleiben muessen.
+
+## 13. Integrationsregeln
+
+Wenn KnowWhere in ein bestehendes Host-System eingebunden wird:
+
+1. bestehende Memories zuerst importieren
+2. Host-Dateien nie loeschen oder ueberschreiben
+3. Host-Konfiguration nur ergaenzen
+4. Host-Memory-System parallel weiterlaufen lassen
+5. bei Ausfall von KnowWhere sauber degradieren
+
+## 14. Architekturgrenzen im aktuellen Stand
+
+Noch nicht fertig oder bewusst begrenzt:
+
+- kein vollstaendiges UI fuer alle erweiterten PostgreSQL-Routen
+- keine automatische Storage-Migration
+- keine Multi-Tenant-SaaS-Architektur
+- keine Runtime-Hot-Swaps fuer Embedding-Provider
+- keine uniforme Release-Versionierung ueber Marketing- und Paketversion hinaus

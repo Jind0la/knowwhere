@@ -1,210 +1,232 @@
 # KnowWhere — Product Requirements Document
 
-> Stand: 25. Maerz 2026 — v0.3.0
+> Stand: April 2026 — Repository `main`, Paketversion `0.1.0`
 
-## 1. Produktname & One-Sentence Pitch
+## 1. Produktname und One-Sentence Pitch
 
 **KnowWhere**
-„Dein KI-Gedaechtnis – ohne jemals deine Daten anzufassen."
 
-KnowWhere ist das erste echte Plug-and-Play Langzeitgedaechtnis fuer KI: ein fraktales, adaptives, multimodales Memory-System, das alle Session- und Chat-Daten vollstaendig speichert, aber externe Rohdateien (Kamera, Google Drive, Sensoren etc.) nur als Pointer referenziert. So wird jede KI ueber Monate und Jahre hinweg zum echten digitalen Zwilling deines Denkens – ohne Datenduplikation, ohne Lock-in, ohne Risiko.
+"Ein pointer-first Langzeitgedaechtnis fuer KI-Agenten, das Sessions voll speichert und externe Daten nur referenziert."
 
-## 2. The Why – Simon Sinek Style
+KnowWhere ist kein allgemeiner Dateispeicher und kein Ersatz fuer bestehende Memory-Systeme. Es ist eine additive Memory-Schicht, die Kontext strukturiert speichert, wiederfindbar macht und sicher an Agenten oder Dashboards ausliefert.
 
-**Why:**
-Weil KI heute brillant, aber amnesiekrank ist. Sie vergisst nach wenigen Minuten deine Prinzipien, deine Vision, deine „Nie wieder so!"-Entscheidungen. Wir bauen KnowWhere, weil echte Intelligenz ohne echtes, langfristiges Gedaechtnis unmoeglich ist – und weil dieses Gedaechtnis deine Datenhoheit respektieren muss.
+## 2. Das Problem
 
-**How:**
-Durch eine komplett neue fraktale Architektur mit organisch wachsenden, ueberlappenden Clustern, Hybrid Search (Vektor + Keyword), und einem inkrementellen „Dream Mode".
+Heutige KI-Systeme sind stark im Moment, aber schwach ueber Zeit. Wichtige Entscheidungen, Nutzerpraeferenzen, Projektverlauf und externe Referenzen gehen zwischen Sessions verloren oder muessen immer wieder manuell neu erklaert werden.
 
-**What:**
-Ein schlanker, eigenstaendiger Memory-Service (Cloud + Self-Hosted) mit winzigen SDKs, der in 3 Zeilen in jeden Agenten, LLM oder Framework integriert wird.
+Das Kernproblem hat drei Teile:
 
-## 3. First Principles
+1. **Amnesie:** Kontext verschwindet zwischen Anfragen.
+2. **Datenhoheit:** Externe Rohdaten sollten nicht blind kopiert werden.
+3. **Operativer Realismus:** Bestehende Agent-Systeme duerfen nicht gebrochen oder ersetzt werden.
 
-1. Intelligenz = Verknuepfung vergangener Erfahrungen mit neuen Situationen.
-2. Speicher = totes Regal. Gedaechtnis = lebendiges Netzwerk.
-3. Der User behaelt 100 % Kontrolle ueber seine Rohdaten.
-4. Skalierung muss exponentiell effizient sein.
-5. Kein „Erklaer mir nochmal…" darf je wieder noetig sein.
-6. **KnowWhere ist additiv, niemals destruktiv.** Bestehende Memory-Systeme, Dateien und Konversationshistorien des Host-Systems werden respektiert, nicht ersetzt oder geloescht.
+## 3. Produktprinzipien
 
-## 4. Outcome – Was der User am Ende wirklich hat
+1. **Pointer-first.** Externe Quellen werden nur als Pointer plus Metadaten gespeichert.
+2. **Sessionen duerfen voll gespeichert werden.** Chat- und Session-Inhalte bleiben als Text plus Embedding erhalten.
+3. **Hybrid retrieval statt nur Vector Search.** Semantik und Schlagwoerter werden kombiniert.
+4. **Additiv, niemals destruktiv.** Host-Systeme werden ergaenzt, nicht ersetzt.
+5. **Capabilities statt impliziter Rechte.** Der Client liest ueber `GET /auth/me`, was ein Token darf.
+6. **Saubere Betriebsmodi.** Einfache lokale Defaults, aber klarer Ausbaupfad Richtung PostgreSQL und erweiterte Features.
 
-- **Nach 6 Monaten Vibe-Coding:** Die KI kennt deine komplette App-Vision, alle frueheren Entscheidungen und Fehler – automatisch.
-- **Nach 3 Monaten Smart-Home:** Dein Agent weiss von allein „Person X betritt um 20:15 den Raum, spricht ueber Projekt Y, Temperatur 22,3 °C".
-- **70–90 % weniger Wiederholungen**, kreativere Vorschlaege, echte persoenliche KI.
+## 4. Zielbild fuer Nutzer
 
-**North Star Metric:**
-30-Day Context Fidelity > 92 % (Queries, die korrekt auf historische Kontexte zugreifen – ohne Korrektur).
+Ein Nutzer oder Agent-Betreiber soll:
 
-## 5. High-Level Architektur
+- Kontext ueber Wochen und Monate wiederfinden koennen
+- historische Entscheidungen, Vorlieben und Referenzen wiederverwenden koennen
+- externe Quellen integrieren koennen, ohne deren Rohdaten zu duplizieren
+- sicher entscheiden koennen, welche Retrieval-Sicht ein Client bekommt
 
-```
-[LLM / Agent / Kamera-System]
-    ←→ KnowWhere Client SDK / Plugin
-    ←→ KnowWhere Memory Service (Rust, Port 3737)
-           ↓
-    Hybrid Retrieval Engine
-    ├── USearch (Vektor / Cosine Similarity)
-    ├── BM25 (Keyword / deutsch-optimiert)
-    └── Reciprocal Rank Fusion
-           ↓
-    Storage:
-    • Sessions/Chats → volle Daten + Embeddings
-    • Externe Quellen → nur Pointer + Embedding + Metadaten
-    • Persistenz → state.json mit Auto-Save + Graceful Shutdown
-```
+Erwarteter Produktwert:
 
-## 6. Die fraktale Datenstruktur
+- deutlich weniger Wiederholungen im Agent-Dialog
+- bessere rueckbezogene Antworten
+- nachvollziehbarere Retrieval-Ergebnisse durch Quellen und Debug-Scores
 
-```rust
-pub enum NodeType { Session, External }
+## 5. Aktueller Produktumfang auf `main`
 
-pub struct FractalNode {
-    id: UUID,
-    node_type: NodeType,
-    vector: Vec<f32>,                  // 768-dim (nomic-embed-text-v2-moe)
-    content: Option<String>,           // Nur bei Sessions voll
-    original_pointer: Option<String>,  // Bei externen Daten
-    metadata: HashMap<String, Value>,
-    weight: f64,
-    multimodal: Option<MultimodalData>,
-    children: Vec<FractalNode>,
-    relations: Vec<Relation>,
-    created_at: DateTime,
-    last_accessed: DateTime,
-}
-```
+### 5.1 Kernfunktionalitaet
 
-## 7. Die Kern-Operationen
 
-| Operation           | Beschreibung                                          | Status |
-|---------------------|-------------------------------------------------------|--------|
-| `store_session`     | Volle Speicherung von Chats/Sessions + auto-embed     | ✓      |
-| `store_external`    | Nur Pointer + Embedding + Metadaten                   | ✓      |
-| `retrieve_fractal`  | Hybrid Search + fraktales Zoomen → `ScoredNode[]`     | ✓      |
-| `embed`             | Text → Embedding-Vektor (mit Task-Prefix)             | ✓      |
-| `reembed_all`       | Alle Nodes neu embedden (nach Modellwechsel)          | ✓      |
-| `delete` / `purge`  | Einzelne Nodes loeschen / Dummies entfernen           | ✓      |
-| Dream Mode          | Periodisches Micro-Clustering (stuendlich)            | ✓      |
-| Persistence         | Auto-Save + Graceful Shutdown (SIGINT/SIGTERM)        | ✓      |
+| Bereich                                       | Beschreibung                                       | Status     |
+| --------------------------------------------- | -------------------------------------------------- | ---------- |
+| `store_session`                               | Session/Text als vollwertige Memory speichern      | Verfuegbar |
+| `store_external`                              | Externe Referenz pointer-first speichern           | Verfuegbar |
+| `embed`                                       | Text mit aktivem Provider embedden                 | Verfuegbar |
+| `retrieve_fractal`                            | Hybrid Retrieval mit Profilen und optionalem Debug | Verfuegbar |
+| `chat/subconscious`                           | Retrieval-gestuetzte Antwort mit Quellen           | Verfuegbar |
+| `dream/status`, `events`, `governance/policy` | Operator-Sicht und Steuerung                       | Verfuegbar |
 
-## 8. Der Dream Mode (inkrementell)
 
-- Stuendliche Micro-Dreams (leichtgewichtiges Clustering)
-- Woechentlicher Full-Dream (geplant fuer spaetere Phasen)
-- Organische Cluster-Bildung durch Verbindungen → Retrieval wird immer besser
+### 5.2 Auth und Rollen
 
-## 9. Plug-and-Play Integration
 
-### OpenClaw (produktionsreif)
+| Modus                | Beschreibung                                                     | Status     |
+| -------------------- | ---------------------------------------------------------------- | ---------- |
+| Statischer Admin-Key | `KNOWWHERE_API_KEY` als Bearer-Token                             | Verfuegbar |
+| Self-Service User    | `/register`, `/login`, `/refresh` mit PostgreSQL                 | Beta       |
+| Capability-Endpoint  | `GET /auth/me` liefert Token-Art plus erlaubte Retrieval-Profile | Verfuegbar |
 
-Plugin mit drei Hooks:
-- `message_received` → User-Nachrichten speichern
-- `llm_output` → AI-Antworten speichern (mit Modell-Info)
-- `before_prompt_build` → Kontext abrufen und injizieren
 
-### Python SDK
+### 5.3 Retrieval-Profile
 
-```python
-from knowwhere import KnowWhereClient
 
-client = KnowWhereClient(base_url="http://localhost:3737")
-client.store_session("Die App soll anonym sein, kein Login")
-results = client.retrieve_fractal("Welche Design-Entscheidung?")
-```
+| Profil          | Ziel                              | Aktueller Zugriff |
+| --------------- | --------------------------------- | ----------------- |
+| `user-facing`   | sichere, konsumierbare Ergebnisse | Admin + User      |
+| `agent-debug`   | Debug-Sicht mit Score-Einblicken  | nur Admin         |
+| `full-fidelity` | rohe, maximale Sicht              | nur Admin         |
 
-### Beliebiger Agent (3-Schritt-Muster)
 
-1. `POST /store_session` — Nachricht speichern
-2. `POST /embed` + `POST /retrieve_fractal` — Kontext abrufen
-3. Kontext in Prompt injizieren
+### 5.4 Bedienoberflaechen
 
-## 10. Tech-Stack
 
-| Komponente       | Technologie                            | Status      |
-|------------------|----------------------------------------|-------------|
-| Backend          | Rust 1.85+ (Axum 0.8, Tokio, Tower)   | ✓ Produktion |
-| Embedding        | Ollama `nomic-embed-text-v2-moe` (768d)| ✓ Produktion |
-| Embedding (Cloud)| Grok (xAI), OpenAI                     | ✓ Optional   |
-| Vector Store     | USearch (HNSW, Cosine)                 | ✓ Produktion |
-| Keyword Search   | BM25 (Cached Scorer, German)           | ✓ Produktion |
-| Fusion           | Reciprocal Rank Fusion (k=60)          | ✓ Produktion |
-| Persistence      | JSON state file (debounced auto-save)  | ✓ Produktion |
-| Connectors       | Frigate NVR (pointer-first)            | ✓ Optional   |
-| SDK              | Python (LangChain-kompatibel)          | ✓ Beta       |
-| Dashboard        | Vanilla JS + Tailwind                  | ✓ Beta       |
-| API Docs         | OpenAPI 3.0 + Swagger UI               | ✓ Produktion |
+| UI           | Zweck                                                                 | Status         |
+| ------------ | --------------------------------------------------------------------- | -------------- |
+| `dashboard/` | React/Vite Operator-Dashboard fuer Overview, Search, Chat, Governance | Beta           |
+| `frontend/`  | minimales statisches Fallback aus dem Backend                         | eingeschraenkt |
+| Swagger UI   | API-Referenz und manuelle Tests                                       | Verfuegbar     |
 
-## 11. Roadmap
 
-| Phase                  | Beschreibung                                      | Status       |
-|------------------------|---------------------------------------------------|--------------|
-| Phase 0 (MVP)          | Sessions, Text-Pointers, REST API, USearch        | ✓ Abgeschlossen |
-| Phase 0.5 (Hybrid)     | BM25, RRF, nomic-v2-moe, ScoredNode, Persistence | ✓ Abgeschlossen |
-| Phase 1 (Dream)        | Dream Mode + Audio/Sensoren                       | ✓ Micro-Dream  |
-| Phase 1.5 (Integration)| OpenClaw Plugin (voller Memory Loop)              | ✅ Implementiert — [`openclaw-plugin/`](openclaw-plugin/), 6 Hooks aktiv, E2E-verifiziert 2026-03-29 |
-| Phase 1.7 (Import)     | Memory-Import aus Host-Systemen (OpenClaw done)   | ✓ Abgeschlossen |
-| Phase 2 (Connectors)   | Webhooks fuer Drive, Frigate, Home Assistant       | In Planung   |
-| Phase 2.5 (Discovery)  | Auto-Discovery + Auto-Import von Host-Memories    | In Planung   |
-| Phase 3 (Scale)        | LanceDB/NebulaGraph, Multi-Tenant, Cloud-SaaS     | In Planung   |
-| Phase 4 (Open Source)   | Open-Source-Core + Cloud-Hosting-Angebot          | In Planung   |
+## 6. Datenmodell
 
-### Phase 2.5: Auto-Discovery (Vision)
+KnowWhere unterscheidet zwei Memory-Typen:
 
-KnowWhere soll bestehende Memory-Systeme **automatisch erkennen** und importieren:
+1. **Session-Nodes**
+  - `content: Option<String>` enthaelt den Volltext
+  - fuer Konversationen, Notizen, Entscheidungen, Zusammenfassungen
+2. **External-Nodes**
+  - `original_pointer: Option<String>` enthaelt URI, Pfad oder Referenz
+  - fuer Kameras, Sensoren, Dokumente, Dateisysteme und andere externe Systeme
 
-1. **Scan** — `POST /import/discover` scannt definierte Pfade nach bekannten Agent-Systemen
-2. **Classify** — Gefundene Dateien werden automatisch klassifiziert (Memory, Identity, Research, Noise)
-3. **Preview** — User bekommt eine Vorschau: "Gefunden: 42 Memory-Dateien, 6 Agent-Profile, 159 Sessions"
-4. **Import** — `POST /import/execute` importiert mit konfigurierbaren Filtern (skip_cron, min_length etc.)
-5. **Verify** — Automatische Test-Queries ueber alle importierten Domaenen
+Gemeinsame Felder:
 
-Erkannte Systeme: OpenClaw, LangChain, LlamaIndex, CrewAI, Cursor, Custom.
-Details: siehe `docs/IMPORT_GUIDE.md`
+- Embedding-Vektor
+- Metadaten
+- Gewichtung, Sensitivitaet, Status
+- Provenance und Relations
+- Zeitstempel
 
-## 12. Integration Rules (Non-Negotiable)
+Die Vektordimension ist **modellabhaengig**, nicht fest. Standard lokal ist `nomic-embed-text-v2-moe` mit `768`, alternative Ollama-Modelle koennen andere Dimensionen haben.
 
-Wenn KnowWhere in ein bestehendes Agent-System (OpenClaw, LangChain, etc.) integriert wird, gelten folgende Regeln:
+## 7. Retrieval-Ansatz
 
-### 12.1 Keine Daten loeschen
+KnowWhere liefert heute produktiv:
 
-KnowWhere darf **niemals** bestehende Memories, Dateien oder Konversationshistorien des Host-Systems loeschen, ueberschreiben oder zuruecksetzen. Dazu gehoeren:
+1. **Vector Search** fuer semantische Naehe
+2. **BM25** fuer Begriffs- und Keyword-Matches
+3. **Reciprocal Rank Fusion** zur Zusammenfuehrung
+4. **Profilbasierte Gewichtung** je nach Retrieval-Profil und Trust-Tier
+5. **Optionales Score-Debugging** fuer Operatoren und Agent-Debug
 
-- Session-Historien / Transkripte
-- Memory-Dateien (z.B. MEMORY.md, daily logs)
-- Identitaets- und Konfigurationsdateien (z.B. IDENTITY.md, SOUL.md, BOOTSTRAP.md)
-- Bestehende Embeddings oder Vektordatenbanken
+Dadurch ist das System nicht nur "semantisch aehnlich", sondern auch steuerbar und nachvollziehbar.
 
-### 12.2 Bestehende Memories importieren
+## 8. Storage- und Betriebsmodi
 
-Bei der Installation muss KnowWhere die vorhandenen Memories des Host-Systems **importieren**:
+### 8.1 Default-Modus
 
-1. Bestehende Session-Historien einlesen und als Session-Nodes speichern
-2. Memory-Dateien (z.B. `memory/*.md`) einlesen und indexieren
-3. Originaldateien als Referenz beibehalten — KnowWhere ist eine zusaetzliche Schicht, kein Ersatz
+- `MemoryStore`
+- JSON-basierte Persistenz im Datenverzeichnis
+- gut fuer Entwicklung, lokale Tests und Single-Node-Szenarien
 
-### 12.3 Additiv integrieren
+### 8.2 PostgreSQL-Modus
 
-- Host-System-Dateien nur **ergaenzen**, nie ersetzen
-- Neue Abschnitte zu bestehenden Konfigurationsdateien hinzufuegen, bestehende Inhalte nicht aendern
-- Das Host-Memory-System (z.B. OpenClaws `memory-core`, `MEMORY.md`) kann parallel weiterlaufen
-- KnowWhere kommt als Layer obendrauf und liefert zusaetzlichen Kontext
+Aktiv, wenn:
 
-### 12.4 Graceful Degradation
+- mit `postgres-storage` gebaut wurde
+- ein funktionierendes `DATABASE_URL` vorhanden ist
 
-- Wenn KnowWhere offline ist, muss das Host-System normal weiterarbeiten
-- Keine harten Abhaengigkeiten — KnowWhere ist immer optional
-- Circuit-Breaker-Pattern fuer alle API-Aufrufe
+Zusatznutzen in diesem Modus:
 
-## 13. Eventualitaeten & Loesungen
+- Self-Service User-Auth
+- Retrieval-Analytik und Trajektorien
+- Energy- und Lifecycle-Operationen
+- Deduplication und Conflict Management
+- Self-healing, Namespaces, Skills
 
-| Risiko                   | Loesung                                             |
-|--------------------------|-----------------------------------------------------|
-| Externer API-Ausfall     | Lazy-Loading + Fallback auf lokales Ollama           |
-| Datenschutz              | Pointer-First + E2E-Verschluesselung (geplant)      |
-| Speicherkosten           | ~5–10 KB pro Knoten (nur Embeddings + Metadaten)     |
-| Mac RAM-Engpass          | BM25-Caching, Ollama-Modell-Cleanup, Debounced Save  |
-| Streaming-Delivery       | `llm_output` Hook statt `message_sent`               |
-| Context-Qualitaet        | Markdown-Cleaning + Task-Prefixes + Hybrid Search    |
+## 9. Integrationen
+
+### 9.1 OpenClaw
+
+KnowWhere kann ueber das Plugin in OpenClaw eingebunden werden und den Memory-Loop uebernehmen:
+
+- Nachrichten speichern
+- historischen Kontext abrufen
+- Kontext vor Prompt-Build injizieren
+
+### 9.2 Python SDK
+
+Ein Python-SDK ist vorhanden und erlaubt die direkte Integration in eigene Agent- oder Tooling-Workflows.
+
+### 9.3 Weitere Host-Systeme
+
+Langfristig ist KnowWhere als zusaetzliche Memory-Schicht fuer weitere Agent-Systeme gedacht, aber die Discovery- und Import-Ergonomie ist noch nicht fertig produktisiert.
+
+## 10. Nicht-Ziele im aktuellen Stand
+
+Aktuell bewusst **nicht** Produktziel auf `main`:
+
+- vollstaendige Multi-Tenant-SaaS-Plattform
+- vollautomatische Migration zwischen allen Storages
+- flaechendeckende UI fuer jede Backend-Operation
+- Hot-Swap zwischen Embedding-Providern ohne Neustart
+- automatisches Hard-Delete von Memories
+
+## 11. Tech-Stack
+
+
+| Komponente           | Technologie                                                           | Status               |
+| -------------------- | --------------------------------------------------------------------- | -------------------- |
+| Backend              | Rust 1.85+, Axum 0.8, Tokio, Tower                                    | produktiv genutzt    |
+| Lokale Embeddings    | Ollama                                                                | Standardpfad         |
+| Cloud-Embeddings     | OpenAI, Grok/xAI                                                      | optional per Feature |
+| Retrieval            | USearch + BM25 + RRF                                                  | produktiv genutzt    |
+| Persistenz default   | JSON State                                                            | produktiv genutzt    |
+| Persistenz erweitert | PostgreSQL/pgvector                                                   | Beta                 |
+| Dashboard            | React + Vite                                                          | Beta                 |
+| API-Dokumentation    | utoipa + Swagger UI                                                   | produktiv genutzt    |
+| CI                   | GitHub Actions fuer Rust, Postgres, Feature Matrix, Dashboard, Docker | aktiv                |
+
+
+## 12. Roadmap
+
+### Kurzfristig
+
+- Dokumentation vollstaendig am echten `main`-Stand halten
+- Dashboard naeher an Backend-Routen bringen
+- PostgreSQL-Auth und Lifecycle-Funktionen weiter haerten
+- Import- und Migrationspfade klarer machen
+
+### Mittelfristig
+
+- bessere Discovery und strukturierter Host-Import
+- staerkere Operator- und Debug-Werkzeuge fuer Retrieval-Qualitaet
+- konsistentere Mehrnutzer-Geschichte
+
+### Langfristig
+
+- skalierbarere Storage- und Graph-Backends
+- reifere Integrationen fuer weitere Frameworks
+- schlankere Produktions- und Release-Story
+
+## 13. Integrationsregeln
+
+Wenn KnowWhere in ein bestehendes Agent-System eingebunden wird, gilt:
+
+1. keine bestehenden Memories loeschen oder ueberschreiben
+2. vorhandenes Wissen zuerst importieren
+3. Host-Konfiguration nur ergaenzen, nie ersetzen
+4. Host-Memory-System parallel weiterlaufen lassen
+5. bei Ausfall von KnowWhere muss der Host degradiert, aber weiter funktionsfaehig sein
+
+## 14. Risiken und Gegenmassnahmen
+
+
+| Risiko                                         | Gegenmassnahme                                                                                |
+| ---------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Falscher Provider oder falsche Vektordimension | `KNOWWHERE_EMBEDDING_PROVIDER`, `OLLAMA_MODEL`, `OLLAMA_EMBEDDING_DIMENSION` explizit setzen  |
+| Rechteverwirrung im Client                     | `GET /auth/me` als Quelle fuer Capabilities nutzen                                            |
+| Reverse-Proxy-Fehlkonfiguration                | `RATE_LIMIT_MODE=proxy` nur hinter echtem Proxy aktivieren                                    |
+| Zu grosse Erwartungen an das UI                | React-Dashboard klar als Beta und `frontend/` klar als Fallback dokumentieren                 |
+| Datenverlust im lokalen Default-Modus          | PostgreSQL-Modus oder persistentes Datenverzeichnis fuer produktionsnaehere Umgebungen nutzen |

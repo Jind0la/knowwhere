@@ -1,113 +1,111 @@
-# KnowWhere Beta — Welcome!
+# KnowWhere Beta — Current Status
 
-Thank you for joining the KnowWhere beta. You're helping shape the future of AI memory systems. This document covers everything you need to get started and how to report issues.
+This document describes the actual beta state of the repository on `main`, not an aspirational release plan.
 
-**Current version:** v0.3.0 (Beta)
-**Status:** Open beta — actively developing, expect breaking changes
-
----
-
-## What You're Getting
-
-KnowWhere is a **fractal memory service** for AI agents. It stores what your agent learns and retrieves it contextually — giving your AI a persistent memory that never forgets.
-
-### Core Features in Beta
-
-| Feature | Status | Notes |
-|---------|--------|-------|
-| Session storage & retrieval | Stable | Works well |
-| Hybrid search (vectors + keywords) | Stable | USearch + BM25 + RRF |
-| OpenClaw plugin integration | Stable | Tested with OpenClaw 2026.3.24+ |
-| Docker deployment | Stable | Both in-memory and PostgreSQL |
-| Local Rust + Ollama | Stable | Requires Rust 1.85+ |
-| PostgreSQL persistence | Beta | Full-text search, deduplication |
-| Dream Mode (auto-clustering) | Beta | Background process |
-| Namespaces | Beta | Organize memories into directories |
-| Skills system | Beta | Reusable agent skills |
-| VLM summarization | Beta | Compress memories via VLM |
+**Current repository/package version:** `0.1.0`
+**Status:** beta on `main` — usable, actively evolving, still opinionated and not yet productized end-to-end
 
 ---
 
-## Known Limitations
+## What beta users get today
 
-These are known gaps — some are on the roadmap, others need your feedback:
+KnowWhere is a pointer-first memory service for AI agents. It stores:
 
-1. **No web UI for memory management** — Currently only API + Swagger UI. A dashboard is planned.
+- session data as full text plus embeddings
+- external sources as pointers plus metadata only
 
-2. **Auth depends on deployment mode** — Without `postgres-storage`, only static `KNOWWHERE_API_KEY` is available. With `postgres-storage` + `DATABASE_URL`, `/register` + `/login` + `/refresh` are enabled with session TTL (`AUTH_SESSION_TTL_DAYS`, default 30).
+Current beta capabilities:
 
-3. **Embedding provider lock-in** — Switching between Ollama/OpenAI/Grok requires restarting the server.
-
-4. **No automatic migration tool** — Moving from in-memory to PostgreSQL requires manual export/import.
-
-5. **Session import is selective** — The OpenClaw plugin only imports the last 7 days by default. Full historical import is manual.
-
-6. **Rate limiting needs reverse proxy** — set `RATE_LIMIT_MODE=proxy` only behind nginx/Cloudflare (or equivalent) with client IP headers.
-
-7. **Docker: no default API key** — If you don't set `KNOWWHERE_API_KEY`, the server runs without auth (anyone can access).
-
-8. **Retention/GC is policy-driven, not hard-delete** — Energy decay moves low-energy memories into `stale` tier; operators can review via `/energy/low` and consolidate via `/energy/compress`. Automatic deletion is not enabled in beta.
-
-### Beta Operations Policy (recommended)
-
-- **Auth:** Always set `KNOWWHERE_API_KEY` for self-hosted beta. Use `/register`/`/login` only when PostgreSQL mode is enabled. Admin access uses `KNOWWHERE_API_KEY` directly (not `/login`).
-- **Startup safety:** Set `AUTH_STRICT_MIGRATIONS=true` in production-like environments to fail startup on auth migration errors.
-- **Rate limit:** Set `RATE_LIMIT_MODE=proxy` only when running behind a reverse proxy that provides `X-Forwarded-For` or `X-Real-IP`.
-- **Retention/GC MVP:** Run a scheduled maintenance job:
-  1) `POST /energy/decay`
-  2) `GET /energy/low`
-  3) `POST /energy/compress` for selected stale/low-energy clusters
-  - Erwartetes Verhalten: `energy/decay` markiert niedrige Energie als `stale`, `energy/low` zeigt `active` + `stale` Kandidaten, `energy/compress` verdichtet ausgewählte Cluster (kein Hard-Delete).
+| Capability | Status | Notes |
+|------------|--------|-------|
+| Session storage and retrieval | Stable | Core memory loop works |
+| Hybrid retrieval | Stable | Vector + BM25 + RRF |
+| Retrieval profiles | Stable | `user-facing`, `agent-debug`, `full-fidelity` |
+| Static admin auth | Stable | `KNOWWHERE_API_KEY` |
+| Self-service user auth | Beta | Requires `postgres-storage` + `DATABASE_URL` |
+| Local Ollama operation | Stable | Default local path |
+| PostgreSQL-backed runtime | Beta | Adds analytics and memory lifecycle routes |
+| React dashboard | Beta | Overview, memory stream, search, chat, governance |
+| Dream status and event views | Beta | Exposed in API and dashboard |
+| OpenClaw plugin integration | Beta | Practical integration path exists |
 
 ---
 
-## How to Get Help
+## Known limitations
 
-### Option 1: GitHub Issues (Bug Reports)
+These are the current gaps that still matter in beta.
 
-For bugs, crashes, or unexpected behavior:
+1. **The dashboard is useful but not a full admin console.** The React UI covers overview, stream, search, chat, and governance, but not every backend route has a first-class screen yet.
 
-1. Check existing issues first: [github.com/NimarMoradbakhti/knowwhere/issues](https://github.com/NimarMoradbakhti/knowwhere/issues)
-2. If not reported, open a new issue with:
-   - KnowWhere version (`cargo run --version` or Docker image tag)
-   - How you deployed (Docker, local Rust, etc.)
-   - Steps to reproduce
-   - Error messages or logs
+2. **There are two UI surfaces.** `dashboard/` is the active React frontend; `frontend/` is still served as a minimal backend fallback and should not be treated as the complete operator UI.
 
-### Option 2: Discord (Beta Testers Channel)
+3. **Auth depends on deployment mode.** Without `postgres-storage`, only the static `KNOWWHERE_API_KEY` path exists. With `postgres-storage` plus `DATABASE_URL`, `/register`, `/login`, and `/refresh` are enabled.
 
-For real-time discussion, questions, and early access to new features:
+4. **User tokens are intentionally restricted.** `GET /auth/me` for user tokens currently exposes only `user-facing`. `agent-debug` and `full-fidelity` are reserved for admin tokens.
 
-**Invite link:** [Join the KnowWhere Discord](#) _(link coming soon)_
+5. **Provider switching still requires a restart.** You can force provider selection with `KNOWWHERE_EMBEDDING_PROVIDER`, but changing providers or models is not hot-reloaded.
 
-Look for the `#beta-testers` channel.
+6. **Migration tooling is still manual.** Moving data between JSON-backed local state and PostgreSQL is not yet a guided product workflow.
 
-### Option 3: X / Twitter
+7. **Historical import is still operator-driven.** OpenClaw can import a recent session window automatically, but broad host-system discovery and deep historical import are not yet turnkey.
 
-For general questions and updates:
+8. **Rate limiting assumes reverse-proxy deployment.** `RATE_LIMIT_MODE=proxy` only makes sense when a proxy provides `X-Forwarded-For` or `X-Real-IP`.
 
-- **@NimarMoradbakhti** — Follow for release announcements
-
-### Option 4: Direct Contact
-
-For security issues or sensitive bugs:
-- Email: (contact via X/Twitter DMs)
+9. **Retention is policy-driven, not hard-delete automation.** The energy and compression APIs help manage stale memories, but automatic destructive cleanup is intentionally not enabled.
 
 ---
 
-## How to Report Issues Effectively
+## Recommended beta operating mode
 
-### Bug Report Template
+- Always set `KNOWWHERE_API_KEY` outside throwaway local development
+- Use `/register` and `/login` only when PostgreSQL auth mode is really enabled
+- Treat `GET /auth/me` as the source of truth for token capabilities
+- Set `AUTH_STRICT_MIGRATIONS=true` in production-like environments
+- Enable `RATE_LIMIT_MODE=proxy` only behind a real reverse proxy
+- If you use non-default Ollama models, set `OLLAMA_MODEL` and, when needed, `OLLAMA_EMBEDDING_DIMENSION`
 
-```
-## KnowWhere Version
-v0.3.0 (Docker / local Rust — specify which)
+---
+
+## How to get help
+
+### GitHub issues
+
+Use the issue tracker for bugs, regressions, and deployment problems:
+
+- [github.com/Jind0la/knowwhere/issues](https://github.com/Jind0la/knowwhere/issues)
+
+Include:
+
+- repository version or commit
+- deployment method
+- auth mode
+- embedding provider or model
+- reproduction steps
+- relevant logs
+
+### Direct project contact
+
+For security-sensitive reports or issues you do not want to publish publicly, use the project's direct contact channel.
+
+---
+
+## Good bug report template
+
+```text
+## Repository Version / Commit
+0.1.0 or <git sha>
 
 ## Deployment Method
-Docker docker-compose / Docker standalone / cargo run / etc.
+cargo run / docker / docker compose
+
+## Auth Mode
+static KNOWWHERE_API_KEY / postgres user token
+
+## Embedding Setup
+OLLAMA_MODEL=... / OPENAI / GROK
 
 ## What Happened
-[Clear description of what went wrong]
+...
 
 ## Steps to Reproduce
 1.
@@ -115,89 +113,79 @@ Docker docker-compose / Docker standalone / cargo run / etc.
 3.
 
 ## Expected Behavior
-[What you expected to happen]
+...
 
 ## Actual Behavior
-[What actually happened]
+...
 
-## Logs
-[Relevant logs from KnowWhere server and/or OpenClaw gateway]
-```
-
-### Performance Issue Template
-
-```
-## KnowWhere Version
-## Deployment
-## Query / Operation Type
-## Data Size (approx nodes, age of installation)
-## Expected Performance
-## Actual Performance
-## Timing Data
-[How long operations take]
+## Logs / Screenshots
+...
 ```
 
 ---
 
-## Beta Roadmap
+## Roadmap focus
 
-Help us prioritize! React to issues or comment with your use case.
+### Near-term
 
-### Near-term (v0.4.x)
-- [ ] Dashboard UI for memory browsing
-- [ ] Export/import tool for migrations
-- [ ] Auto-discovery of OpenClaw memories
+- bring dashboard coverage closer to backend route coverage
+- finish documentation alignment around auth, profiles, and deployment modes
+- improve migration and import ergonomics
+- harden PostgreSQL auth and lifecycle operations
 
-### Mid-term (v0.5.x)
-- [ ] Multi-user authentication (not just shared API keys)
-- [ ] REST API for auto-discovery + import
-- [ ] Cursor IDE integration
+### Mid-term
 
-### Long-term (v1.0)
-- [ ] Production-ready PostgreSQL storage
-- [ ] Horizontal scaling via message queue
-- [ ] Official npm package for OpenClaw plugin
+- broader multi-user story beyond the current beta split of admin key vs user token
+- guided host-memory discovery and import
+- stronger observability for retrieval quality and drift
 
----
+### Long-term
 
-## Versioning Policy
-
-KnowWhere uses semantic versioning during beta:
-
-- **Patch** (0.3.1 → 0.3.2): Bug fixes, no API changes
-- **Minor** (0.3.0 → 0.4.0): New features, backward-compatible API changes
-- **Major** (0.3.0 → 1.0.0): Breaking changes (rare during beta)
-
-**Breaking changes will be announced in Discord and via GitHub releases.**
+- operationally simpler production deployment story
+- larger-scale storage and graph backends
+- more polished framework integrations
 
 ---
 
-## Your Data
+## Versioning policy
 
-- **In-memory mode (default Docker):** Data is stored in `data/state.json`. It is **lost when the container is deleted**.
-- **PostgreSQL mode (docker-compose):** Data persists in the `kw-postgres` container. Delete the volume to wipe data.
-- **We do not collect any usage data.** KnowWhere runs entirely on your infrastructure.
+Until the first tagged production release, the safest assumption is:
 
----
-
-## Contributing to the Beta
-
-We're actively looking for:
-- **Integration partners** — Connect KnowWhere to your agent framework
-- **Performance testers** — Push the limits of retrieval quality
-- **Documentation reviewers** — Help us write docs that work for non-developers
-
-See [github.com/NimarMoradbakhti/knowwhere](https://github.com/NimarMoradbakhti/knowwhere) for the codebase and contribution guidelines.
+- `0.1.x` tracks the beta repository line
+- behavior may still tighten between minors
+- docs should follow the code on `main`, not a marketing version string
 
 ---
 
-## Changelog
+## Your data
 
-### v0.3.0 (Beta) — 2026-03-?
-- Initial beta release
-- Hybrid retrieval (USearch + BM25 + RRF)
-- OpenClaw plugin integration
-- Docker + Docker Compose support
-- PostgreSQL persistence (beta)
-- Dream Mode auto-clustering (beta)
-- Namespaces and Skills system (beta)
+- JSON/local mode writes to `KNOWWHERE_DATA_DIR` and persists as local state
+- PostgreSQL mode persists in the configured database
+- external content should remain pointer-first
+- KnowWhere is intended to run on your own infrastructure; it does not require a hosted service
+
+---
+
+## Beta feedback that matters most
+
+The most valuable reports right now are:
+
+- auth and onboarding confusion
+- retrieval-profile regressions
+- dashboard/backend mismatches
+- PostgreSQL mode problems
+- import workflow gaps
+- documentation inaccuracies
+
+---
+
+## Current change summary
+
+The repository currently ships beta support for:
+
+- pointer-first storage
+- hybrid retrieval
+- token capability introspection via `GET /auth/me`
+- server-side retrieval-profile enforcement
+- React dashboard support in `dashboard/`
+- CI coverage for Rust, PostgreSQL mode, feature matrix, dashboard build, and Docker build

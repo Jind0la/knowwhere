@@ -1,5 +1,7 @@
 # Phase 2 — Connector Webhooks — Status Report
 
+> Historischer Statusbericht. Fuer den aktuellen Produktstand bitte `README.md`, `docs/BETA-README.md`, `docs/PRD.md` und `docs/ARCHITECTURE.md` verwenden.
+
 **Erstellt:** 2026-03-27
 **Letztes Update:** 2026-03-29
 **Status:** ✅ OpenClaw-Integration funktioniert — README/STATUS waren stale
@@ -167,7 +169,7 @@ Der Testplan `docs/TESTPLAN-RETRIEVAL-QUALITY.md` existiert, wurde aber noch nic
 | Datum | Event |
 |-------|-------|
 | 2026-03-21 | Plan erstellt mit 3 Meilensteinen |
-| 2026-03-25 | v0.3.0 Released (Core Features complete) |
+| 2026-03-25 | Beta milestone recorded (core features complete) |
 | 2026-03-27 | Discovery: OpenClaw-Plugin existiert bereits, aber veraltet |
 | 2026-03-28 | BUG-007 + PostgreSQL-Integration gefixt |
 | 2026-03-29 | OpenClaw Plugin komplett neu geschrieben + E2E verifiziert ✅ |

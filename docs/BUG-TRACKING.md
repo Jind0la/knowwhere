@@ -1,5 +1,7 @@
 # Bug Tracking
 
+> Diese Datei enthaelt sowohl aktuelle Notizen als auch historische Bug-Eintraege. Versionsbegriffe hier sind Bug-Epochenmarker und nicht die autoritative Produktversion des aktuellen `main`-Standes.
+
 **Last Updated:** 2026-04-02
 
 ---
@@ -78,7 +80,7 @@ These warnings can be safely ignored or suppressed with `#[allow(...)]` if desir
 
 ---
 
-## Historical Bugs (Pre-v0.3.0)
+## Historical Bugs (Pre-April 2026 beta cleanup)
 
 ### BUG-001: postgres-storage compile failure
 

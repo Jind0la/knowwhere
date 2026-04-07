@@ -1,337 +1,381 @@
 # KnowWhere — First-Time User Walkthrough
 
-> Vollständiger E2E-Workflow: Server starten → Account → Erinnerung speichern → Wiederfinden
+> Vollstaendiger Ist-Stand-Workflow: Server starten -> Token pruefen -> Memory speichern -> Retrieval testen -> Chat testen -> Dashboard oeffnen
 
 ---
 
-## 1. Server starten
+## 1. Voraussetzungen
 
-### Option A: Lokaler Rust-Server (Development)
+### Minimal
+
+- Rust 1.85+ oder Docker
+- Ollama lokal erreichbar
+- ein Embedding-Modell in Ollama
+
+### Fuer Self-Service-Auth
+
+- Build mit `postgres-storage`
+- laufendes PostgreSQL
+- gueltiges `DATABASE_URL`
+
+### Empfohlene lokale Vorbereitung
+
+```bash
+ollama pull nomic-embed-text-v2-moe
+```
+
+Alternative fuer 1024-dim Modelle:
+
+```bash
+export OLLAMA_MODEL=snowflake-arctic-embed2
+export OLLAMA_EMBEDDING_DIMENSION=1024
+```
+
+---
+
+## 2. Server starten
+
+### Option A: Lokal mit statischem Admin-Key
 
 ```bash
 cd /Users/nimarfranklinmac/knowwhere
+export KNOWWHERE_API_KEY=dein_geheimer_key
+cargo run
+```
+
+### Option B: Lokal mit PostgreSQL-Features
+
+```bash
+cd /Users/nimarfranklinmac/knowwhere
+export KNOWWHERE_API_KEY=dein_geheimer_key
+export DATABASE_URL=postgresql://postgres:kw@localhost:5433/kw
 cargo run --features postgres-storage --bin knowwhere-server
 ```
 
-Server läuft auf **http://localhost:3737**
-
-### Option B: Docker
+### Option C: Docker Compose
 
 ```bash
 cd /Users/nimarfranklinmac/knowwhere
-docker build -t knowwhere-server:latest --build-arg FEATURES=postgres-storage .
-docker run -d \
-  --name kw-server \
-  -p 3737:3737 \
-  -e OLLAMA_API_URL=http://host.docker.internal:11434 \
-  -e DATABASE_URL=postgresql://postgres:kw@host.docker.internal:5433/kw \
-  -e KNOWWHERE_API_KEY=dein_geheimer_key \
-  knowwhere-server:latest
+export KNOWWHERE_API_KEY=dein_geheimer_key
+export POSTGRES_PASSWORD=kw
+docker compose up -d
 ```
 
-> **Wichtig:** `OLLAMA_API_URL` muss auf den Host zeigen (Mac: `host.docker.internal`, Linux: IP des Hosts).
-> Port **3737** nicht 3000!
+Hinweise:
 
-### Voraussetzungen
-
-- **Ollama** muss auf dem Host laufen mit dem Modell `snowflake-arctic-embed2`:
-  ```bash
-  ollama pull snowflake-arctic-embed2
-  ```
-- **PostgreSQL** muss laufen (Docker: `docker run -d -p 5433:5432 -e POSTGRES_PASSWORD=kw postgres`)
+- Der Server hoert standardmaessig auf `http://localhost:3737`
+- Das Compose-Setup setzt `OLLAMA_URL=http://host.docker.internal:11434`
+- Auf Linux brauchst du eventuell eine explizite Host-IP statt `host.docker.internal`
 
 ---
 
-## 2. System-Check
+## 3. System-Check
 
 ```bash
 curl http://localhost:3737/health
 ```
 
 Erwartete Antwort:
+
 ```json
-{"status":"ok","embeddings":"ollama:snowflake-arctic-embed2","dimension":1024,"storage":"postgres"}
+{"status":"ok","node_count":0}
 ```
+
+Wenn hier kein `ok` zurueckkommt, zuerst Server-Log und Ollama-Verbindung pruefen.
 
 ---
 
-## 3. Account registrieren (Register)
+## 4. Auth-Modus pruefen
+
+### 4a. Statischer Admin-Key
+
+Wenn du `KNOWWHERE_API_KEY` gesetzt hast, kannst du ihn direkt als Bearer-Token benutzen:
+
+```bash
+curl http://localhost:3737/auth/me \
+  -H "Authorization: Bearer dein_geheimer_key"
+```
+
+Erwartete Antwort fuer einen Admin-Key:
+
+```json
+{
+  "token_kind": "admin",
+  "allowed_retrieval_profiles": [
+    "user-facing",
+    "agent-debug",
+    "full-fidelity"
+  ]
+}
+```
+
+### 4b. Self-Service User registrieren
+
+Nur verfuegbar mit `postgres-storage` plus `DATABASE_URL`.
 
 ```bash
 curl -X POST http://localhost:3737/register \
   -H "Content-Type: application/json" \
-  -d '{"username": "nimar", "email": "nimar@example.com", "password": "meinpasswort123"}'
+  -d '{
+    "username": "nimar",
+    "email": "nimar@example.com",
+    "password": "meinpasswort123"
+  }'
 ```
 
 Erwartete Antwort:
+
 ```json
-{"api_key":"kw_abc123xyz...","user_id":"...","message":"Registration successful. Save your API key now — it cannot be retrieved again."}
+{
+  "api_key": "kw_abc123xyz",
+  "user_id": "....",
+  "message": "Registration successful. Save your API key now — it cannot be retrieved again."
+}
 ```
 
-> **Wichtig:** `/register` ist nur verfügbar, wenn der Server mit `postgres-storage` + `DATABASE_URL` läuft.
-> Ohne PostgreSQL nutze statisch gesetztes `KNOWWHERE_API_KEY`.
-
-Falls du schon einen Account hast, einfach einloggen:
+Danach einloggen:
 
 ```bash
 curl -X POST http://localhost:3737/login \
   -H "Content-Type: application/json" \
-  -d '{"username": "nimar", "password": "meinpasswort123"}'
+  -d '{
+    "username": "nimar",
+    "password": "meinpasswort123"
+  }'
 ```
 
 Erwartete Antwort:
+
 ```json
-{"token":"kw_...","expires_at":"never","message":"authenticated"}
+{
+  "token": "kw_session_...",
+  "expires_at": "2026-04-30T12:34:56Z",
+  "message": "authenticated"
+}
+```
+
+Mit diesem User-Token liefert `/auth/me` aktuell nur:
+
+```json
+{
+  "token_kind": "user",
+  "allowed_retrieval_profiles": ["user-facing"]
+}
 ```
 
 ---
 
-## 4. embedding testen
+## 5. Embedding testen
 
 ```bash
 curl -X POST http://localhost:3737/embed \
+  -H "Authorization: Bearer dein_geheimer_key" \
   -H "Content-Type: application/json" \
-  -d '{"text": "Nimar ist Softwareentwickler in Berlin"}'
+  -d '{"text":"KnowWhere speichert Sessions voll und Externe nur als Pointer"}'
 ```
 
-Erwartete Antwort:
+Erwartete Form:
+
 ```json
-{"vector":[...],"dimension":1024,"tokens_used":12}
+{
+  "vector": [0.01, -0.02, 0.03],
+  "dimension": 768,
+  "provider": "local-ollama"
+}
 ```
 
-Falls Fehler: Ollama läuft nicht oder `OLLAMA_API_URL` zeigt falsch.
+Wenn du `snowflake-arctic-embed2` nutzt, ist die Dimension typischerweise `1024`.
 
 ---
 
-## 5. Erinnerung speichern
-
-### 5a. Session-basiert speichern (chat-bezogen)
+## 6. Session-Memory speichern
 
 ```bash
 curl -X POST http://localhost:3737/store_session \
+  -H "Authorization: Bearer dein_geheimer_key" \
   -H "Content-Type: application/json" \
   -d '{
-    "session_id": "nimar-phone-2026-04-04",
-    "content": "Nimar bevorzugt Pointer-First Architecture. Er arbeitet an KnowWhere, einem Fractal Memory Service. Projektpfad: /Users/nimarfranklinmac/knowwhere",
-    "memory_type": "user_preference"
+    "content": "Nimar bevorzugt Pointer-First Architecture und arbeitet an KnowWhere.",
+    "memory_type": "semantic",
+    "metadata": {
+      "source": "walkthrough"
+    }
   }'
 ```
 
-Erwartete Antwort:
+Erwartete Form:
+
 ```json
-{"id":"01JV...","content":"...","memory_type":"user_preference","session_id":"...","created_at":"..."}
+{
+  "id": "01JV...",
+  "message": "memory stored"
+}
 ```
 
-### 5b. Externen Pointer speichern (Datei, URL, etc.)
+---
+
+## 7. Externen Pointer speichern
 
 ```bash
 curl -X POST http://localhost:3737/store_external \
+  -H "Authorization: Bearer dein_geheimer_key" \
   -H "Content-Type: application/json" \
   -d '{
     "pointer": "/Users/nimarfranklinmac/knowwhere/README.md",
-    "pointer_type": "file",
-    "memory_type": "project_doc",
-    "content": "KnowWhere README — Fractal Memory Service für AI Agents"
+    "memory_type": "semantic",
+    "metadata": {
+      "source": "walkthrough:file"
+    }
   }'
 ```
 
-Erwartete Antwort:
-```json
-{"id":"01JW...","pointer":"/Users/nimarfranklinmac/knowwhere/README.md","memory_type":"project_doc"}
-```
+Damit wird nur der Pointer plus Metadaten gespeichert, nicht die Datei selbst.
 
 ---
 
-## 6. Erinnerung wiederfinden
+## 8. Retrieval testen
 
-### 6a. Einzelne Erinnerung abrufen
-
-```bash
-curl "http://localhost:3737/retrieve/01JVXKN3BYT7N4QJZP7VG9RMD"
-```
-
-Erwartete Antwort:
-```json
-{"id":"01JVXKN3BYT7N4QJZP7VG9RMD","content":"Nimar bevorzugt...","memory_type":"user_preference","energy":1.0}
-```
-
-### 6b. Fractal Retrieval (semantische Suche)
+### 8a. Textbasierte Suche
 
 ```bash
 curl -X POST http://localhost:3737/retrieve_fractal \
+  -H "Authorization: Bearer dein_geheimer_key" \
   -H "Content-Type: application/json" \
   -d '{
-    "query_text": "Was sind Nimars Projektpräferenzen?",
-    "limit": 5
+    "query_text": "Welche Architekturpraeferenzen sind gespeichert?",
+    "top_k": 5,
+    "max_depth": 3,
+    "retrieval_profile": "user-facing"
   }'
 ```
 
-Erwartete Antwort:
+### 8b. Retrieval mit Debug-Infos
+
+Nur sinnvoll mit einem Admin-Token:
+
+```bash
+curl -X POST http://localhost:3737/retrieve_fractal \
+  -H "Authorization: Bearer dein_geheimer_key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query_text": "Welche Architekturpraeferenzen sind gespeichert?",
+    "top_k": 5,
+    "max_depth": 3,
+    "retrieval_profile": "agent-debug",
+    "include_debug": true
+  }'
+```
+
+Wichtig:
+
+- `user-facing` ist das sichere Default-Profil
+- `agent-debug` und `full-fidelity` sind nur fuer Admin-Tokens erlaubt
+- die Server-Seite erzwingt diese Profile unabhaengig vom Client
+
+---
+
+## 9. Subconscious Chat testen
+
+```bash
+curl -X POST http://localhost:3737/chat/subconscious \
+  -H "Authorization: Bearer dein_geheimer_key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "Was weisst du ueber Nimars Architekturentscheidungen?",
+    "top_k": 5,
+    "max_depth": 3,
+    "retrieval_profile": "user-facing",
+    "include_debug": true,
+    "persist": false
+  }'
+```
+
+Erwartete Form:
+
 ```json
 {
-  "results": [
+  "answer": "....",
+  "sources": [
     {
-      "id": "01JVXKN3BYT7N4QJZP7VG9RMD",
-      "content": "Nimar bevorzugt Pointer-First Architecture...",
-      "score": 0.847,
-      "memory_type": "user_preference",
-      "pointer": null
+      "id": "01JV...",
+      "score": 0.87,
+      "memory_type": "semantic",
+      "snippet": "Nimar bevorzugt Pointer-First Architecture...",
+      "retrieval_profile": "user-facing",
+      "trust_tier": "primary"
     }
   ],
-  "query_text": "Was sind Nimars Projektpräferenzen?",
-  "total_results": 1
+  "stored": false
 }
 ```
 
-### 6c. Mit vorberechnetem Vector suchen
-
-```bash
-# Erst embedden, dann mit dem Vector suchen
-VECTOR=$(curl -s -X POST http://localhost:3737/embed \
-  -H "Content-Type: application/json" \
-  -d '{"text": "Nimar arbeitet an KnowWhere"}' | jq -r '.vector | @json')
-
-curl -X POST http://localhost:3737/retrieve_fractal \
-  -H "Content-Type: application/json" \
-  -d "{\"query_vector\": $VECTOR, \"limit\": 3}"
-```
+`persist` ist standardmaessig aus, damit Chat-Nachrichten nicht ungeplant neue Retrieval-Spuren erzeugen.
 
 ---
 
-## 7. Nodes verwalten
+## 10. Dashboard oeffnen
 
-### Letzte Erinnerungen anzeigen
-
-```bash
-curl "http://localhost:3737/nodes/recent?limit=10"
-```
-
-### Re-Embed aller Nodes (nach Modellwechsel)
+Das aktive Operator-Frontend liegt in `dashboard/`.
 
 ```bash
-curl -X POST "http://localhost:3737/nodes/reembed_all" \
-  -H "Content-Type: application/json" \
-  -d '{"model": "snowflake-arctic-embed2"}'
+cd /Users/nimarfranklinmac/knowwhere/dashboard
+npm ci
+npm run dev
 ```
 
-Erwartete Antwort:
-```json
-{"updated": 152, "failed": 0}
-```
+Dann im Browser:
 
-### Node löschen
+- `http://localhost:5173` oeffnen
+- Token eintragen
+- `Overview`, `Memories`, `Chat`, `Search` und `Governance` pruefen
 
-```bash
-curl -X DELETE "http://localhost:3737/nodes/{id}"
-```
+Wichtig:
+
+- Das Dashboard liest `GET /auth/me`
+- Search und Chat zeigen nur die Retrieval-Profile an, die dein Token wirklich darf
+- Der Backend-Server liefert weiterhin ein minimales `frontend/` als Fallback aus, aber die aktuelle Entwicklungsoberflaeche ist das React-Dashboard
 
 ---
 
-## 8. Fractal Memory Status prüfen
-
-### Dream/Consolidation Status
-
-```bash
-curl http://localhost:3737/dream/status
-```
-
-Erwartete Antwort:
-```json
-{
-  "tier_stats": {
-    "L2_consolidated": 0,
-    "L1_distilled": 0,
-    "L0_raw": 152
-  },
-  "consolidation": {"status": "idle", "last_run": "2026-04-04T...", "candidates_queued": 0},
-  "energy_decay": {"status": "ok", "nodes_above_threshold": 48}
-}
-```
-
-> **Wichtig:** L2→L1→L0 Consolidation ist derzeit deaktiviert (braucht VLM API Key).
-> Siehe `Fractal Memory` in der Haupt-Doku für Details.
-
----
-
-## 9. Energy & Deduplizierung
-
-### Energy aller Nodes anzeigen
-
-```bash
-curl http://localhost:3737/energy/low?threshold=0.5
-```
-
-### Energy Boost für einzelne Node
-
-```bash
-curl -X POST "http://localhost:3737/memories/{id}/energy/boost" \
-  -H "Content-Type: application/json" \
-  -d '{"boost": 0.3}'
-```
-
-### Deduplizierung
-
-```bash
-# Kandidaten finden
-curl http://localhost:3737/deduplication/candidates
-
-# Deduplizierung ausführen
-curl -X POST http://localhost:3737/deduplication/run
-```
-
----
-
-## 10. Real-Time Events (SSE)
-
-```bash
-curl -N http://localhost:3737/events
-```
-
-Events: neue Nodes, Consolidation-Fortschritt, Energy-Updates
-
----
-
-## Troubleshooting
+## 11. Troubleshooting
 
 ### Ollama antwortet nicht
 
 ```bash
-# Prüfe ob Ollama läuft
 curl http://localhost:11434/api/tags
-
-# Modell prüfen
 ollama list
 ```
 
-### PostgreSQL Connection-Fehler
+Pruefe danach `OLLAMA_URL`, `OLLAMA_MODEL` und ggf. `OLLAMA_EMBEDDING_DIMENSION`.
+
+### `503 Service Unavailable` auf `/register` oder `/login`
+
+Der Server laeuft nicht mit PostgreSQL-Auth-Support. Du brauchst:
+
+- `cargo run --features postgres-storage`
+- ein gueltiges `DATABASE_URL`
+
+### `401 Unauthorized` auf geschuetzten Routen
 
 ```bash
-# Container prüfen
-docker ps | grep kw-postgres
-
-# Connection testen
-docker exec -it kw-postgres psql -U postgres -d kw -c "SELECT 1"
+curl http://localhost:3737/auth/me \
+  -H "Authorization: Bearer dein_token"
 ```
 
-### Port schon belegt
+Wenn das fehlschlaegt, ist der Token falsch oder der Server laeuft mit einem anderen `KNOWWHERE_API_KEY`.
+
+### Port 3737 ist belegt
 
 ```bash
-# Port 3737 prüfen
 lsof -i :3737
-
-# Prozess beenden falls nötig
-kill $(lsof -t -i :3737)
 ```
+
+Dann entweder den bestehenden Prozess sauber stoppen oder das Port-Mapping aendern.
 
 ---
 
-## Nächste Schritte
+## Naechste Schritte
 
-1. **OpenClaw Plugin** installieren für AI-Agent Integration
-   → `docs/openclaw-plugin/README.md`
-
-2. **Webhook Endpoint** für Frigate-Events
-   → `POST /webhooks/frigate`
-
-3. **Retrieval Quality** benchmarken
-   → `docs/RETRIEVAL-BENCHMARK.md`
+1. OpenClaw anbinden: `../openclaw-plugin/README.md`
+2. Import-Strategie verstehen: `IMPORT_GUIDE.md`
+3. Architektur vertiefen: `ARCHITECTURE.md`
