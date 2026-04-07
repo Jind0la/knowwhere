@@ -13,7 +13,6 @@ use uuid::Uuid;
 use crate::embedding::EmbeddingProvider;
 use crate::memory::FractalNode;
 use crate::multimodal::MultimodalData;
-use crate::storage::MemoryStore;
 
 pub struct ExternalEvent {
     pub pointer: String,

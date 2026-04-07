@@ -1161,46 +1161,61 @@ impl StorageBackend for PostgresStore {
 
     async fn hybrid_retrieve(&self, query: &HybridQuery) -> anyhow::Result<Vec<ScoredNode>> {
         let vector = query.query_vector.as_deref().unwrap_or(&[]);
+        let fetch_k = query.profile.fetch_k(query.top_k);
 
         // If only text is provided, fall back to BM25
         if query.query_text.is_some() && query.query_vector.is_none() {
             let text = query.query_text.as_ref().unwrap();
-            let bm25_results = self.search_bm25(text, query.top_k as i32).await?;
+            let bm25_results = self.search_bm25(text, fetch_k as i32).await?;
             // Convert BM25 results to ScoredNodes by fetching full nodes
             let mut scored_nodes = Vec::new();
             for (id, score) in bm25_results {
                 if let Some(node) = self.get(&id).await? {
-                    scored_nodes.push(ScoredNode { id, score, node });
+                    if query.profile.allows(&node) {
+                        scored_nodes.push(query.profile.score_node(score, node));
+                    }
                 }
             }
+            scored_nodes.sort_by(|a, b| {
+                b.score
+                    .partial_cmp(&a.score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            scored_nodes.truncate(query.top_k);
             return Ok(scored_nodes);
         }
 
         // Vector search (with optional BM25 boost)
         let rows = self
-            .vector_search(vector, query.top_k as i32, None, None)
+            .vector_search(vector, fetch_k as i32, None, None)
             .await?;
 
         // If no text query, return pure vector results
         if query.query_text.is_none() {
-            return Ok(rows
+            let mut scored_nodes: Vec<_> = rows
                 .into_iter()
                 .filter_map(|row| {
                     let row_vector = row.embedding.clone().unwrap_or_default();
                     let node = memory_with_score_to_fractal_node(row)?;
+                    if !query.profile.allows(&node) {
+                        return None;
+                    }
                     let sim = crate::memory::fractal_node::cosine_similarity(&row_vector, vector);
-                    Some(ScoredNode {
-                        id: node.id,
-                        score: sim,
-                        node,
-                    })
+                    Some(query.profile.score_node(sim, node))
                 })
-                .collect());
+                .collect();
+            scored_nodes.sort_by(|a, b| {
+                b.score
+                    .partial_cmp(&a.score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            scored_nodes.truncate(query.top_k);
+            return Ok(scored_nodes);
         }
 
         // Hybrid: combine vector + BM25 via RRF
         let bm25_text = query.query_text.as_ref().unwrap();
-        let bm25_results = self.search_bm25(bm25_text, query.top_k as i32).await?;
+        let bm25_results = self.search_bm25(bm25_text, fetch_k as i32).await?;
         let bm25_ids: Vec<(Uuid, f32)> = bm25_results;
 
         let vector_ids: Vec<Uuid> = rows.iter().map(|r| r.id).collect();
@@ -1210,9 +1225,17 @@ impl StorageBackend for PostgresStore {
         let mut scored_nodes = Vec::new();
         for (id, score) in fused {
             if let Some(node) = self.get(&id).await? {
-                scored_nodes.push(ScoredNode { id, score, node });
+                if query.profile.allows(&node) {
+                    scored_nodes.push(query.profile.score_node(score, node));
+                }
             }
         }
+        scored_nodes.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        scored_nodes.truncate(query.top_k);
 
         Ok(scored_nodes)
     }

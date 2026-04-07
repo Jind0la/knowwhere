@@ -872,6 +872,8 @@ mod worker {
                 source,
             );
             summary_node.context_tier = tier;
+            summary_node.set_metadata_text(FractalNode::DERIVATION_KEY, "system_summary");
+            summary_node.set_metadata_text(FractalNode::TRUST_TIER_KEY, FractalNode::TRUST_DERIVED);
 
             // Step 6: Store the summary node
             let summary_id = self.store.insert(summary_node).await?;

@@ -2,18 +2,27 @@ import { useState, useEffect } from 'react';
 import { dreamStatus } from '../api/knowwhere';
 import type { DreamStatus } from '../types';
 
-export function DreamStatus() {
+interface DreamStatusProps {
+  enabled: boolean;
+  refreshKey: number;
+}
+
+export function DreamStatus(props: DreamStatusProps) {
   const [status, setStatus] = useState<DreamStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
+    if (!props.enabled) return;
     setLoading(true);
     setError(null);
     try {
+      console.log('[dream] load:start');
       const data = await dreamStatus();
       setStatus(data);
+      console.log('[dream] load:done');
     } catch (err) {
+      console.error('[dream] load:error', err);
       setError(String(err));
     } finally {
       setLoading(false);
@@ -21,10 +30,19 @@ export function DreamStatus() {
   }
 
   useEffect(() => {
-    load();
+    if (!props.enabled) {
+      setStatus(null);
+      setError(null);
+      return;
+    }
+    void load();
     const interval = setInterval(load, 30_000); // refresh every 30s
     return () => clearInterval(interval);
-  }, []);
+  }, [props.enabled, props.refreshKey]);
+
+  if (!props.enabled) {
+    return <p className="p-3 text-sm text-gray-400">API-Token speichern, um Dream Mode zu laden.</p>;
+  }
 
   if (loading && !status) {
     return <p className="text-sm text-gray-400 p-3">Loading Dream Mode status…</p>;

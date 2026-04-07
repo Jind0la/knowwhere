@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { ScoredNode, MemoryType } from '../types';
+import type { MemoryType, ScoredNode } from '../types';
 
 const MEMORY_TYPE_COLORS: Record<MemoryType, string> = {
   episodic: '#6366f1',
@@ -16,6 +16,12 @@ const MEMORY_TYPE_LABELS: Record<MemoryType, string> = {
   procedural: 'Procedural',
   meta: 'Meta',
 };
+
+function trustTone(trustTier: string) {
+  if (trustTier === 'primary') return 'border-emerald-300 text-emerald-700 bg-emerald-50';
+  if (trustTier === 'derived') return 'border-amber-300 text-amber-700 bg-amber-50';
+  return 'border-slate-300 text-slate-700 bg-slate-50';
+}
 
 interface MemoryListProps {
   nodes: ScoredNode[];
@@ -74,6 +80,14 @@ export function MemoryList({ nodes, loading, onNodeClick }: MemoryListProps) {
                 {label}
               </span>
 
+              <span className={`text-xs px-2 py-0.5 rounded-full border shrink-0 ${trustTone(node.trust_tier)}`}>
+                {node.trust_tier}
+              </span>
+
+              <span className="text-xs px-2 py-0.5 rounded-full border border-gray-300 text-gray-500 shrink-0">
+                {node.retrieval_profile}
+              </span>
+
               {/* Governance status */}
               {node.governance_passed !== undefined && (
                 <span
@@ -106,6 +120,12 @@ export function MemoryList({ nodes, loading, onNodeClick }: MemoryListProps) {
                 <p>ID: {node.id}</p>
                 <p>Created: {new Date(node.created_at).toLocaleString()}</p>
                 {node.sensitivity && <p>Sensitivity: {node.sensitivity}</p>}
+                {node.score_debug && (
+                  <div className="mt-2">
+                    <p className="font-medium">Score-Debug:</p>
+                    <p>{node.score_debug.explanation}</p>
+                  </div>
+                )}
                 {node.governance_issues.length > 0 && (
                   <div className="mt-2">
                     <p className="font-medium text-red-600">Governance issues:</p>

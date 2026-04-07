@@ -1,6 +1,6 @@
 use utoipa::OpenApi;
 
-use crate::api::routes;
+use crate::api::{auth, routes};
 use crate::memory::dream::DreamStatus;
 use crate::memory::types::{MemorySource, MemoryType};
 use crate::memory::{FractalNode, Relation};
@@ -22,11 +22,13 @@ mod conditional_schemas {
         info(title = "KnowWhere API", version = "0.1.0"),
         paths(
             routes::health,
+            auth::me,
             routes::embed_text,
             routes::store_session,
             routes::store_external,
             routes::retrieve,
             routes::retrieve_fractal,
+            routes::subconscious_chat,
             routes::recent_nodes,
             routes::delete_node,
             routes::purge_dummy,
@@ -41,6 +43,8 @@ mod conditional_schemas {
         ),
         components(schemas(
             routes::HealthResponse,
+            auth::AuthContext,
+            auth::AuthTokenKind,
             routes::EmbedRequest,
             routes::EmbedResponse,
             routes::StoreSessionRequest,
@@ -49,6 +53,10 @@ mod conditional_schemas {
             routes::PurgeResponse,
             routes::ReembedResponse,
             routes::RetrieveFractalRequest,
+            routes::RetrievalScoreDebug,
+            routes::SubconsciousChatRequest,
+            routes::SubconsciousSource,
+            routes::SubconsciousChatResponse,
             routes::ScoredNode,
             FractalNode,
             MemoryType,
@@ -76,11 +84,13 @@ mod conditional_schemas {
         info(title = "KnowWhere API", version = "0.1.0"),
         paths(
             routes::health,
+            auth::me,
             routes::embed_text,
             routes::store_session,
             routes::store_external,
             routes::retrieve,
             routes::retrieve_fractal,
+            routes::subconscious_chat,
             routes::recent_nodes,
             routes::delete_node,
             routes::purge_dummy,
@@ -124,6 +134,8 @@ mod conditional_schemas {
         ),
         components(schemas(
             routes::HealthResponse,
+            auth::AuthContext,
+            auth::AuthTokenKind,
             routes::EmbedRequest,
             routes::EmbedResponse,
             routes::StoreSessionRequest,
@@ -132,6 +144,10 @@ mod conditional_schemas {
             routes::PurgeResponse,
             routes::ReembedResponse,
             routes::RetrieveFractalRequest,
+            routes::RetrievalScoreDebug,
+            routes::SubconsciousChatRequest,
+            routes::SubconsciousSource,
+            routes::SubconsciousChatResponse,
             routes::ScoredNode,
             FractalNode,
             MemoryType,

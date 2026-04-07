@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { getGovernancePolicy, updateGovernancePolicy } from '../api/knowwhere';
-import type { GovernancePolicy, Sensitivity } from '../types';
+import type { GovernancePolicy, Sensitivity, UpdatePolicyRequest } from '../types';
 
 const SENSITIVITY_OPTIONS: Sensitivity[] = ['normal', 'low', 'high', 'restricted'];
 
@@ -44,11 +44,12 @@ export function GovernancePanel() {
     load();
   }, []);
 
-  async function handleSave(preset?: string) {
+  async function handleSave(preset?: UpdatePolicyRequest['preset']) {
     setSaving(true);
     setSaved(false);
     setError(null);
     try {
+      console.log('[governance] save:start', { preset });
       const res = await updateGovernancePolicy({
         ...(preset ? { preset } : {}),
         min_confidence: minConf,
@@ -61,8 +62,10 @@ export function GovernancePanel() {
       });
       setPolicy(res.policy as GovernancePolicy);
       setSaved(true);
+      console.log('[governance] save:done');
       setTimeout(() => setSaved(false), 3000);
     } catch (err) {
+      console.error('[governance] save:error', err);
       setError(String(err));
     } finally {
       setSaving(false);
@@ -156,16 +159,16 @@ export function GovernancePanel() {
         </div>
 
         <div className="space-y-1">
-          {[
+          {([
             ['supersession_enabled', supersession, setSupersession, 'Enable supersession check'],
             ['conflict_check_enabled', conflictCheck, setConflictCheck, 'Enable conflict check'],
             ['recency_boost_enabled', recencyBoost, setRecencyBoost, 'Enable recency boost'],
-          ].map(([key, val, setVal, label]) => (
+          ] as const).map(([key, val, setVal, label]) => (
             <label key={key as string} className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
-                checked={val as boolean}
-                onChange={(e) => (setVal as (v: boolean) => void)(e.target.checked)}
+                checked={val}
+                onChange={(e) => setVal(e.target.checked)}
               />
               <span className="text-sm text-gray-700">{label}</span>
             </label>

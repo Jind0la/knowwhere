@@ -320,8 +320,13 @@ impl EmbeddingProvider for LocalOllamaProvider {
     }
 
     fn dimension(&self) -> usize {
-        // arctic-embed2 returns 1024-dim by default (supports MRL reduction)
-        // granite-embedding:278m returns 768-dim
+        if let Ok(s) = std::env::var("OLLAMA_EMBEDDING_DIMENSION") {
+            if let Ok(n) = s.trim().parse::<usize>() {
+                if n > 0 {
+                    return n;
+                }
+            }
+        }
         if self.model.contains("arctic") {
             1024
         } else {

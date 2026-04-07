@@ -15,6 +15,9 @@ export type MemorySource =
   | 'manual'
   | 'consolidation';
 
+export type RetrievalProfile = 'user-facing' | 'agent-debug' | 'full-fidelity';
+export type AuthTokenKind = 'admin' | 'user';
+
 // ---------------------------------------------------------------------------
 // Core Types
 // ---------------------------------------------------------------------------
@@ -49,10 +52,22 @@ export interface ScoredNode {
   original_pointer: string | null;
   metadata: Record<string, unknown>;
   created_at: string;
+  retrieval_profile: RetrievalProfile;
+  trust_tier: string;
+  score_debug?: RetrievalScoreDebug;
   confidence?: number;
   sensitivity?: Sensitivity;
   governance_passed?: boolean;
   governance_issues: ValidationIssue[];
+}
+
+export interface RetrievalScoreDebug {
+  profile: RetrievalProfile;
+  trust_tier: string;
+  base_score: number;
+  multiplier: number;
+  final_score: number;
+  explanation: string;
 }
 
 export interface ValidationIssue {
@@ -118,6 +133,12 @@ export interface Event {
   created_at: string;
 }
 
+export interface AuthContext {
+  token_kind: AuthTokenKind;
+  user_id?: string;
+  allowed_retrieval_profiles: RetrievalProfile[];
+}
+
 // ---------------------------------------------------------------------------
 // API Request/Response Types
 // ---------------------------------------------------------------------------
@@ -138,15 +159,44 @@ export interface StoreNodeResponse {
 }
 
 export interface RetrieveFractalRequest {
-  query_vector: number[];
+  query_vector?: number[];
   query_text?: string;
   top_k?: number;
   max_depth?: number;
   governance_enabled?: boolean;
   memory_type_filter?: MemoryType;
+  retrieval_profile?: RetrievalProfile;
+  include_debug?: boolean;
 }
 
 export interface HealthResponse {
   status: string;
   node_count: number;
+}
+
+export interface SubconsciousChatRequest {
+  message: string;
+  top_k?: number;
+  max_depth?: number;
+  governance_enabled?: boolean;
+  persist?: boolean;
+  retrieval_profile?: RetrievalProfile;
+  include_debug?: boolean;
+}
+
+export interface SubconsciousSource {
+  id: string;
+  score: number;
+  memory_type: MemoryType;
+  created_at: string;
+  snippet: string;
+  retrieval_profile: RetrievalProfile;
+  trust_tier: string;
+  score_debug?: RetrievalScoreDebug;
+}
+
+export interface SubconsciousChatResponse {
+  answer: string;
+  sources: SubconsciousSource[];
+  stored: boolean;
 }

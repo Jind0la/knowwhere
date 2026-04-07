@@ -13,13 +13,17 @@ use crate::memory::types::{
 use crate::multimodal::MultimodalData;
 
 pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
-    debug_assert_eq!(
-        a.len(),
-        b.len(),
-        "cosine_similarity: dimension mismatch (a={}, b={})",
-        a.len(),
-        b.len()
-    );
+    if a.is_empty() || b.is_empty() {
+        return 0.0;
+    }
+    if a.len() != b.len() {
+        tracing::debug!(
+            a_dim = a.len(),
+            b_dim = b.len(),
+            "cosine_similarity skipped due to dimension mismatch"
+        );
+        return 0.0;
+    }
     let dot: f32 = a.iter().zip(b).map(|(x, y)| x * y).sum();
     let mag_a = a.iter().map(|x| x * x).sum::<f32>().sqrt();
     let mag_b = b.iter().map(|x| x * x).sum::<f32>().sqrt();
@@ -122,6 +126,142 @@ fn default_importance() -> i32 {
 }
 
 impl FractalNode {
+    pub const DERIVATION_KEY: &'static str = "derivation";
+    pub const RETRIEVAL_VISIBILITY_KEY: &'static str = "retrieval_visibility";
+    pub const ROLE_KEY: &'static str = "role";
+    pub const TRUST_TIER_KEY: &'static str = "trust_tier";
+    pub const TRUST_WEIGHT_KEY: &'static str = "trust_weight";
+    pub const INTERNAL_VISIBILITY: &'static str = "internal";
+    pub const TRUST_PRIMARY: &'static str = "primary";
+    pub const TRUST_REFERENCE: &'static str = "reference";
+    pub const TRUST_DERIVED: &'static str = "derived";
+    pub const TRUST_VOLATILE: &'static str = "volatile";
+
+    fn metadata_text(&self, key: &str) -> Option<&str> {
+        self.metadata.get(key).and_then(Value::as_str)
+    }
+
+    fn metadata_number(&self, key: &str) -> Option<f64> {
+        self.metadata.get(key).and_then(Value::as_f64)
+    }
+
+    fn metadata_matches(&self, key: &str, values: &[&str]) -> bool {
+        self.metadata_text(key).is_some_and(|value| {
+            values
+                .iter()
+                .any(|candidate| value.eq_ignore_ascii_case(candidate))
+        })
+    }
+
+    fn content_prefix_matches(&self, prefixes: &[&str]) -> bool {
+        self.content.as_deref().is_some_and(|text| {
+            let trimmed = text.trim_start();
+            prefixes.iter().any(|prefix| trimmed.starts_with(prefix))
+        })
+    }
+
+    fn has_explicit_visibility_metadata(&self) -> bool {
+        self.metadata.contains_key(Self::ROLE_KEY)
+            || self.metadata.contains_key(Self::DERIVATION_KEY)
+            || self.metadata.contains_key(Self::RETRIEVAL_VISIBILITY_KEY)
+    }
+
+    fn is_legacy_chat_artifact(&self) -> bool {
+        self.source == MemorySource::Conversation
+            && !self.has_explicit_visibility_metadata()
+            && self.content_prefix_matches(&["USER:", "ASSISTANT:", "AI:"])
+    }
+
+    fn is_imported_artifact(&self) -> bool {
+        self.source == MemorySource::Import
+            || self.metadata.contains_key("imported_from")
+            || self.metadata.contains_key("import_type")
+            || self
+                .metadata_text("source")
+                .is_some_and(|value| value.starts_with("import:"))
+    }
+
+    fn is_primary_import(&self) -> bool {
+        self.metadata_text("import_type")
+            .is_some_and(|import_type| {
+                matches!(
+                    import_type,
+                    "openclaw_workspace"
+                        | "openclaw_session"
+                        | "langchain_memory"
+                        | "custom_import"
+                )
+            })
+            || self.metadata_text("original_file").is_some_and(|file| {
+                matches!(file, "MEMORY.md" | "USER.md" | "IDENTITY.md" | "SOUL.md")
+            })
+    }
+
+    pub fn set_metadata_text(&mut self, key: &str, value: &str) {
+        self.metadata
+            .insert(key.to_string(), Value::String(value.to_string()));
+    }
+
+    pub fn is_internal_only(&self) -> bool {
+        self.memory_type == MemoryType::Meta
+            || self.metadata_matches(Self::RETRIEVAL_VISIBILITY_KEY, &[Self::INTERNAL_VISIBILITY])
+            || self.metadata_matches(Self::ROLE_KEY, &["assistant", "ai", "system", "mixed"])
+            || self.metadata_matches(
+                Self::DERIVATION_KEY,
+                &[
+                    "assistant_output",
+                    "retrieval_compose",
+                    "chat_query",
+                    "agent_transcript",
+                ],
+            )
+            || self.is_legacy_chat_artifact()
+    }
+
+    pub fn explicit_trust_weight(&self) -> Option<f32> {
+        self.metadata_number(Self::TRUST_WEIGHT_KEY)
+            .map(|value| value as f32)
+    }
+
+    pub fn trust_tier(&self) -> &'static str {
+        if self.is_internal_only()
+            || self.source == MemorySource::Consolidation
+            || self.metadata_matches(Self::DERIVATION_KEY, &["system_summary"])
+        {
+            return Self::TRUST_DERIVED;
+        }
+        if let Some(value) = self.metadata_text(Self::TRUST_TIER_KEY) {
+            if value.eq_ignore_ascii_case(Self::TRUST_PRIMARY) {
+                return Self::TRUST_PRIMARY;
+            }
+            if value.eq_ignore_ascii_case(Self::TRUST_REFERENCE) {
+                return Self::TRUST_REFERENCE;
+            }
+            if value.eq_ignore_ascii_case(Self::TRUST_DERIVED) {
+                return Self::TRUST_DERIVED;
+            }
+            if value.eq_ignore_ascii_case(Self::TRUST_VOLATILE) {
+                return Self::TRUST_VOLATILE;
+            }
+        }
+        if self.is_imported_artifact() {
+            if self.is_primary_import() {
+                return Self::TRUST_PRIMARY;
+            }
+            return Self::TRUST_REFERENCE;
+        }
+        if self.source == MemorySource::Document || self.source == MemorySource::Manual {
+            return Self::TRUST_REFERENCE;
+        }
+        if self.metadata_matches(Self::DERIVATION_KEY, &["user_input"])
+            || self.metadata_matches(Self::ROLE_KEY, &["user"])
+            || self.source == MemorySource::Conversation
+        {
+            return Self::TRUST_PRIMARY;
+        }
+        Self::TRUST_REFERENCE
+    }
+
     /// Session-Knoten: speichert den vollen Text + Embedding.
     pub fn new_session(
         content: String,
@@ -331,8 +471,9 @@ impl FractalNode {
 }
 
 /// Backward-compatible alias — NodeType is deprecated in favor of MemoryType + MemorySource.
+#[allow(deprecated)]
 #[deprecated(since = "0.2.0", note = "Use MemoryType + MemorySource instead")]
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum NodeType {
     #[default]

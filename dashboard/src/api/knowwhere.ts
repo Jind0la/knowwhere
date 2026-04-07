@@ -2,31 +2,70 @@
  * KnowWhere REST API client.
  *
  * Calls the KnowWhere backend running at the configured base URL.
- * During development, Vite proxies /api → http://localhost:3000.
+ * During development, Vite proxies /api → http://localhost:3737.
  */
 
+import type {
+  AuthContext,
+  DreamStatus,
+  Event,
+  FractalNode,
+  GovernancePolicy,
+  HealthResponse,
+  RetrieveFractalRequest,
+  ScoredNode,
+  SubconsciousChatRequest,
+  SubconsciousChatResponse,
+  StoreNodeResponse,
+  StoreSessionRequest,
+  UpdatePolicyRequest,
+} from '../types';
+
 const BASE = '/api';
+const TOKEN_KEY = 'knowwhere_api_token';
+
+function bearerToken() {
+  const token = localStorage.getItem(TOKEN_KEY);
+  return token ? `Bearer ${token}` : undefined;
+}
+
+export function setApiToken(token: string) {
+  localStorage.setItem(TOKEN_KEY, token.trim());
+}
+
+export function clearApiToken() {
+  localStorage.removeItem(TOKEN_KEY);
+}
+
+export function getApiToken() {
+  return localStorage.getItem(TOKEN_KEY) ?? '';
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...init?.headers,
-    },
-    ...init,
-  });
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => res.statusText);
-    throw new Error(`${res.status} ${res.statusText}: ${text}`);
+  console.log('[api] request', path, init?.method ?? 'GET');
+  try {
+    const auth = bearerToken();
+    const res = await fetch(`${BASE}${path}`, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...(auth ? { Authorization: auth } : {}),
+        ...init?.headers,
+      },
+      ...init,
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => res.statusText);
+      throw new Error(`${res.status} ${res.statusText}: ${text}`);
+    }
+    const contentType = res.headers.get('content-type') ?? '';
+    if (contentType.includes('application/json')) {
+      return res.json() as Promise<T>;
+    }
+    return undefined as T;
+  } catch (error) {
+    console.error('[api] request failed', path, error);
+    throw error;
   }
-
-  // Handle empty responses
-  const contentType = res.headers.get('content-type') ?? '';
-  if (contentType.includes('application/json')) {
-    return res.json() as Promise<T>;
-  }
-  return undefined as T;
 }
 
 // ---------------------------------------------------------------------------
@@ -35,6 +74,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export async function health(): Promise<HealthResponse> {
   return request<HealthResponse>('/health');
+}
+
+export async function authMe(): Promise<AuthContext> {
+  return request<AuthContext>('/auth/me');
 }
 
 // ---------------------------------------------------------------------------
@@ -90,6 +133,13 @@ export async function retrieveFractal(body: RetrieveFractalRequest): Promise<Sco
   });
 }
 
+export async function subconsciousChat(body: SubconsciousChatRequest): Promise<SubconsciousChatResponse> {
+  return request<SubconsciousChatResponse>('/chat/subconscious', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Memory — Manage
 // ---------------------------------------------------------------------------
@@ -100,8 +150,8 @@ export async function deleteNode(id: string) {
   });
 }
 
-export async function recentNodes(limit = 20) {
-  return request<unknown[]>(`/nodes/recent?limit=${limit}`);
+export async function recentNodes(limit = 20): Promise<FractalNode[]> {
+  return request<FractalNode[]>(`/nodes/recent?limit=${limit}`);
 }
 
 export async function purgeDummyNodes() {
