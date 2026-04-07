@@ -53,6 +53,9 @@ jobs:
       - name: OpenAPI contract smoke test
         run: cargo test --test openapi_contract
 
+      - name: Retrieval quality echo baseline
+        run: cargo test --test retrieval_quality
+
       - name: cargo audit
         run: |
           curl -LsSf https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-x86_64-unknown-linux-gnu.tgz | tar xz

@@ -1,7 +1,8 @@
 # KnowWhere Retrieval Quality Test Plan
 
 **Erstellt:** 2026-03-28
-**Status:** GEPLANT — noch nicht implementiert
+**Letztes Update:** 2026-04-07
+**Status:** Tier 1 implementiert (Echo-Baseline), Tier 2/3 offen
 
 ---
 
@@ -306,7 +307,23 @@ struct EchoMetrics {
 
 ---
 
-### 3.3 Test-Implementation (Pseudocode)
+### 3.3 Test-Implementation (Ist-Stand)
+
+Tier 1 ist jetzt als echter Integrationstest umgesetzt:
+
+- Testdatei: `tests/retrieval_quality.rs`
+- Testname: `echo_retrieval_quality_baseline`
+- Store: `MemoryStore` (deterministisch, ohne externe Modell-/Netzabhängigkeit)
+- Query-Modus: Hybrid (`query_text` + deterministische `query_vector`)
+- Metriken: `precision_at_1`, `recall_at_3`, `mrr`, `semantically_robust`
+- Gates:
+  - `precision_at_1 >= 0.70`
+  - `recall_at_3 >= 0.85`
+  - `mrr >= 0.75`
+  - `semantically_robust >= 0.80`
+- Zusätzlicher Latenz-Snapshot: `elapsed_ms` wird geloggt (noch kein harter Gate)
+
+Historisches Pseudocode-Beispiel (als Referenz):
 
 ```rust
 #[tokio::test]
@@ -377,7 +394,15 @@ async fn echo_retrieval_quality() {
 
 ---
 
-### 3.4 CI-Integration
+### 3.4 CI-Integration (Ist-Stand)
+
+Die Echo-Baseline ist in den bestehenden CI-`test`-Job eingebunden:
+
+- Workflow: `.github/workflows/ci.yml`
+- Step: `Retrieval quality echo baseline`
+- Kommando: `cargo test --test retrieval_quality`
+
+Frühere Entwurfs-Variante mit separatem Workflow:
 
 ```yaml
 # .github/workflows/retrieval-quality.yml
@@ -518,12 +543,12 @@ tests/
 
 ## 7. Offene Fragen / Nächste Schritte
 
-- [ ] **Database-Option:** Echo-Test mit MemoryStore ODER PostgresStore? (Empfehlung: PostgresStorage für CI, MemoryStore für lokale Dev-Tests)
+- [x] **Database-Option:** Tier 1 nutzt jetzt `MemoryStore` als deterministische CI-Baseline; Postgres-Vergleich folgt in Tier 2.
 - [ ] **Mix-Memory-Generator:** Skript das N pseudozufällige Noise-Memories generiert für Tier 2
 - [ ] **Test-Fixture-Struktur:** Soll das Fixture JSON sein oder Rust-Code?
 - [ ] **Recall ohne Ground Truth:** Bei Echo-Memories kennen wir die "richtige" Antwort. Bei echten Daten nicht. Wie definieren wir "gefunden"?
 - [ ] **Persistenz:** Sollen Test-Resultate in eine JSON-Datei geloggt werden für Trends?
-- [ ] **Schwellwerte:** Sind 0.70/0.75 die richtigen CI-Gates? Zu streng? Zu lax?
+- [x] **Schwellwerte:** Für Tier 1 aktiv gesetzt (`P@1 >= 0.70`, `Recall@3 >= 0.85`, `MRR >= 0.75`, `Robustheit >= 0.80`), werden nach Trenddaten weiter kalibriert.
 
 ---
 
