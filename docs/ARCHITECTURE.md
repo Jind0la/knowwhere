@@ -9,23 +9,20 @@ KnowWhere ist ein eigenstaendiger Memory-Service als Rust-Binary mit HTTP-API. C
 Aktuell besteht die Architektur aus vier Hauptschichten:
 
 1. **Client-Schicht**
-   - Agenten, SDKs, OpenClaw-Plugin, React-Dashboard
-
+  - Agenten, SDKs, OpenClaw-Plugin, React-Dashboard
 2. **API- und Auth-Schicht**
-   - Axum-Router
-   - Bearer-Token-Middleware
-   - Capability-Endpoint `GET /auth/me`
-
+  - Axum-Router
+  - Bearer-Token-Middleware
+  - Capability-Endpoint `GET /auth/me`
 3. **Memory- und Retrieval-Schicht**
-   - StorageBackend
-   - EmbeddingProvider
-   - Hybrid Retrieval mit Profilen
-
+  - StorageBackend
+  - EmbeddingProvider
+  - Hybrid Retrieval mit Profilen
 4. **Operations-Schicht**
-   - Dream status
-   - Events
-   - Governance
-   - PostgreSQL-Lifecycle-Routen bei aktivem `postgres-storage`
+  - Dream status
+  - Events
+  - Governance
+  - PostgreSQL-Lifecycle-Routen bei aktivem `postgres-storage`
 
 ## 2. Laufzeittopologie
 
@@ -149,7 +146,6 @@ pub struct AuthContext {
 - `admin`
   - stammt aus `KNOWWHERE_API_KEY`
   - darf `user-facing`, `agent-debug`, `full-fidelity`
-
 - `user`
   - stammt aus PostgreSQL-Auth
   - darf aktuell nur `user-facing`
@@ -207,10 +203,8 @@ Der aktuelle Flow fuer `POST /retrieve_fractal` ist:
 - `user-facing`
   - filtert interne-only Inhalte
   - gewichtet Trust-Tiers konservativer
-
 - `agent-debug`
   - bleibt konsumierbar, zeigt aber mehr Debug-Signale
-
 - `full-fidelity`
   - keine zusaetzliche Profilgewichtung
   - fuer rohe Operator- und Debug-Sicht
@@ -334,3 +328,4 @@ Noch nicht fertig oder bewusst begrenzt:
 - keine Multi-Tenant-SaaS-Architektur
 - keine Runtime-Hot-Swaps fuer Embedding-Provider
 - keine uniforme Release-Versionierung ueber Marketing- und Paketversion hinaus
+
