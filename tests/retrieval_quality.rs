@@ -8,6 +8,7 @@ use uuid::Uuid;
 
 const DIM: usize = 8;
 const TOP_K: usize = 5;
+const GROWING_DB_SIZES: &[usize] = &[100, 500, 1000];
 
 #[derive(Clone, Copy)]
 struct EchoCase {
@@ -106,12 +107,29 @@ fn topic_vector(topic: usize) -> Vec<f32> {
     v
 }
 
+fn noise_vector(seed: usize) -> Vec<f32> {
+    let base = ((seed % 97) as f32) / 100.0;
+    (0..DIM)
+        .map(|idx| (base + (idx as f32 * 0.07)).fract().max(0.01))
+        .collect()
+}
+
 fn query_vector(topic: usize, variant: usize) -> Vec<f32> {
     let mut v = topic_vector(topic);
     let drift = ((variant % 3) as f32) * 0.01;
     v[topic % DIM] -= drift;
     v[(topic + 2) % DIM] += drift;
     v
+}
+
+fn query_for(case: &EchoCase, variant_idx: usize, query_text: &str) -> HybridQuery {
+    HybridQuery {
+        query_text: Some(query_text.to_string()),
+        query_vector: Some(query_vector(case.topic, variant_idx)),
+        top_k: TOP_K,
+        max_depth: 0,
+        profile: RetrievalProfile::FullFidelity,
+    }
 }
 
 fn build_node(content: &str, vector: Vec<f32>) -> FractalNode {
@@ -125,6 +143,10 @@ fn build_node(content: &str, vector: Vec<f32>) -> FractalNode {
     )
 }
 
+fn noise_content(idx: usize) -> String {
+    format!("noise memory {:04} unrelated retrieval context", idx)
+}
+
 async fn insert_echo_memories(store: &MemoryStore) -> anyhow::Result<Vec<Uuid>> {
     let mut ids = Vec::with_capacity(ECHO_CASES.len());
     for case in ECHO_CASES {
@@ -134,6 +156,14 @@ async fn insert_echo_memories(store: &MemoryStore) -> anyhow::Result<Vec<Uuid>> 
         ids.push(id);
     }
     Ok(ids)
+}
+
+async fn insert_noise_memories(store: &MemoryStore, count: usize) -> anyhow::Result<()> {
+    for idx in 0..count {
+        let node = build_node(&noise_content(idx), noise_vector(idx + DIM));
+        store.insert(node).await?;
+    }
+    Ok(())
 }
 
 fn reciprocal_rank(rank: Option<usize>) -> f64 {
@@ -157,8 +187,37 @@ fn calc_metrics(ranks: &[Option<usize>]) -> EchoMetrics {
     }
 }
 
+fn percentile_95_ms(samples_ms: &[u128]) -> u128 {
+    if samples_ms.is_empty() {
+        return 0;
+    }
+    let mut values = samples_ms.to_vec();
+    values.sort_unstable();
+    let last = values.len() - 1;
+    let pos = (last * 95) / 100;
+    values[pos]
+}
+
 fn find_rank(results: &[knowwhere_server::storage::ScoredNode], target: Uuid) -> Option<usize> {
     results.iter().position(|r| r.id == target).map(|idx| idx + 1)
+}
+
+async fn run_echo_suite(store: &MemoryStore, ids: &[Uuid]) -> anyhow::Result<(EchoMetrics, Vec<u128>)> {
+    let mut ranks = Vec::new();
+    let mut latencies_ms = Vec::new();
+    for case in ECHO_CASES {
+        for (variant_idx, query_text) in case.queries.iter().enumerate() {
+            let t0 = Instant::now();
+            let results = StorageBackend::hybrid_retrieve(
+                store,
+                &query_for(case, variant_idx, query_text),
+            )
+            .await?;
+            latencies_ms.push(t0.elapsed().as_millis());
+            ranks.push(find_rank(&results, ids[case.topic]));
+        }
+    }
+    Ok((calc_metrics(&ranks), latencies_ms))
 }
 
 #[tokio::test]
@@ -166,25 +225,10 @@ async fn echo_retrieval_quality_baseline() -> anyhow::Result<()> {
     let started = Instant::now();
     let store = MemoryStore::new();
     let ids = insert_echo_memories(&store).await?;
-    let mut ranks = Vec::new();
-
-    for case in ECHO_CASES {
-        for (variant_idx, query_text) in case.queries.iter().enumerate() {
-            let query = HybridQuery {
-                query_text: Some((*query_text).to_string()),
-                query_vector: Some(query_vector(case.topic, variant_idx)),
-                top_k: TOP_K,
-                max_depth: 0,
-                profile: RetrievalProfile::FullFidelity,
-            };
-            let results = StorageBackend::hybrid_retrieve(&store, &query).await?;
-            ranks.push(find_rank(&results, ids[case.topic]));
-        }
-    }
-
-    let metrics = calc_metrics(&ranks);
+    let (metrics, latencies_ms) = run_echo_suite(&store, &ids).await?;
     let elapsed_ms = started.elapsed().as_millis();
-    println!("echo_retrieval_quality metrics={metrics:?} elapsed_ms={elapsed_ms}");
+    let p95_ms = percentile_95_ms(&latencies_ms);
+    println!("echo_retrieval_quality metrics={metrics:?} elapsed_ms={elapsed_ms} p95_ms={p95_ms}");
 
     assert!(
         metrics.precision_at_1 >= 0.70,
@@ -199,5 +243,29 @@ async fn echo_retrieval_quality_baseline() -> anyhow::Result<()> {
         metrics.semantically_robust
     );
 
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "tier-2 regression suite: run manually or scheduled CI"]
+async fn growing_db_retrieval_regression_suite() -> anyhow::Result<()> {
+    for size in GROWING_DB_SIZES {
+        let store = MemoryStore::new();
+        let ids = insert_echo_memories(&store).await?;
+        insert_noise_memories(&store, *size).await?;
+        let (metrics, latencies_ms) = run_echo_suite(&store, &ids).await?;
+        let p95_ms = percentile_95_ms(&latencies_ms);
+        println!("growing_db size={size} metrics={metrics:?} p95_ms={p95_ms}");
+        assert!(metrics.precision_at_1 >= 0.70, "size={size} precision@1 too low");
+        assert!(metrics.recall_at_3 >= 0.85, "size={size} recall@3 too low");
+        assert!(metrics.mrr >= 0.75, "size={size} mrr too low");
+        assert!(
+            metrics.semantically_robust >= 0.80,
+            "size={size} robustness too low"
+        );
+        if *size >= 1000 {
+            assert!(p95_ms < 500, "size={size} p95 too high: {p95_ms}ms");
+        }
+    }
     Ok(())
 }

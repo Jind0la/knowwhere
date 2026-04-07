@@ -2,7 +2,7 @@
 
 **Erstellt:** 2026-03-28
 **Letztes Update:** 2026-04-07
-**Status:** Tier 1 implementiert (Echo-Baseline), Tier 2/3 offen
+**Status:** Tier 1 + Tier 2 implementiert (MemoryStore-Baselines), Tier 3 offen
 
 ---
 
@@ -42,7 +42,7 @@ Tier 1: Echo-Test (dieses Dokument)
 Tier 2: Wachsende-DB Regression Suite
 ├── Was: Recall/Precision bei steigender DB-Größe
 ├── Wann: Wöchentlich oder auf Anfrage
-├── Daten: Echo-Memories + 30 Tage "MilaOS-Logs"
+├── Daten: Echo-Memories + deterministische Noise-Memories (100/500/1000)
 └── Ziel: Skalierungs-Probleme erkennen
 
 Tier 3: Real-World Trace Test
@@ -402,6 +402,12 @@ Die Echo-Baseline ist in den bestehenden CI-`test`-Job eingebunden:
 - Step: `Retrieval quality echo baseline`
 - Kommando: `cargo test --test retrieval_quality`
 
+Die Growing-DB Regression Suite läuft separat (manuell + geplant):
+
+- Workflow: `.github/workflows/retrieval-regression.yml`
+- Trigger: `workflow_dispatch` und wöchentlich per `schedule`
+- Kommando: `cargo test --test retrieval_quality growing_db_retrieval_regression_suite -- --ignored`
+
 Frühere Entwurfs-Variante mit separatem Workflow:
 
 ```yaml
@@ -447,6 +453,20 @@ jobs:
 
 ## 4. Tier 2: Wachsende-DB Regression Suite
 
+### 4.0 Implementierungsstand
+
+Tier 2 ist als eigener ignorierter Integrationstest umgesetzt:
+
+- Testdatei: `tests/retrieval_quality.rs`
+- Testname: `growing_db_retrieval_regression_suite`
+- Datenmengen: `100`, `500`, `1000` Noise-Memories
+- Assertions pro Stufe:
+  - `precision_at_1 >= 0.70`
+  - `recall_at_3 >= 0.85`
+  - `mrr >= 0.75`
+  - `semantically_robust >= 0.80`
+  - bei `1000` Nodes zusätzlich `p95_ms < 500`
+
 ### 4.1 Konzept
 
 ```
@@ -456,7 +476,7 @@ Woche 2:  20 + 500 Mix-Memories → Regression?
 Woche 4:  20 + 1000 Mix-Memories → Regression?
 ```
 
-**Mix-Memories** = Random-generierte "Noise-Memories" die thematisch无关 sind, um realistische DB-Größe zu simulieren.
+**Mix-Memories** = deterministisch erzeugte Noise-Memories, die thematisch unpassend sind, um größere DB-Volumina reproduzierbar zu simulieren.
 
 ### 4.2 Was wir tracken
 
@@ -530,13 +550,8 @@ hermes sessions export 2026-03-27 --format json > tests/fixtures/session-2026-03
 
 ```
 tests/
-├── fixtures/
-│   ├── echo_memories.json    # Der 20-Memory Datensatz
-│   └── milaos_30.json        # Die 30 MilaOS Nodes (existiert bereits?)
-├── integration/
-│   └── retrieval_quality.rs   # Tier 1 Implementation
-└── regression/
-    └── growing_db.rs          # Tier 2 Implementation (optional)
+├── retrieval_quality.rs       # Tier 1 + Tier 2 (deterministische Rust-Fixtures)
+└── integration.rs             # übrige API-/Auth-Integrationstests
 ```
 
 ---
@@ -544,8 +559,8 @@ tests/
 ## 7. Offene Fragen / Nächste Schritte
 
 - [x] **Database-Option:** Tier 1 nutzt jetzt `MemoryStore` als deterministische CI-Baseline; Postgres-Vergleich folgt in Tier 2.
-- [ ] **Mix-Memory-Generator:** Skript das N pseudozufällige Noise-Memories generiert für Tier 2
-- [ ] **Test-Fixture-Struktur:** Soll das Fixture JSON sein oder Rust-Code?
+- [x] **Mix-Memory-Generator:** Für Tier 2 als deterministische Rust-Generatorfunktionen in `tests/retrieval_quality.rs` umgesetzt.
+- [x] **Test-Fixture-Struktur:** Für Tier 1/2 bewusst als Rust-Const + Generatoren umgesetzt (kein separates JSON nötig).
 - [ ] **Recall ohne Ground Truth:** Bei Echo-Memories kennen wir die "richtige" Antwort. Bei echten Daten nicht. Wie definieren wir "gefunden"?
 - [ ] **Persistenz:** Sollen Test-Resultate in eine JSON-Datei geloggt werden für Trends?
 - [x] **Schwellwerte:** Für Tier 1 aktiv gesetzt (`P@1 >= 0.70`, `Recall@3 >= 0.85`, `MRR >= 0.75`, `Robustheit >= 0.80`), werden nach Trenddaten weiter kalibriert.
@@ -557,7 +572,7 @@ tests/
 | Phase | Aufwand | Nutzen | Empfehlung |
 |-------|---------|--------|------------|
 | Tier 1: Echo | ★★☆☆☆ (1-2 Tage) | ★★★★☆ | **Zuerst** — schnell Signal |
-| Tier 2: Growing DB | ★★★☆☆ (3-5 Tage) | ★★★☆☆ | **Danach** — Skalierung validieren |
+| Tier 2: Growing DB | ★★★☆☆ (3-5 Tage) | ★★★☆☆ | **Implementiert** — als ignored Regression Suite + separater Workflow |
 | Tier 3: Real Traces | ★★★★☆ (1+ Woche) | ★★★★★ | **Später** — nur wenn nötig |
 
 ---
