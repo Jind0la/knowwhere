@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
+  authMe,
   clearApiToken,
   dreamStatus,
   embedText,
@@ -16,11 +17,20 @@ import { MemoryStreamPanel } from './components/MemoryStreamPanel';
 import { OverviewPanel } from './components/OverviewPanel';
 import { SearchPanel } from './components/SearchPanel';
 import { SubconsciousChatPanel } from './components/SubconsciousChatPanel';
-import type { DreamStatus as DreamStatusType, Event, FractalNode, HealthResponse, ScoredNode } from './types';
+import type {
+  AuthContext as AuthContextType,
+  DreamStatus as DreamStatusType,
+  Event,
+  FractalNode,
+  HealthResponse,
+  RetrievalProfile,
+  ScoredNode,
+} from './types';
 
 type Tab = 'overview' | 'memories' | 'chat' | 'search' | 'governance';
 
 const TABS: Tab[] = ['overview', 'memories', 'chat', 'search', 'governance'];
+const FALLBACK_PROFILES: RetrievalProfile[] = ['user-facing'];
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('overview');
@@ -34,11 +44,13 @@ export default function App() {
   const [embeddingLoading, setEmbeddingLoading] = useState(false);
   const [overviewLoading, setOverviewLoading] = useState(true);
   const [overviewError, setOverviewError] = useState<string | null>(null);
+  const [authData, setAuthData] = useState<AuthContextType | null>(null);
   const [healthData, setHealthData] = useState<HealthResponse | null>(null);
   const [dreamData, setDreamData] = useState<DreamStatusType | null>(null);
   const [eventsData, setEventsData] = useState<Event[]>([]);
   const [recentData, setRecentData] = useState<FractalNode[]>([]);
   const tokenAvailable = Boolean(getApiToken());
+  const allowedProfiles = authData?.allowed_retrieval_profiles ?? FALLBACK_PROFILES;
 
   const refreshOverview = useCallback(async () => {
     const hasToken = Boolean(getApiToken());
@@ -50,21 +62,28 @@ export default function App() {
       setNodeCount(healthRes.node_count);
       setHealthData(healthRes);
       if (!hasToken) {
+        setAuthData(null);
         setDreamData(null);
         setEventsData([]);
         setRecentData([]);
         console.log('[dashboard] refreshOverview:token-missing');
         return;
       }
-      const [dreamRes, eventsRes, recentRes] = await Promise.all([
+      const [authRes, dreamRes, eventsRes, recentRes] = await Promise.all([
+        authMe(),
         dreamStatus(),
         listEvents({ limit: 20 }),
         recentNodes(20),
       ]);
+      setAuthData(authRes);
       setDreamData(dreamRes);
       setEventsData(eventsRes);
       setRecentData(recentRes);
-      console.log('[dashboard] refreshOverview:done', { nodeCount: healthRes.node_count });
+      console.log('[dashboard] refreshOverview:done', {
+        nodeCount: healthRes.node_count,
+        tokenKind: authRes.token_kind,
+        profiles: authRes.allowed_retrieval_profiles,
+      });
     } catch (err) {
       const message = `Overview-Load fehlgeschlagen: ${String(err)}`;
       console.error('[dashboard] refreshOverview:error', err);
@@ -122,6 +141,7 @@ export default function App() {
     setRecentData([]);
     setResults([]);
     setError(null);
+    setAuthData(null);
     console.log('[dashboard] api token cleared');
   }
 
@@ -186,6 +206,15 @@ export default function App() {
                 Loeschen
               </button>
             </div>
+            {tokenAvailable && !authData && overviewLoading && (
+              <p className="text-xs text-zinc-500">Token-Capabilities werden geladen...</p>
+            )}
+            {authData && (
+              <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 p-3 text-xs text-zinc-400">
+                <p>Token-Typ: {authData.token_kind}</p>
+                <p>Profile: {authData.allowed_retrieval_profiles.join(', ')}</p>
+              </div>
+            )}
           </div>
           <div className="rounded-xl border border-zinc-800 bg-zinc-900/70 p-4">
             <DreamStatus enabled={tokenAvailable} refreshKey={tokenRefreshKey} />
@@ -227,6 +256,7 @@ export default function App() {
                   onResults={handleResults}
                   onError={handleError}
                   embedding={embedding}
+                  availableProfiles={allowedProfiles}
                   tokenRequired={!tokenAvailable}
                 />
                 <div className="rounded-xl border border-zinc-800 bg-zinc-950/50">
@@ -234,7 +264,12 @@ export default function App() {
                 </div>
               </div>
             )}
-            {tab === 'chat' && <SubconsciousChatPanel tokenRequired={!tokenAvailable} />}
+            {tab === 'chat' && (
+              <SubconsciousChatPanel
+                availableProfiles={allowedProfiles}
+                tokenRequired={!tokenAvailable}
+              />
+            )}
             {tab === 'governance' && <GovernancePanel />}
           </section>
         </main>

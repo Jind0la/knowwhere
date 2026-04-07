@@ -160,6 +160,18 @@ impl FractalNode {
         })
     }
 
+    fn has_explicit_visibility_metadata(&self) -> bool {
+        self.metadata.contains_key(Self::ROLE_KEY)
+            || self.metadata.contains_key(Self::DERIVATION_KEY)
+            || self.metadata.contains_key(Self::RETRIEVAL_VISIBILITY_KEY)
+    }
+
+    fn is_legacy_chat_artifact(&self) -> bool {
+        self.source == MemorySource::Conversation
+            && !self.has_explicit_visibility_metadata()
+            && self.content_prefix_matches(&["USER:", "ASSISTANT:", "AI:"])
+    }
+
     fn is_imported_artifact(&self) -> bool {
         self.source == MemorySource::Import
             || self.metadata.contains_key("imported_from")
@@ -203,7 +215,7 @@ impl FractalNode {
                     "agent_transcript",
                 ],
             )
-            || self.content_prefix_matches(&["USER:", "ASSISTANT:", "AI:"])
+            || self.is_legacy_chat_artifact()
     }
 
     pub fn explicit_trust_weight(&self) -> Option<f32> {

@@ -1,6 +1,6 @@
 use utoipa::OpenApi;
 
-use crate::api::routes;
+use crate::api::{auth, routes};
 use crate::memory::dream::DreamStatus;
 use crate::memory::types::{MemorySource, MemoryType};
 use crate::memory::{FractalNode, Relation};
@@ -22,6 +22,7 @@ mod conditional_schemas {
         info(title = "KnowWhere API", version = "0.1.0"),
         paths(
             routes::health,
+            auth::me,
             routes::embed_text,
             routes::store_session,
             routes::store_external,
@@ -42,6 +43,8 @@ mod conditional_schemas {
         ),
         components(schemas(
             routes::HealthResponse,
+            auth::AuthContext,
+            auth::AuthTokenKind,
             routes::EmbedRequest,
             routes::EmbedResponse,
             routes::StoreSessionRequest,
@@ -81,6 +84,7 @@ mod conditional_schemas {
         info(title = "KnowWhere API", version = "0.1.0"),
         paths(
             routes::health,
+            auth::me,
             routes::embed_text,
             routes::store_session,
             routes::store_external,
@@ -130,6 +134,8 @@ mod conditional_schemas {
         ),
         components(schemas(
             routes::HealthResponse,
+            auth::AuthContext,
+            auth::AuthTokenKind,
             routes::EmbedRequest,
             routes::EmbedResponse,
             routes::StoreSessionRequest,

@@ -215,6 +215,7 @@ async fn run() -> anyhow::Result<()> {
     };
 
     let protected = Router::new()
+        .route("/auth/me", get(auth::me))
         .route("/embed", post(routes::embed_text))
         .route("/store_session", post(routes::store_session))
         .route("/store_external", post(routes::store_external))

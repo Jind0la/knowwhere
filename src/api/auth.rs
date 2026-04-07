@@ -13,11 +13,14 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use utoipa::ToSchema;
+use uuid::Uuid;
 
 #[cfg(feature = "postgres-storage")]
 use crate::storage::postgres_store::stored_api_key_fingerprint;
 #[cfg(feature = "postgres-storage")]
 use crate::storage::PostgresStore;
+use crate::storage::RetrievalProfile;
 
 /// Shared state for API key validation.
 #[derive(Clone)]
@@ -37,6 +40,55 @@ impl Default for AuthState {
             pg_store: None,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, ToSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum AuthTokenKind {
+    Admin,
+    User,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct AuthContext {
+    pub token_kind: AuthTokenKind,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_id: Option<Uuid>,
+    pub allowed_retrieval_profiles: Vec<RetrievalProfile>,
+}
+
+impl AuthContext {
+    pub fn full_access() -> Self {
+        Self {
+            token_kind: AuthTokenKind::Admin,
+            user_id: None,
+            allowed_retrieval_profiles: admin_retrieval_profiles(),
+        }
+    }
+
+    pub fn user_access(user_id: Option<Uuid>) -> Self {
+        Self {
+            token_kind: AuthTokenKind::User,
+            user_id,
+            allowed_retrieval_profiles: user_retrieval_profiles(),
+        }
+    }
+
+    pub fn allows_profile(&self, profile: RetrievalProfile) -> bool {
+        self.allowed_retrieval_profiles.contains(&profile)
+    }
+}
+
+fn admin_retrieval_profiles() -> Vec<RetrievalProfile> {
+    vec![
+        RetrievalProfile::UserFacing,
+        RetrievalProfile::AgentDebug,
+        RetrievalProfile::FullFidelity,
+    ]
+}
+
+fn user_retrieval_profiles() -> Vec<RetrievalProfile> {
+    vec![RetrievalProfile::UserFacing]
 }
 
 /// Generate a stable API key: `kw_` + base64(random_bytes(24))
@@ -315,63 +367,77 @@ pub async fn refresh(
     Err(StatusCode::SERVICE_UNAVAILABLE)
 }
 
+#[utoipa::path(
+    get,
+    path = "/auth/me",
+    tag = "auth",
+    responses(
+        (status = 200, description = "Current token capabilities", body = AuthContext),
+        (status = 401, description = "Unauthorized", body = String)
+    )
+)]
+pub async fn me(Extension(context): Extension<AuthContext>) -> Json<AuthContext> {
+    Json(context)
+}
+
 // ---------------------------------------------------------------------------
 // Auth middleware
 // ---------------------------------------------------------------------------
+
+fn bearer_token(request: &Request) -> Option<&str> {
+    request
+        .headers()
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|h| h.strip_prefix("Bearer "))
+}
+
+async fn admin_context(state: &AuthState, token: &str) -> Option<AuthContext> {
+    let admin_key = state.admin_key.read().await;
+    admin_key
+        .as_deref()
+        .filter(|expected| !expected.is_empty() && secure_compare(token, expected))
+        .map(|_| AuthContext::full_access())
+}
+
+#[cfg(feature = "postgres-storage")]
+async fn pg_context(state: &AuthState, token: &str) -> Option<AuthContext> {
+    let pg_store = state.pg_store.as_ref()?;
+    match pg_store
+        .find_api_key_by_plaintext(token)
+        .await
+        .ok()
+        .flatten()
+    {
+        Some(row) => {
+            let _ = pg_store.record_api_key_usage(row.id).await;
+            tracing::debug!(user_id = %row.user_id, "api key authenticated via PG");
+            Some(AuthContext::user_access(Some(row.user_id)))
+        }
+        None => None,
+    }
+}
+
+async fn run_with_context(mut request: Request, next: Next, context: AuthContext) -> Response {
+    request.extensions_mut().insert(context);
+    next.run(request).await
+}
 
 pub async fn auth_middleware(
     Extension(state): Extension<AuthState>,
     request: Request,
     next: Next,
 ) -> Result<Response, StatusCode> {
-    // Step 1: Check static admin key (KNOWWHERE_API_KEY env var — backward compat)
-    {
-        let admin_key = state.admin_key.read().await;
-        if let Some(expected) = &*admin_key {
-            if !expected.is_empty() {
-                let token = request
-                    .headers()
-                    .get("authorization")
-                    .and_then(|v| v.to_str().ok())
-                    .and_then(|h| h.strip_prefix("Bearer "));
-                if let Some(t) = token {
-                    if secure_compare(t, expected) {
-                        return Ok(next.run(request).await);
-                    }
-                }
-            }
-        }
+    let Some(token) = bearer_token(&request) else {
+        return Err(StatusCode::UNAUTHORIZED);
+    };
+    if let Some(context) = admin_context(&state, token).await {
+        return Ok(run_with_context(request, next, context).await);
     }
-
-    // Step 2: Check PG-backed API keys (only available with postgres-storage)
     #[cfg(feature = "postgres-storage")]
-    {
-        if let Some(ref pg_store) = state.pg_store {
-            let token = request
-                .headers()
-                .get("authorization")
-                .and_then(|v| v.to_str().ok())
-                .and_then(|h| h.strip_prefix("Bearer "));
-
-            if let Some(t) = token {
-                match pg_store.find_api_key_by_plaintext(t).await {
-                    Ok(Some(row)) => {
-                        let _ = pg_store.record_api_key_usage(row.id).await;
-                        tracing::debug!(user_id = %row.user_id, "api key authenticated via PG");
-                        return Ok(next.run(request).await);
-                    }
-                    Ok(None) => {
-                        tracing::debug!("api key not found in PG");
-                    }
-                    Err(e) => {
-                        tracing::error!("PG api_key lookup failed: {e}");
-                    }
-                }
-            }
-        }
+    if let Some(context) = pg_context(&state, token).await {
+        return Ok(run_with_context(request, next, context).await);
     }
-
-    // Auth disabled AND no valid PG key → reject
     Err(StatusCode::UNAUTHORIZED)
 }
 

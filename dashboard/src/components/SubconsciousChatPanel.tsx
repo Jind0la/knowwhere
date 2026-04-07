@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { subconsciousChat } from '../api/knowwhere';
 import type { RetrievalProfile, SubconsciousSource } from '../types';
 
@@ -12,24 +12,29 @@ interface ChatMessage {
 }
 
 interface SubconsciousChatPanelProps {
+  availableProfiles?: RetrievalProfile[];
   tokenRequired?: boolean;
 }
 
-const PROFILE_OPTIONS: RetrievalProfile[] = ['user-facing', 'agent-debug', 'full-fidelity'];
+const DEFAULT_PROFILES: RetrievalProfile[] = ['user-facing'];
 
 function nowId() {
   return `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
 }
 
 function clip(value: string) {
-  return value.length > 180 ? `${value.slice(0, 180)}...` : value;
+  const chars = Array.from(value);
+  return chars.length > 180 ? `${chars.slice(0, 180).join('')}...` : value;
 }
 
 function addMessage(list: ChatMessage[], next: ChatMessage) {
   return [...list, next];
 }
 
-export function SubconsciousChatPanel({ tokenRequired = false }: SubconsciousChatPanelProps) {
+export function SubconsciousChatPanel({
+  availableProfiles = DEFAULT_PROFILES,
+  tokenRequired = false,
+}: SubconsciousChatPanelProps) {
   const [input, setInput] = useState('');
   const [saving, setSaving] = useState(false);
   const [profile, setProfile] = useState<RetrievalProfile>('user-facing');
@@ -37,6 +42,12 @@ export function SubconsciousChatPanel({ tokenRequired = false }: SubconsciousCha
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+
+  useEffect(() => {
+    if (!availableProfiles.includes(profile)) {
+      setProfile(availableProfiles[0] ?? 'user-facing');
+    }
+  }, [availableProfiles, profile]);
 
   if (tokenRequired) {
     return (
@@ -142,7 +153,7 @@ export function SubconsciousChatPanel({ tokenRequired = false }: SubconsciousCha
           </label>
         </div>
         <div className="flex flex-wrap gap-2">
-          {PROFILE_OPTIONS.map((entry) => (
+          {availableProfiles.map((entry) => (
             <button
               key={entry}
               type="button"
@@ -155,6 +166,9 @@ export function SubconsciousChatPanel({ tokenRequired = false }: SubconsciousCha
             </button>
           ))}
         </div>
+        <p className="text-xs text-zinc-500">
+          Erlaubte Profile laut Token: {availableProfiles.join(', ')}
+        </p>
         <p className="text-xs text-zinc-500">
           Standardmaessig aus, damit Chat-Fragen und Antwortkompositionen nicht versehentlich spaetere Retrievals verunreinigen.
         </p>

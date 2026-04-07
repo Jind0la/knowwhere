@@ -43,11 +43,14 @@ fn embedding_provider() -> Arc<dyn EmbeddingProvider> {
     Arc::new(LocalOllamaProvider::new())
 }
 
-fn test_state() -> routes::AppState {
+fn fixed_embedding_provider(dim: usize) -> Arc<dyn EmbeddingProvider> {
+    Arc::new(FixedEmbeddingProvider { dim })
+}
+
+fn test_state_with_embedding(embedding: Arc<dyn EmbeddingProvider>) -> routes::AppState {
     let store: Arc<dyn knowwhere_server::storage::StorageBackend> = Arc::new(MemoryStore::new());
     let dream_store = store.clone();
     let dream = DreamMode::new(dream_store.clone());
-    let embedding = embedding_provider();
     routes::AppState {
         store: store.clone(),
         dream_store,
@@ -62,6 +65,10 @@ fn test_state() -> routes::AppState {
         frigate_dedup: DedupCache::new(),
         frigate_webhook_secret: std::env::var("FRIGATE_WEBHOOK_SECRET").ok(),
     }
+}
+
+fn test_state() -> routes::AppState {
+    test_state_with_embedding(embedding_provider())
 }
 
 fn app_without_auth() -> Router {
@@ -93,6 +100,7 @@ fn app_with_auth(key: &str) -> Router {
     };
 
     let protected = Router::new()
+        .route("/auth/me", get(auth::me))
         .route("/embed", post(routes::embed_text))
         .route("/store_session", post(routes::store_session))
         .route("/store_external", post(routes::store_external))
@@ -108,6 +116,35 @@ fn app_with_auth(key: &str) -> Router {
         .route("/health", get(routes::health))
         .merge(protected)
         .with_state(state)
+}
+
+async fn limited_auth_middleware(
+    mut request: axum::extract::Request,
+    next: middleware::Next,
+) -> Result<axum::response::Response, StatusCode> {
+    let token = request
+        .headers()
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|h| h.strip_prefix("Bearer "));
+    if token != Some("limited-key") {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+    request
+        .extensions_mut()
+        .insert(auth::AuthContext::user_access(None));
+    Ok(next.run(request).await)
+}
+
+fn app_with_limited_auth() -> Router {
+    let state = test_state_with_embedding(fixed_embedding_provider(4));
+    let protected = Router::new()
+        .route("/auth/me", get(auth::me))
+        .route("/store_session", post(routes::store_session))
+        .route("/retrieve_fractal", post(routes::retrieve_fractal))
+        .route("/chat/subconscious", post(routes::subconscious_chat))
+        .route_layer(middleware::from_fn(limited_auth_middleware));
+    Router::new().merge(protected).with_state(state)
 }
 
 async fn body_string(body: Body) -> String {
@@ -198,6 +235,44 @@ async fn auth_rejects_wrong_token() {
 }
 
 #[tokio::test]
+async fn auth_me_reports_full_retrieval_capabilities_for_admin_token() {
+    let app = app_with_auth("test-key");
+    let resp = app
+        .oneshot(
+            Request::get("/auth/me")
+                .header("authorization", "Bearer test-key")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = body_string(resp.into_body()).await;
+    assert!(body.contains("\"token_kind\":\"admin\""));
+    assert!(body.contains("\"full-fidelity\""));
+    assert!(body.contains("\"agent-debug\""));
+}
+
+#[tokio::test]
+async fn auth_me_reports_user_facing_capabilities_for_limited_token() {
+    let app = app_with_limited_auth();
+    let resp = app
+        .oneshot(
+            Request::get("/auth/me")
+                .header("authorization", "Bearer limited-key")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = body_string(resp.into_body()).await;
+    assert!(body.contains("\"token_kind\":\"user\""));
+    assert!(body.contains("\"user-facing\""));
+    assert!(!body.contains("\"full-fidelity\""));
+}
+
+#[tokio::test]
 async fn memory_store_repairs_legacy_embedding_dimensions() {
     let store = MemoryStore::new();
     let legacy_id = store
@@ -279,6 +354,46 @@ async fn subconscious_chat_accepts_api_token_and_returns_sources() {
         .unwrap()
         .contains("Memory-Kontext"));
     assert!(!payload["sources"].as_array().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn retrieve_fractal_forbids_full_fidelity_for_user_token() {
+    let app = app_with_limited_auth();
+    let resp = app
+        .oneshot(
+            Request::post("/retrieve_fractal")
+                .header("authorization", "Bearer limited-key")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"query_vector":[1,1,1,1],"top_k":5,"max_depth":0,"governance_enabled":false,"retrieval_profile":"full-fidelity"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    let body = body_string(resp.into_body()).await;
+    assert!(body.contains("not allowed"));
+}
+
+#[tokio::test]
+async fn subconscious_chat_forbids_full_fidelity_for_user_token() {
+    let app = app_with_limited_auth();
+    let resp = app
+        .oneshot(
+            Request::post("/chat/subconscious")
+                .header("authorization", "Bearer limited-key")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"message":"Woran arbeite ich?","persist":false,"retrieval_profile":"full-fidelity"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    let body = body_string(resp.into_body()).await;
+    assert!(body.contains("not allowed"));
 }
 
 #[tokio::test]
@@ -582,6 +697,78 @@ async fn retrieve_fractal_hides_internal_assistant_artifacts() {
     assert!(!body.contains("USER: Welche Dashboard-Aenderungen"));
     assert!(!body.contains("ASSISTANT:"));
     assert!(body.contains("Dashboard hat einen stabilen API-Token-Flow"));
+}
+
+#[tokio::test]
+async fn retrieve_fractal_keeps_imported_user_prefix_content_visible() {
+    let app = app_without_auth();
+    let _ = app
+        .clone()
+        .oneshot(
+            Request::post("/store_session")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"content":"USER: Importierter Verlaufseintrag aus OpenClaw","source":"import","memory_type":"semantic","vector":[1,1,1,1],"metadata":{"import_type":"custom_import","imported_from":"~/.openclaw/history.json"}}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let resp = app
+        .oneshot(
+            Request::post("/retrieve_fractal")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"query_vector":[1,1,1,1],"top_k":5,"max_depth":0,"governance_enabled":false,"retrieval_profile":"user-facing"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = body_string(resp.into_body()).await;
+    assert!(body.contains("USER: Importierter Verlaufseintrag aus OpenClaw"));
+}
+
+#[tokio::test]
+async fn subconscious_chat_truncates_utf8_snippets_without_panicking() {
+    let app = app_with_limited_auth();
+    let long_content = format!("{} Ende", "Übergrößenträger🙂".repeat(24));
+    let payload = serde_json::json!({
+        "content": long_content,
+        "memory_type": "episodic"
+    });
+    let _ = app
+        .clone()
+        .oneshot(
+            Request::post("/store_session")
+                .header("authorization", "Bearer limited-key")
+                .header("content-type", "application/json")
+                .body(Body::from(payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let resp = app
+        .oneshot(
+            Request::post("/chat/subconscious")
+                .header("authorization", "Bearer limited-key")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"message":"Woran denke ich?","persist":false}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = body_string(resp.into_body()).await;
+    let payload = serde_json::from_str::<serde_json::Value>(&body).unwrap();
+    let snippet = payload["sources"][0]["snippet"].as_str().unwrap();
+    assert!(snippet.contains("Über"));
+    assert!(snippet.ends_with("..."));
 }
 
 #[tokio::test]

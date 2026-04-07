@@ -6,6 +6,7 @@
  */
 
 import type {
+  AuthContext,
   DreamStatus,
   Event,
   FractalNode,
@@ -73,6 +74,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export async function health(): Promise<HealthResponse> {
   return request<HealthResponse>('/health');
+}
+
+export async function authMe(): Promise<AuthContext> {
+  return request<AuthContext>('/auth/me');
 }
 
 // ---------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { retrieveFractal, storeSession } from '../api/knowwhere';
 import type { MemoryType, RetrievalProfile, ScoredNode } from '../types';
 
@@ -6,6 +6,7 @@ interface SearchPanelProps {
   onResults: (nodes: ScoredNode[]) => void;
   onError: (msg: string) => void;
   embedding: number[] | null;
+  availableProfiles?: RetrievalProfile[];
   tokenRequired?: boolean;
 }
 
@@ -17,9 +18,15 @@ const MEMORY_TYPES: MemoryType[] = [
   'meta',
 ];
 
-const PROFILE_OPTIONS: RetrievalProfile[] = ['user-facing', 'agent-debug', 'full-fidelity'];
+const DEFAULT_PROFILES: RetrievalProfile[] = ['user-facing'];
 
-export function SearchPanel({ onResults, onError, embedding, tokenRequired = false }: SearchPanelProps) {
+export function SearchPanel({
+  onResults,
+  onError,
+  embedding,
+  availableProfiles = DEFAULT_PROFILES,
+  tokenRequired = false,
+}: SearchPanelProps) {
   const [queryText, setQueryText] = useState('');
   const [topK, setTopK] = useState(5);
   const [maxDepth, setMaxDepth] = useState(3);
@@ -32,6 +39,12 @@ export function SearchPanel({ onResults, onError, embedding, tokenRequired = fal
   const [storeContent, setStoreContent] = useState('');
   const [storeType, setStoreType] = useState<MemoryType>('episodic');
   const [storing, setStoring] = useState(false);
+
+  useEffect(() => {
+    if (!availableProfiles.includes(profile)) {
+      setProfile(availableProfiles[0] ?? 'user-facing');
+    }
+  }, [availableProfiles, profile]);
 
   if (tokenRequired) {
     return (
@@ -152,7 +165,7 @@ export function SearchPanel({ onResults, onError, embedding, tokenRequired = fal
 
         <div className="flex flex-wrap gap-2">
           <span className="text-xs text-gray-500 pt-1">Profil:</span>
-          {PROFILE_OPTIONS.map((entry) => (
+          {availableProfiles.map((entry) => (
             <button
               key={entry}
               type="button"
@@ -167,6 +180,9 @@ export function SearchPanel({ onResults, onError, embedding, tokenRequired = fal
             </button>
           ))}
         </div>
+        <p className="text-xs text-gray-500">
+          Erlaubte Profile laut Token: {availableProfiles.join(', ')}
+        </p>
 
         <div className="flex flex-wrap gap-2">
           <span className="text-xs text-gray-500 pt-1">Filter:</span>

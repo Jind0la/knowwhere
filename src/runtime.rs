@@ -70,6 +70,93 @@ pub async fn init_store() -> anyhow::Result<Arc<dyn StorageBackend>> {
     Ok(memory_store_from_data_dir())
 }
 
+/// When set, overrides automatic embedding selection (API keys, defaults).
+/// `ollama` / `local` → always [`LocalOllamaProvider`] (useful when the shell/IDE exports cloud keys but you want local dev).
+/// `grok` / `xai` → Grok if `grok-provider` feature + `GROK_API_KEY`; else Ollama with a warning.
+/// `openai` → OpenAI if `openai-provider` feature + `OPENAI_API_KEY`; else Ollama with a warning.
+pub const EMBEDDING_PROVIDER_ENV: &str = "KNOWWHERE_EMBEDDING_PROVIDER";
+
+fn local_ollama_provider_with_log(reason: &'static str) -> Arc<dyn EmbeddingProvider> {
+    let model = std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "nomic-embed-text-v2-moe".into());
+    tracing::info!(model, %reason, "embedding provider: local Ollama");
+    Arc::new(LocalOllamaProvider::new())
+}
+
+fn embedding_provider_from_env_override() -> Option<Arc<dyn EmbeddingProvider>> {
+    let raw = std::env::var(EMBEDDING_PROVIDER_ENV).ok()?;
+    let p = raw.trim().to_ascii_lowercase();
+    match p.as_str() {
+        "" => None,
+        "ollama" | "local" => Some(local_ollama_provider_with_log("KNOWWHERE_EMBEDDING_PROVIDER")),
+        "grok" | "xai" => {
+            #[cfg(feature = "grok-provider")]
+            {
+                match std::env::var("GROK_API_KEY") {
+                    Ok(key) => {
+                        tracing::info!(
+                            env = EMBEDDING_PROVIDER_ENV,
+                            "using Grok embedding provider (forced)"
+                        );
+                        Some(create_provider(ProviderKind::Grok, Some(key)))
+                    }
+                    Err(_) => {
+                        tracing::warn!(
+                            env = EMBEDDING_PROVIDER_ENV,
+                            "set to grok but GROK_API_KEY missing — using Ollama"
+                        );
+                        Some(local_ollama_provider_with_log("forced grok, no key"))
+                    }
+                }
+            }
+            #[cfg(not(feature = "grok-provider"))]
+            {
+                tracing::warn!(
+                    env = EMBEDDING_PROVIDER_ENV,
+                    "set to grok but grok-provider feature disabled — using Ollama"
+                );
+                Some(local_ollama_provider_with_log("grok feature off"))
+            }
+        }
+        "openai" => {
+            #[cfg(feature = "openai-provider")]
+            {
+                match std::env::var("OPENAI_API_KEY") {
+                    Ok(key) => {
+                        tracing::info!(
+                            env = EMBEDDING_PROVIDER_ENV,
+                            "using OpenAI embedding provider (forced)"
+                        );
+                        Some(create_provider(ProviderKind::OpenAI, Some(key)))
+                    }
+                    Err(_) => {
+                        tracing::warn!(
+                            env = EMBEDDING_PROVIDER_ENV,
+                            "set to openai but OPENAI_API_KEY missing — using Ollama"
+                        );
+                        Some(local_ollama_provider_with_log("forced openai, no key"))
+                    }
+                }
+            }
+            #[cfg(not(feature = "openai-provider"))]
+            {
+                tracing::warn!(
+                    env = EMBEDDING_PROVIDER_ENV,
+                    "set to openai but openai-provider feature disabled — using Ollama"
+                );
+                Some(local_ollama_provider_with_log("openai feature off"))
+            }
+        }
+        other => {
+            tracing::warn!(
+                env = EMBEDDING_PROVIDER_ENV,
+                value = other,
+                "unknown value; using automatic selection"
+            );
+            None
+        }
+    }
+}
+
 #[cfg(feature = "postgres-storage")]
 pub async fn init_trajectory_pool() -> Option<Arc<sqlx::PgPool>> {
     if let Ok(database_url) = std::env::var("DATABASE_URL") {
@@ -96,6 +183,9 @@ pub async fn init_trajectory_pool() -> Option<Arc<sqlx::PgPool>> {
 }
 
 pub fn init_embedding_provider() -> Arc<dyn EmbeddingProvider> {
+    if let Some(provider) = embedding_provider_from_env_override() {
+        return provider;
+    }
     if let Ok(key) = std::env::var("GROK_API_KEY") {
         #[cfg(feature = "grok-provider")]
         {

@@ -758,12 +758,12 @@ impl MemoryStore {
         // Note: trajectory logging is now done inside retrieve_fractal
 
         let vector_ids: Vec<Uuid> = vector_results.iter().map(|n| n.id).collect();
-        eprintln!("DEBUG hybrid: vector_results={}", vector_ids.len());
+        tracing::debug!(count = vector_ids.len(), "hybrid: vector candidates");
 
         let bm25_results = match query_text {
             Some(q) if !q.is_empty() => {
                 let r = self.search_bm25(q, top_k * 2).await;
-                eprintln!("DEBUG hybrid: bm25_results={}", r.len());
+                tracing::debug!(count = r.len(), "hybrid: bm25 candidates");
                 r
             }
             _ => vec![],

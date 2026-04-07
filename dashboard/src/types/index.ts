@@ -16,6 +16,7 @@ export type MemorySource =
   | 'consolidation';
 
 export type RetrievalProfile = 'user-facing' | 'agent-debug' | 'full-fidelity';
+export type AuthTokenKind = 'admin' | 'user';
 
 // ---------------------------------------------------------------------------
 // Core Types
@@ -130,6 +131,12 @@ export interface Event {
   event_type: string;
   payload: Record<string, unknown>;
   created_at: string;
+}
+
+export interface AuthContext {
+  token_kind: AuthTokenKind;
+  user_id?: string;
+  allowed_retrieval_profiles: RetrievalProfile[];
 }
 
 // ---------------------------------------------------------------------------

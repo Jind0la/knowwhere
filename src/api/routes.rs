@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use axum::extract::{Path, State};
+use axum::extract::{Extension, Path, State};
 use axum::http::StatusCode;
 use axum::Json;
 use serde::{Deserialize, Serialize};
@@ -10,6 +10,7 @@ use tokio::sync::RwLock;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
+use crate::api::auth::AuthContext;
 use crate::api::webhooks::{check_webhook_secret, DedupCache};
 use crate::embedding::{embed_document, embed_query, EmbeddingProvider};
 use crate::memory::dream::DreamStatus;
@@ -460,7 +461,7 @@ fn default_trust_tier(
     }
 }
 
-fn normalize_session_metadata(
+fn normalize_node_metadata(
     memory_type: MemoryType,
     source: MemorySource,
     metadata: &mut HashMap<String, Value>,
@@ -481,6 +482,36 @@ fn normalize_session_metadata(
     metadata
         .entry(FractalNode::TRUST_TIER_KEY.to_string())
         .or_insert_with(|| Value::String(trust_tier.to_string()));
+}
+
+fn auth_context_or_full_access(auth: Option<Extension<AuthContext>>) -> AuthContext {
+    auth.map(|Extension(context)| context)
+        .unwrap_or_else(AuthContext::full_access)
+}
+
+fn allowed_profiles_list(auth: &AuthContext) -> String {
+    auth.allowed_retrieval_profiles
+        .iter()
+        .map(|profile| profile.as_str())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn ensure_retrieval_profile_allowed(
+    profile: RetrievalProfile,
+    auth: &AuthContext,
+) -> Result<(), (StatusCode, String)> {
+    if auth.allows_profile(profile) {
+        return Ok(());
+    }
+    Err((
+        StatusCode::FORBIDDEN,
+        format!(
+            "retrieval profile '{}' not allowed for this token; allowed: {}",
+            profile.as_str(),
+            allowed_profiles_list(auth)
+        ),
+    ))
 }
 
 #[derive(Serialize, ToSchema)]
@@ -551,7 +582,7 @@ pub async fn store_session(
     let source = MemorySource::parse(&req.source).unwrap_or(MemorySource::Conversation);
 
     let mut metadata = req.metadata;
-    normalize_session_metadata(memory_type, source, &mut metadata);
+    normalize_node_metadata(memory_type, source, &mut metadata);
     let mut node = FractalNode::new_typed(
         Some(req.content),
         None,
@@ -665,11 +696,13 @@ pub async fn store_external(
     let memory_type = MemoryType::parse(&req.memory_type).unwrap_or(MemoryType::Semantic);
     let source = MemorySource::parse(&req.source).unwrap_or(MemorySource::Import);
 
+    let mut metadata = req.metadata;
+    normalize_node_metadata(memory_type, source, &mut metadata);
     let mut node = FractalNode::new_typed(
         None,
         Some(req.pointer.clone()),
         vector,
-        req.metadata,
+        metadata,
         memory_type,
         source,
     );
@@ -813,17 +846,20 @@ pub struct SubconsciousChatResponse {
     pub stored: bool,
 }
 
+fn truncate_chars(value: &str, max_chars: usize) -> String {
+    match value.char_indices().nth(max_chars) {
+        Some((idx, _)) => format!("{}...", &value[..idx]),
+        None => value.to_string(),
+    }
+}
+
 fn source_snippet(node: &FractalNode) -> String {
     let raw = node
         .content
         .as_deref()
         .or(node.original_pointer.as_deref())
         .unwrap_or("(no content)");
-    if raw.len() > 180 {
-        format!("{}...", &raw[..180])
-    } else {
-        raw.to_string()
-    }
+    truncate_chars(raw, 180)
 }
 
 fn chat_persist_metadata(role: &str, derivation: &str) -> HashMap<String, Value> {
@@ -912,8 +948,11 @@ async fn persist_chat_exchange(
 )]
 pub async fn subconscious_chat(
     State(state): State<AppState>,
+    auth: Option<Extension<AuthContext>>,
     Json(req): Json<SubconsciousChatRequest>,
 ) -> Result<Json<SubconsciousChatResponse>, (StatusCode, String)> {
+    let auth = auth_context_or_full_access(auth);
+    ensure_retrieval_profile_allowed(req.retrieval_profile, &auth)?;
     if req.message.trim().is_empty() {
         return Err((StatusCode::BAD_REQUEST, "message must not be empty".into()));
     }
@@ -1000,8 +1039,11 @@ pub async fn subconscious_chat(
 )]
 pub async fn retrieve_fractal(
     State(state): State<AppState>,
+    auth: Option<Extension<AuthContext>>,
     Json(req): Json<RetrieveFractalRequest>,
-) -> Result<Json<Vec<ScoredNode>>, StatusCode> {
+) -> Result<Json<Vec<ScoredNode>>, (StatusCode, String)> {
+    let auth = auth_context_or_full_access(auth);
+    ensure_retrieval_profile_allowed(req.retrieval_profile, &auth)?;
     tracing::info!(
         top_k = req.top_k,
         max_depth = req.max_depth,
@@ -1018,15 +1060,21 @@ pub async fn retrieve_fractal(
         None => {
             if let Some(text) = &req.query_text {
                 if text.trim().is_empty() {
-                    return Err(StatusCode::BAD_REQUEST);
+                    return Err((
+                        StatusCode::BAD_REQUEST,
+                        "query_text must not be empty".into(),
+                    ));
                 }
                 tracing::info!(query_text = %text, "embedding query text");
                 state.embedding.embed(text).await.map_err(|e| {
                     tracing::error!("embedding failed: {}", e);
-                    StatusCode::INTERNAL_SERVER_ERROR
+                    (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
                 })?
             } else {
-                return Err(StatusCode::BAD_REQUEST);
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    "query_text or query_vector required".into(),
+                ));
             }
         }
     };
@@ -1045,7 +1093,7 @@ pub async fn retrieve_fractal(
     };
     let results = state.store.hybrid_retrieve(&query).await.map_err(|e| {
         tracing::error!("hybrid_retrieve failed: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
+        (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
     })?;
 
     // Apply max_tier filter: only include nodes at or below max_tier
