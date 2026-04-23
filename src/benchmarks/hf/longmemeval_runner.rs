@@ -86,7 +86,6 @@ async fn store_session(
     };
     let payload = json!({
         "content": content,
-        "vector": deterministic_vector(&vector_seed, 64),
         "metadata": {
             "benchmark": "longmemeval_canary",
             "run_id": run_id,
@@ -117,10 +116,8 @@ async fn retrieve(
     run_id: &str,
     case: &LongMemEvalCase,
 ) -> Result<Vec<Value>> {
-    let seed = format!("{run_id}::{}", case.evidence_text);
     let payload = json!({
-        "query_vector": deterministic_vector(&seed, 64),
-        "query_text": null,
+        "query_text": case.question,
         "top_k": cfg.top_k,
         "max_depth": 2,
         "governance_enabled": true,
