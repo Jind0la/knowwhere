@@ -47,5 +47,17 @@ postgres-storage = []
 openai-provider = []
 grok-provider = []
 
+[[bin]]
+name = "longmemeval_canary"
+path = "src/bin/longmemeval_canary.rs"
+
+[[bin]]
+name = "longmemeval_retrieval_eval"
+path = "src/bin/longmemeval_retrieval_eval.rs"
+
+[[bin]]
+name = "longmemeval_qa_eval"
+path = "src/bin/longmemeval_qa_eval.rs"
+
 [dev-dependencies]
 http-body-util = "0.1"
