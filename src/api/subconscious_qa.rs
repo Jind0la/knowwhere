@@ -323,13 +323,20 @@ pub(crate) async fn openai_qa_answer(
     let api_key = std::env::var("OPENAI_API_KEY")?;
     let model = std::env::var("KNOWWHERE_CHAT_MODEL").unwrap_or_else(|_| "gpt-4o".to_string());
     let max_tokens = qa_max_output_tokens(message, question_type);
+    let timeout_secs: u64 = std::env::var("KNOWWHERE_QA_TIMEOUT_SECS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(30);
     let payload = serde_json::json!({
         "model": model,
         "messages": [{"role":"user","content": qa_prompt(message, question_type, question_date, contexts)}],
         "temperature": 0.0,
         "max_tokens": max_tokens
     });
-    let response: serde_json::Value = reqwest::Client::new()
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(timeout_secs))
+        .build()?;
+    let response: serde_json::Value = client
         .post("https://api.openai.com/v1/chat/completions")
         .bearer_auth(api_key)
         .json(&payload)

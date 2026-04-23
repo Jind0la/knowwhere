@@ -38,5 +38,9 @@ Thumbs.db
 benchmarks/hf/third_party/longmemeval/data/longmemeval_s_cleaned.json
 benchmarks/hf/third_party/longmemeval/.venv/
 
+# LongMemEval dataset downloads (fetched by scripts)
+benchmarks/hf/fixtures/*.json
+!benchmarks/hf/fixtures/*.md
+
 # Docker
 docker-compose.override.yml
