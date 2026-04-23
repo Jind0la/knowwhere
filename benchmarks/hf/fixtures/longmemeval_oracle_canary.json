@@ -1,0 +1,35 @@
+[
+  {
+    "question_id": "kw_lme_001",
+    "question": "Welche Retrieval-Techniken verwendet KnowWhere?",
+    "gold_answer": "USearch and BM25",
+    "evidence_text": "USearch and BM25",
+    "sessions": [
+      "KnowWhere retrieval combines USearch and BM25 with reciprocal rank fusion.",
+      "The service is pointer-first and stores sessions as full text plus embeddings."
+    ],
+    "is_abstention": false
+  },
+  {
+    "question_id": "kw_lme_002_abs",
+    "question": "Wie lautet Nimars Passnummer?",
+    "gold_answer": "I don't know",
+    "evidence_text": "passport number",
+    "sessions": [
+      "Nimar works on KnowWhere and documents architecture decisions.",
+      "No personal identification numbers are stored in this benchmark context."
+    ],
+    "is_abstention": true
+  },
+  {
+    "question_id": "kw_lme_003",
+    "question": "Welche Architektur nutzt KnowWhere fuer externe Daten?",
+    "gold_answer": "Pointer-first",
+    "evidence_text": "Pointer-first",
+    "sessions": [
+      "KnowWhere follows a pointer-first architecture for external sources.",
+      "External raw files are not ingested as content, only references are stored."
+    ],
+    "is_abstention": false
+  }
+]

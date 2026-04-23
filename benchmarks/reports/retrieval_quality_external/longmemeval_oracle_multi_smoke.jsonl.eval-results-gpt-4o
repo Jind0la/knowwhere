@@ -1,0 +1,40 @@
+{"hypothesis": "Two items: a navy blue blazer from dry cleaning and a pair of boots from Zara.", "question_id": "0a995998", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "6d550036", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Four model kits.", "question_id": "gpt4_59c863d7", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "8 days", "question_id": "b5ef892d", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Three and a half weeks.", "question_id": "e831120c", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Two plants (a peace lily and a succulent).", "question_id": "3a704032", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "$65", "question_id": "gpt4_d84a3211", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "aae3761f", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Three doctors: Dr. Patel, Dr. Lee, and Dr. Smith.", "question_id": "gpt4_f2262a51", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "2 AM", "question_id": "dd2973ad", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Three types: orange, lemon, and lime.", "question_id": "c4a1ceb8", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Three.", "question_id": "gpt4_a56e767c", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "17 days", "question_id": "6cb6f249", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Three tanks.", "question_id": "46a3abf7", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "$2,500", "question_id": "36b9f61e", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "140 hours", "question_id": "28dc39ac", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "One wedding.", "question_id": "gpt4_2f8be40d", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Five babies were born to friends and family members in the last few months.", "question_id": "2e6d26dc", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "gpt4_15e38248", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Three times.", "question_id": "88432d0a", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Two museums or galleries: The Art Cube and the Natural History Museum.", "question_id": "80ec1f4f", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Five different cuisines: Ethiopian, Indian, Korean, Vegan, and Fermented foods.", "question_id": "d23cf73b", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Three properties.", "question_id": "gpt4_7fce9456", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Two", "question_id": "d682f1a2", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "7024f17c", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Twitter", "question_id": "gpt4_5501fe77", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Walmart", "question_id": "gpt4_2ba83207", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "$270 more.", "question_id": "2318644b", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Three different art-related events.", "question_id": "2ce6a0f2", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "54.", "question_id": "gpt4_d12ceb0e", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Two appointments.", "question_id": "00ca467f", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "5 days", "question_id": "b3c15d39", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Three devices: Fitbit, hearing aids, and nebulizer.", "question_id": "gpt4_31ff4165", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "16 fish", "question_id": "eeda8a6d", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Four fitness classes.", "question_id": "2788b940", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "5 days", "question_id": "60bf93ed", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "2 pieces", "question_id": "9d25d4e0", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "$5,850", "question_id": "129d1232", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Two projects.", "question_id": "60472f9c", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "gpt4_194be4b3", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}

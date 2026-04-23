@@ -2,6 +2,7 @@
 name = "knowwhere-server"
 version = "0.1.0"
 edition = "2021"
+default-run = "knowwhere-server"
 description = "Pointer-first fractal memory service for AI agents"
 license = "MIT"
 repository = "https://github.com/NimarMoradbakhti/knowwhere"

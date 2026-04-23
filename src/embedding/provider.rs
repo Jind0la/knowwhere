@@ -256,8 +256,8 @@ pub struct LocalOllamaProvider {
 }
 
 #[derive(Deserialize)]
-struct OllamaEmbeddingResponse {
-    embedding: Vec<f32>,
+struct OllamaBatchEmbedResponse {
+    embeddings: Vec<Vec<f32>>,
 }
 
 impl LocalOllamaProvider {
@@ -280,6 +280,43 @@ impl Default for LocalOllamaProvider {
     }
 }
 
+impl LocalOllamaProvider {
+    async fn embed_batch_raw(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+        let response = self
+            .client
+            .post(format!("{}/api/embed", self.base_url))
+            .json(&serde_json::json!({
+                "model": self.model,
+                "input": texts
+            }))
+            .send()
+            .await
+            .context("ollama batch embed request failed")?;
+
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        if !status.is_success() {
+            let snippet: String = body.chars().take(500).collect();
+            anyhow::bail!("ollama batch embed HTTP {status}: {snippet}");
+        }
+
+        let resp: OllamaBatchEmbedResponse = serde_json::from_str(&body)
+            .context(format!(
+                "failed to parse ollama batch embed response: {}",
+                body.chars().take(200).collect::<String>()
+            ))?;
+
+        if resp.embeddings.len() != texts.len() {
+            anyhow::bail!(
+                "ollama batch returned {} embeddings, expected {}",
+                resp.embeddings.len(),
+                texts.len()
+            );
+        }
+        Ok(resp.embeddings)
+    }
+}
+
 #[async_trait]
 impl EmbeddingProvider for LocalOllamaProvider {
     fn document_prefix(&self) -> &str {
@@ -290,33 +327,49 @@ impl EmbeddingProvider for LocalOllamaProvider {
     }
 
     async fn embed(&self, text: &str) -> Result<Vec<f32>> {
-        let resp: OllamaEmbeddingResponse = self
+        let response = self
             .client
-            .post(format!("{}/api/embeddings", self.base_url))
+            .post(format!("{}/api/embed", self.base_url))
             .json(&serde_json::json!({
                 "model": self.model,
-                "prompt": text
+                "input": text
             }))
             .send()
             .await
-            .context("ollama embedding request failed")?
-            .error_for_status()
-            .context("ollama API returned error status")?
-            .json()
-            .await
-            .context("failed to parse ollama embedding response")?;
+            .context("ollama embed request failed")?;
 
-        if resp.embedding.is_empty() {
-            anyhow::bail!("ollama returned empty embedding");
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        if !status.is_success() {
+            let snippet: String = body.chars().take(500).collect();
+            anyhow::bail!("ollama embed HTTP {status}: {snippet}");
         }
 
-        Ok(resp.embedding)
+        let resp: OllamaBatchEmbedResponse = serde_json::from_str(&body)
+            .context(format!("failed to parse ollama embed response: {}", body.chars().take(200).collect::<String>()))?;
+
+        resp.embeddings
+            .into_iter()
+            .next()
+            .filter(|v| !v.is_empty())
+            .context("ollama returned empty embedding")
     }
 
     async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
-        use futures::future::try_join_all;
-        let futures: Vec<_> = texts.iter().map(|t| self.embed(t)).collect();
-        try_join_all(futures).await
+        if texts.is_empty() {
+            return Ok(vec![]);
+        }
+        if texts.len() == 1 {
+            return Ok(vec![self.embed(texts[0]).await?]);
+        }
+
+        const MAX_BATCH: usize = 8;
+        let mut all = Vec::with_capacity(texts.len());
+        for chunk in texts.chunks(MAX_BATCH) {
+            let batch = self.embed_batch_raw(chunk).await?;
+            all.extend(batch);
+        }
+        Ok(all)
     }
 
     fn dimension(&self) -> usize {

@@ -34,5 +34,9 @@ Thumbs.db
 # Persisted state (contains user data / embeddings)
 /data/
 
+# LongMemEval S (cleaned) — gross; holen mit scripts/bench/fetch_longmemeval_s_cleaned.sh
+benchmarks/hf/third_party/longmemeval/data/longmemeval_s_cleaned.json
+benchmarks/hf/third_party/longmemeval/.venv/
+
 # Docker
 docker-compose.override.yml

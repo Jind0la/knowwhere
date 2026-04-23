@@ -12,13 +12,15 @@
 
 KnowWhere's Hybrid Retrieval (semantic + BM25) muss folgende Eigenschaften erfüllen:
 
-| Eigenschaft | Bedeutung | Warum wichtig |
-|------------|----------|---------------|
-| **Precision** | Gefundene Results sind relevant | Kein Noise im LLM-Kontext |
-| **Recall** | Alle relevanten Results werden gefunden | Keine Informationslücken |
-| **Robustheit** | Unterschiedliche Formulierungen finden dasselbe | Natürliche Sprache funktioniert |
-| **Zeitstabilität** | Performance bleibt mit wachsender DB gleich | Langfristige Zuverlässigkeit |
-| **Deduplizierung** | Gleiche Information wird nicht doppelt zurückgegeben | Kein redundanter Kontext |
+
+| Eigenschaft        | Bedeutung                                            | Warum wichtig                   |
+| ------------------ | ---------------------------------------------------- | ------------------------------- |
+| **Precision**      | Gefundene Results sind relevant                      | Kein Noise im LLM-Kontext       |
+| **Recall**         | Alle relevanten Results werden gefunden              | Keine Informationslücken        |
+| **Robustheit**     | Unterschiedliche Formulierungen finden dasselbe      | Natürliche Sprache funktioniert |
+| **Zeitstabilität** | Performance bleibt mit wachsender DB gleich          | Langfristige Zuverlässigkeit    |
+| **Deduplizierung** | Gleiche Information wird nicht doppelt zurückgegeben | Kein redundanter Kontext        |
+
 
 ### Was wir NICHT testen
 
@@ -480,12 +482,14 @@ Woche 4:  20 + 1000 Mix-Memories → Regression?
 
 ### 4.2 Was wir tracken
 
-| Metrik | Erwartung | Alarm wenn |
-|--------|-----------|-----------|
-| Precision@1 | Bleibt >= 0.70 | < 0.60 |
-| Recall@3 | Bleibt >= 0.85 | < 0.75 |
-| MRR | Bleibt >= 0.75 | < 0.65 |
-| Latenz (p95) | < 200ms bei 1000 Nodes | > 500ms |
+
+| Metrik       | Erwartung              | Alarm wenn |
+| ------------ | ---------------------- | ---------- |
+| Precision@1  | Bleibt >= 0.70         | < 0.60     |
+| Recall@3     | Bleibt >= 0.85         | < 0.75     |
+| MRR          | Bleibt >= 0.75         | < 0.65     |
+| Latenz (p95) | < 200ms bei 1000 Nodes | > 500ms    |
+
 
 ### 4.3 Deduplizierungs-Test
 
@@ -535,12 +539,14 @@ hermes sessions export 2026-03-27 --format json > tests/fixtures/session-2026-03
 
 ### 5.3 Aufwand/Nutzen
 
-| Aspekt | Bewertung |
-|--------|-----------|
-| Authentizität | ★★★★★ — Echte User-Queries |
-| Wartbarkeit | ★★☆☆☆ — Daten verändern sich |
+
+| Aspekt          | Bewertung                          |
+| --------------- | ---------------------------------- |
+| Authentizität   | ★★★★★ — Echte User-Queries         |
+| Wartbarkeit     | ★★☆☆☆ — Daten verändern sich       |
 | Automatisierung | ★★★☆☆ — Braucht Session-Extraktion |
-| Abdeckung | ★★★★☆ — Alle Edge-Cases aus Praxis |
+| Abdeckung       | ★★★★☆ — Alle Edge-Cases aus Praxis |
+
 
 **Empfehlung:** Tier 3 erst nach Tier 1+2 stabil sind.
 
@@ -558,22 +564,24 @@ tests/
 
 ## 7. Offene Fragen / Nächste Schritte
 
-- [x] **Database-Option:** Tier 1 nutzt jetzt `MemoryStore` als deterministische CI-Baseline; Postgres-Vergleich folgt in Tier 2.
-- [x] **Mix-Memory-Generator:** Für Tier 2 als deterministische Rust-Generatorfunktionen in `tests/retrieval_quality.rs` umgesetzt.
-- [x] **Test-Fixture-Struktur:** Für Tier 1/2 bewusst als Rust-Const + Generatoren umgesetzt (kein separates JSON nötig).
-- [ ] **Recall ohne Ground Truth:** Bei Echo-Memories kennen wir die "richtige" Antwort. Bei echten Daten nicht. Wie definieren wir "gefunden"?
-- [ ] **Persistenz:** Sollen Test-Resultate in eine JSON-Datei geloggt werden für Trends?
-- [x] **Schwellwerte:** Für Tier 1 aktiv gesetzt (`P@1 >= 0.70`, `Recall@3 >= 0.85`, `MRR >= 0.75`, `Robustheit >= 0.80`), werden nach Trenddaten weiter kalibriert.
+- **Database-Option:** Tier 1 nutzt jetzt `MemoryStore` als deterministische CI-Baseline; Postgres-Vergleich folgt in Tier 2.
+- **Mix-Memory-Generator:** Für Tier 2 als deterministische Rust-Generatorfunktionen in `tests/retrieval_quality.rs` umgesetzt.
+- **Test-Fixture-Struktur:** Für Tier 1/2 bewusst als Rust-Const + Generatoren umgesetzt (kein separates JSON nötig).
+- **Recall ohne Ground Truth:** Bei Echo-Memories kennen wir die "richtige" Antwort. Bei echten Daten nicht. Wie definieren wir "gefunden"?
+- **Persistenz:** Sollen Test-Resultate in eine JSON-Datei geloggt werden für Trends?
+- **Schwellwerte:** Für Tier 1 aktiv gesetzt (`P@1 >= 0.70`, `Recall@3 >= 0.85`, `MRR >= 0.75`, `Robustheit >= 0.80`), werden nach Trenddaten weiter kalibriert.
 
 ---
 
 ## 8. Priorisierung
 
-| Phase | Aufwand | Nutzen | Empfehlung |
-|-------|---------|--------|------------|
-| Tier 1: Echo | ★★☆☆☆ (1-2 Tage) | ★★★★☆ | **Zuerst** — schnell Signal |
-| Tier 2: Growing DB | ★★★☆☆ (3-5 Tage) | ★★★☆☆ | **Implementiert** — als ignored Regression Suite + separater Workflow |
-| Tier 3: Real Traces | ★★★★☆ (1+ Woche) | ★★★★★ | **Später** — nur wenn nötig |
+
+| Phase               | Aufwand          | Nutzen | Empfehlung                                                            |
+| ------------------- | ---------------- | ------ | --------------------------------------------------------------------- |
+| Tier 1: Echo        | ★★☆☆☆ (1-2 Tage) | ★★★★☆  | **Zuerst** — schnell Signal                                           |
+| Tier 2: Growing DB  | ★★★☆☆ (3-5 Tage) | ★★★☆☆  | **Implementiert** — als ignored Regression Suite + separater Workflow |
+| Tier 3: Real Traces | ★★★★☆ (1+ Woche) | ★★★★★  | **Später** — nur wenn nötig                                           |
+
 
 ---
 
@@ -583,4 +591,120 @@ tests/
 - Hybrid Retrieval: `src/storage/postgres_store.rs` — `hybrid_retrieve()`
 - BM25 Implementation: `src/storage/postgres_store.rs` — `search_bm25()`
 - RRF (Reciprocal Rank Fusion): `src/storage/in_memory.rs` — `hybrid_retrieve()`
-- Similar: RAGAS Benchmark (https://github.com/explodinggradients/ragas)
+- Similar: RAGAS Benchmark ([https://github.com/explodinggradients/ragas](https://github.com/explodinggradients/ragas))
+
+---
+
+## 10. Externe HuggingFace-Benchmarks (Tier 3/4)
+
+### 10.1 Ziel und Abgrenzung
+
+Interne Tier-1/2-Tests bleiben der harte CI-Guardrail. Externe Benchmarks dienen als produktnahe Validierung und kalibrieren, ob KnowWhere auch bei realistisch langen Konversations-Haystacks stabil bleibt.
+
+- **Tier 3 (offline, nicht blockend):** LongMemEval + ConvoMem + LoCoMo-Subset lokal/manuell ausfuehren
+- **Tier 4 (periodisch):** kleiner, fixer "canary subset" pro Benchmark 1x pro Woche
+- **Nicht-Ziel:** jeder PR laeuft gegen komplette externen Datensaetze
+
+### 10.2 Integrations-Matrix
+
+
+| Benchmark                           | Primaeres Ziel                                     | Input-Format                                          | Eval-Fokus                                    | Empfohlener Startumfang                | CI-Stufe                |
+| ----------------------------------- | -------------------------------------------------- | ----------------------------------------------------- | --------------------------------------------- | -------------------------------------- | ----------------------- |
+| LongMemEval (`longmemeval-cleaned`) | Langzeit-Recall ueber viele Sessions               | timestamped `haystack_sessions`, QA pro `question_id` | Recall@K, MRR, QA-Exact/LLM-Judge, Abstention | `oracle` + kleiner `s_cleaned`-Subset  | Tier 3 -> Tier 4 canary |
+| ConvoMem                            | Skalierungsstabilitaet ueber viele Kontextgroessen | `messages`, `question`, `answer`, `evidence_type`     | Accuracy je evidence_type + Kontextgroesse    | 3 evidence_types, 6/20/70/150 messages | Tier 3 -> Tier 4 canary |
+| LoCoMo (legacy/Subset)              | Multi-Session + temporal/causal Robustheit         | `evidenceItems`, `conversations`, category-basiert    | QA-F1/EM, temporal reasoning slices           | nur `category_4_multi_session`-Subset  | Tier 3 (spaeter Tier 4) |
+
+
+### 10.3 Daten-Mapping nach KnowWhere
+
+Pointer-first bleibt strikt bestehen:
+
+- **Session-/Dialogtexte:** als `store_session` (voller Text + Embeddings)
+- **Externe Artefakte (z. B. Bildreferenzen):** als `store_external` mit `original_pointer`, ohne Rohdatei
+- **Frage-Instanz-Metadaten:** in `metadata` (z. B. `benchmark`, `question_id`, `category`, `context_size`)
+
+Konkretes Mapping:
+
+
+| Feld in Benchmark                    | KnowWhere Speicherung                          | Zweck                          |
+| ------------------------------------ | ---------------------------------------------- | ------------------------------ |
+| `question_id` / Testfall-ID          | `metadata.benchmark_question_id`               | eindeutige Rueckverfolgbarkeit |
+| Session/Conversation Turns           | `content` in Session-Node                      | Retrieval-Basis                |
+| Gold-Answer                          | `metadata.gold_answer`                         | automatische Auswertung        |
+| Evidence-Type/Category               | `metadata.evidence_type` / `metadata.category` | Slice-Analysen                 |
+| Zeitstempel (`question_date` o. ae.) | `metadata.source_timestamp`                    | Temporal-Checks                |
+
+
+### 10.4 Runner-Design (repo-nah)
+
+Empfohlene additive Struktur:
+
+```text
+benchmarks/
+├── hf/
+│   ├── README.md
+│   ├── longmemeval_runner.rs
+│   ├── convomem_runner.rs
+│   ├── locomo_runner.rs
+│   ├── shared_metrics.rs
+│   └── fixtures/
+│       └── canary_subsets/*.jsonl
+└── reports/
+    └── retrieval_quality_external/
+```
+
+Ablauf pro Runner:
+
+1. Datensatz laden (lokal heruntergeladen, kein CI-Download zur Laufzeit)
+2. Dialoge in KnowWhere einspeisen (`store_session`/`store_external`)
+3. Fragen ueber `retrieve_fractal` + optional `chat/subconscious` auswerten
+4. Metriken als JSON + Markdown-Report schreiben
+5. Exit-Code nur bei Canary-Gates in Tier 4 hart setzen
+
+### 10.5 Metriken und Gates
+
+Gemeinsame Kernmetriken:
+
+- Retrieval: `Recall@3`, `Recall@5`, `MRR`
+- Antwortqualitaet: `Exact Match` (wenn eindeutig), sonst semantischer Match/LLM-Judge
+- Halluzinationskontrolle: `Abstention accuracy` bei no-evidence Fragen
+- Latenz: `p95` pro Benchmark-Subset
+
+Start-Gates fuer Tier-4-Canary (initial konservativ):
+
+- `Recall@5 >= 0.75`
+- `MRR >= 0.65`
+- `Abstention accuracy >= 0.80`
+- `p95 < 1200ms` (auf Canary-Daten)
+
+### 10.6 CI-/Workflow-Design
+
+- **PR-CI (bestehend):** nur Tier 1
+- **Weekly Regression (bestehend):** Tier 2
+- **Neu: external-regression.yml (weekly + manual):**
+  - Job A: LongMemEval canary
+  - Job B: ConvoMem canary
+  - Job C: LoCoMo category_4 canary (optional am Anfang)
+  - Artefakt: `benchmarks/reports/*.json` + `*.md`
+
+### 10.7 Aufwand in Tagen (realistisch)
+
+
+| Schritt                                     | Aufwand     | Ergebnis                                      |
+| ------------------------------------------- | ----------- | --------------------------------------------- |
+| Daten-Caching + Canary-Subsets definieren   | 1 Tag       | reproduzierbare kleine Testmenge              |
+| Shared Metrics Layer                        | 1 Tag       | einheitliche Auswertung ueber alle Benchmarks |
+| LongMemEval Runner (oracle + small subset)  | 2 Tage      | erster externer End-to-End Lauf               |
+| ConvoMem Runner (3 types x 4 context sizes) | 2 Tage      | Skalierungsvergleich mit internen Metriken    |
+| LoCoMo Runner (category_4 subset)           | 2 Tage      | temporale Multi-Session-Validierung           |
+| CI Workflow + Artefakt-Reporting            | 1 Tag       | automatisierbarer Wochenlauf                  |
+| **Gesamt (Tier 3 MVP)**                     | **~9 Tage** | externe Benchmark-Schicht produktiv nutzbar   |
+
+
+### 10.8 Priorisierte Implementierungsreihenfolge
+
+1. LongMemEval (niedrige Integrationskomplexitaet, hoher Signalwert)
+2. ConvoMem (starke Skalierungsdiagnose)
+3. LoCoMo (hoher Realismus, hoeherer Integrationsaufwand)
+
+Damit bleibt die Architektur additive, pointer-first und CI-freundlich: intern schnell blockend, extern tief aber zeitlich entkoppelt.
