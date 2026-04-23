@@ -1,0 +1,500 @@
+{"hypothesis": "GPS system issue on 3/22.", "question_id": "gpt4_2655b836", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Data Analysis using Python webinar", "question_id": "gpt4_2487a7cb", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "The bike", "question_id": "gpt4_76048e76", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Samsung Galaxy S22", "question_id": "gpt4_2312f94c", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "7 days", "question_id": "0bb5a684", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "30 days", "question_id": "08f4fc43", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "2c63a862", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "The tomatoes were started first.", "question_id": "gpt4_385a5000", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "21 days", "question_id": "2a1811e2", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "4 days", "question_id": "bbf86515", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "White Adidas sneakers.", "question_id": "gpt4_5dcc0aab", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "The purchase of the coffee maker happened first.", "question_id": "gpt4_0b2f1d21", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "14 days", "question_id": "f0853d11", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "The training pads for Luna.", "question_id": "gpt4_6ed717ea", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Trimming the goats' hooves.", "question_id": "gpt4_70e84552", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Two charity events.", "question_id": "a3838d2b", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "4 years and 9 months", "question_id": "gpt4_93159ced", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "The Hate U Give", "question_id": "gpt4_2d58bcd6", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Smart thermostat", "question_id": "gpt4_65aabe59", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "982b5123", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Five and a half weeks.", "question_id": "b9cfe692", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "June 3rd, 2023", "question_id": "gpt4_4edbafa2", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "8 days", "question_id": "c8090214", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "The Crown", "question_id": "gpt4_483dd43c", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Four weeks.", "question_id": "e4e14d04", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "2 months", "question_id": "c9f37c46", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "6:45 AM", "question_id": "gpt4_2c50253f", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "14 days", "question_id": "dcfa8644", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "The arrival of the new prime lens happened first.", "question_id": "gpt4_b4a80587", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "United Airlines", "question_id": "gpt4_9a159967", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "One month", "question_id": "cc6d1ec1", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "The solo trip to Thailand.", "question_id": "gpt4_8c8961ae", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "The new router.", "question_id": "gpt4_d9af6064", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "The persistent cough", "question_id": "gpt4_7de946e7", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "27 years old", "question_id": "d01c6aa8", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "One month.", "question_id": "993da5e2", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "7 days", "question_id": "a3045048", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "The family road trip across the American Southwest.", "question_id": "gpt4_d31cdae3", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Two weeks.", "question_id": "gpt4_cd90e484", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Tom", "question_id": "gpt4_88806d6e", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "4 weeks", "question_id": "gpt4_4cd9eba1", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Page Turners", "question_id": "gpt4_93f6379c", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Eight weeks.", "question_id": "b29f3365", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Disney+", "question_id": "gpt4_2f56ae70", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "2 months", "question_id": "6613b389", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "The narrator received their new phone case first.", "question_id": "gpt4_78cf46a3", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "The woman selling jam at the farmer's market.", "question_id": "gpt4_0a05b494", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "The meeting with Rachel happened first.", "question_id": "gpt4_1a1dc16d", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "The photo album for my mom.", "question_id": "gpt4_2f584639", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "The volleyball league.", "question_id": "gpt4_213fd887", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "The start of your Spanish classes happened first.", "question_id": "gpt4_5438fa52", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Japanese Zero fighter plane model.", "question_id": "gpt4_c27434e8", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Rachel", "question_id": "gpt4_fe651585", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "7 days", "question_id": "8c18457d", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "gpt4_70e84552_abs", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "4 years and 9 months", "question_id": "gpt4_93159ced_abs", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "982b5123_abs", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "8 days", "question_id": "c8090214_abs", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "gpt4_c27434e8_abs", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Alex", "question_id": "gpt4_fe651585_abs", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "0a995998", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "6d550036", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Five model kits.", "question_id": "gpt4_59c863d7", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "8 days", "question_id": "b5ef892d", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Three and a half weeks", "question_id": "e831120c", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "3a704032", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "$40", "question_id": "gpt4_d84a3211", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "aae3761f", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Three.", "question_id": "gpt4_f2262a51", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "2 AM", "question_id": "dd2973ad", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "c4a1ceb8", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "gpt4_a56e767c", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "17 days", "question_id": "6cb6f249", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Three tanks.", "question_id": "46a3abf7", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "$2,000", "question_id": "36b9f61e", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "115 hours", "question_id": "28dc39ac", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "gpt4_2f8be40d", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Five babies.", "question_id": "2e6d26dc", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "gpt4_15e38248", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "88432d0a", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "80ec1f4f", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Three cuisines: Ethiopian, Indian, and Korean.", "question_id": "d23cf73b", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "gpt4_7fce9456", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "d682f1a2", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "7024f17c", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Twitter", "question_id": "gpt4_5501fe77", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Thrive Market", "question_id": "gpt4_2ba83207", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "$270", "question_id": "2318644b", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "2ce6a0f2", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "gpt4_d12ceb0e", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Two appointments.", "question_id": "00ca467f", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "5 days", "question_id": "b3c15d39", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Three devices: Fitbit Versa 3, Accu-Chek Aviva Nano, and nebulizer machine.", "question_id": "gpt4_31ff4165", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "eeda8a6d", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Four fitness classes.", "question_id": "2788b940", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "5 days", "question_id": "60bf93ed", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "3 pieces", "question_id": "9d25d4e0", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "$5,850", "question_id": "129d1232", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Two projects.", "question_id": "60472f9c", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "gpt4_194be4b3", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "a9f6b44c", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "$3,750", "question_id": "d851d5ba", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "15 days", "question_id": "5a7937c8", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Three kitchen items.", "question_id": "gpt4_ab202e7f", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Nine times.", "question_id": "gpt4_e05b82a6", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "gpt4_731e37d7", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "10 days", "question_id": "edced276", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "5 days", "question_id": "10d9b85a", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "57 rare records", "question_id": "e3038f8c", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "$495", "question_id": "2b8f3739", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "1a8a66a6", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "c2ac3c61", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "bf659f65", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "8 years", "question_id": "gpt4_372c3eed", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "gpt4_2f91af09", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Three graduation ceremonies.", "question_id": "81507db6", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "88432d0a_abs", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "80ec1f4f_abs", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "eeda8a6d_abs", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "60bf93ed_abs", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "edced276_abs", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "9 years", "question_id": "gpt4_372c3eed_abs", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "25:50", "question_id": "6a1eabeb", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "6aeb4375", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Chicago", "question_id": "830ce83f", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "$350,000", "question_id": "852ce960", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Three times a week.", "question_id": "945e3d21", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "d7c942c3", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "10-12 hours", "question_id": "71315a70", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "89941a93", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "ce6d2d27", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Paris", "question_id": "9ea5eabc", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Under my bed.", "question_id": "07741c44", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "7", "question_id": "a1eacc2a", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "184da446", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "4 engineers; 5 engineers now.", "question_id": "031748ae", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "25", "question_id": "4d6b87c8", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "0f05491a", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "9 months", "question_id": "08e075c7", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "f9e8c073", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "70-200mm zoom lens", "question_id": "41698283", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Every week.", "question_id": "2698e78f", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "5", "question_id": "b6019101", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "3", "question_id": "45dc21b6", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "TechCorp", "question_id": "5a4f22c0", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "More water.", "question_id": "6071bd76", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "e493bb7c", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Six times.", "question_id": "618f13b2", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "50 episodes", "question_id": "72e3ee87", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "c4ea545c", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "25", "question_id": "01493427", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "30 videos", "question_id": "6a27ffc2", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "6 months", "question_id": "2133c1b5", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Kansas City Masterpiece BBQ sauce", "question_id": "18bc8abd", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Nine months.", "question_id": "db467c8c", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "7a87bd0c", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "9 months", "question_id": "e61a7584", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "1cea1afa", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "20 dozen", "question_id": "ed4ddc30", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Five issues", "question_id": "8fb83627", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Yes.", "question_id": "b01defab", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "The music shop on Main St.", "question_id": "22d2cb42", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "132 points", "question_id": "0e4e4c46", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Five tops.", "question_id": "4b24c848", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "$420", "question_id": "7e974930", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "10 times", "question_id": "603deb26", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "6:00 pm", "question_id": "59524333", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "15", "question_id": "5831f84d", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Oahu", "question_id": "eace081b", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "32", "question_id": "affe2881", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Premier Silver", "question_id": "50635ada", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "27 minutes and 45 seconds", "question_id": "e66b632c", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "15 autographed baseballs", "question_id": "0ddfec37", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Every other week.", "question_id": "f685340e", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Two hours.", "question_id": "cc5ded98", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Wednesday", "question_id": "dfde3500", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "38 coins", "question_id": "69fee5aa", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "7401057b", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "10 pounds", "question_id": "cf22b7bf", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "a2f3aa27", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "5-2", "question_id": "c7dc5443", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "5 projects", "question_id": "06db6396", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Ford Mustang Shelby GT350R", "question_id": "3ba21379", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Level 100", "question_id": "9bbe84a2", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "7 largemouth bass", "question_id": "10e09553", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "7:30 am", "question_id": "dad224aa", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "6 women", "question_id": "ba61f0b9", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "42ec0761", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Twice", "question_id": "5c40ec5b", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "c6853660", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "26bdc477", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "0977f2af", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "6aeb4375_abs", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "031748ae_abs", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "2698e78f_abs", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "2133c1b5_abs", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "0ddfec37_abs", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Every other week.", "question_id": "f685340e_abs", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Yes, you have a road bike in addition to your mountain bike and commuter bike.", "question_id": "89941a94", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "07741c45", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "8a2466db", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "06878be2", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "75832dbd", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "0edc2aef", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "35a27287", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "32260d93", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "195a1a1b", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "afdc33df", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "caf03d32", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Schedule a virtual coffee break once a week.", "question_id": "54026fce", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Thai Basil Chicken", "question_id": "06f04340", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "6b7dfb22", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Summer Solstice", "question_id": "1a1907b4", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "09d032c9", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Spices like cinnamon, nutmeg, or cardamom.", "question_id": "38146c39", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Chocolate chip cookies.", "question_id": "d24813b1", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "57f827a0", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "95228167", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "505af2f5", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "75f70248", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "d6233ab6", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "1da05512", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Halloween-themed events at theme parks in the LA area.", "question_id": "fca70973", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "b6025781", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "a89d7624", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "March of the Penguins", "question_id": "b0479f84", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "1d4e3b97", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "07b6f563", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Listening to podcasts.", "question_id": "1c0ddc50", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "0a34ad58", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "7161e7e2", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "c4f10528", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Blue", "question_id": "89527b6b", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "The Sugar Factory", "question_id": "e9327a54", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Roscioli", "question_id": "4c36ccef", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Atmospheric distillation", "question_id": "6ae235be", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "International Budget Hostel", "question_id": "7e00a6cb", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "1903aded", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "ceb54acb", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Doc Martin", "question_id": "f523d9fe", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "38 subjects", "question_id": "0e5e2d1a", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "\"Evolution\"", "question_id": "fea54f57", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "cc539528", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Hoop Dance", "question_id": "dc439ea3", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "18dcd5a5", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "GR-90", "question_id": "488d3006", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "\"The Library is a sphere whose exact center is any one of its hexagons and whose circumference is inaccessible.\"", "question_id": "58470ed2", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "8cf51dda", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Biometric authentication or one-time passwords (OTP).", "question_id": "1d4da289", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Roscioli", "question_id": "8464fc84", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "8aef76bc", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "71a3fd6b", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "2bf43736", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Manolo Garc\u00eda", "question_id": "70b3e69b", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "8752c811", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "3249768e", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Mindful.org", "question_id": "1b9b7252", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "28. Kg3 Be6", "question_id": "1568498a", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "SIAC_GEE", "question_id": "6222b6eb", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "e8a79c70", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "By Chloe", "question_id": "d596882b", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Dr. Arati Prabhakar", "question_id": "e3fc4d6e", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "\u201cNu, pogodi!\u201d", "question_id": "51b23612", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "10 minutes", "question_id": "3e321797", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "e982271f", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "20%", "question_id": "352ab8bd", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Memrise", "question_id": "fca762bc", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "7a8d0b71", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "a40e080f", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Jaipur Rugs", "question_id": "8b9d4367", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "2014", "question_id": "5809eb10", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "\"How to Sit Properly at a Desk to Avoid Back Pain\" by the Mayo Clinic", "question_id": "41275add", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "4388e9dd", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "12 games", "question_id": "4baee567", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Fissionator", "question_id": "561fabcd", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "b759caee", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "LIV", "question_id": "ac031881", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "MusicTheory.net", "question_id": "28bcfaac", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "A pilsner or lager.", "question_id": "16c90bf4", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Pennsylvania", "question_id": "c8f1aeed", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "eaca4986", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "c7cf7dfd", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Patagonia", "question_id": "e48988bc", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Veja", "question_id": "1de5cff2", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "1:10 ratio", "question_id": "65240037", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "778164c6", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Business Administration", "question_id": "e47becba", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "45 minutes each way.", "question_id": "118b2229", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "51a45a95", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "58bf7951", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Summer Vibes", "question_id": "1e043500", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Johnson", "question_id": "c5e8278d", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "6ade9755", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "A lighter shade of gray.", "question_id": "6f9b354f", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Valentine's Day", "question_id": "58ef2f1c", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "a sports store downtown", "question_id": "f8c5f88b", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Marketing specialist", "question_id": "5d3d2817", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "$800", "question_id": "7527f7e2", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "20 playlists", "question_id": "c960da58", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "University of Melbourne", "question_id": "3b6f954b", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "10%", "question_id": "726462e0", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "4 hours", "question_id": "94f70d80", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "A yellow dress and a pair of earrings.", "question_id": "66f24dbb", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "500 Mbps", "question_id": "ad7109d1", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "7 shirts", "question_id": "af8d2e46", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I used to be a staunch atheist.", "question_id": "dccbc061", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "c8c3f81d", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Data Science certification", "question_id": "8ebdbe50", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Three.", "question_id": "6b168ec8", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "75499fd8", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "12 largemouth bass", "question_id": "21436231", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "10", "question_id": "95bcc1c8", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Luna", "question_id": "0862e8bf", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "18 years old", "question_id": "853b0a1d", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "3:1", "question_id": "a06e4cfe", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "16GB", "question_id": "37d43f65", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "b86304ba", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Grand Ballroom", "question_id": "d52b4f67", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "25e5aa4f", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "5 hours", "question_id": "caf9ead2", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Lavender gin fizz", "question_id": "8550ddae", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Japanese short-grain rice", "question_id": "60d45044", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Sarah", "question_id": "3f1e9474", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "86b68151", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "7 pm", "question_id": "577d4d32", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "500 copies", "question_id": "ec81a493", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Three months", "question_id": "15745da0", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "e01b8e2f", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Lemon blueberry cake.", "question_id": "bc8a6e93", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Spotify", "question_id": "ccb36322", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Over a year.", "question_id": "001be529", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Rare blue Snaggletooth action figure.", "question_id": "b320f3f8", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Two weeks", "question_id": "19b5f2b3", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Xfinity Center", "question_id": "4fd1909e", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "2 hours", "question_id": "545bd2b5", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Philips LED bulb", "question_id": "8a137a7f", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "55-inch", "question_id": "76d63226", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "The Seven Husbands of Evelyn Hugo", "question_id": "86f00804", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "17 skeins", "question_id": "8e9d538c", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "10 hours", "question_id": "311778f1", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "6:30 pm", "question_id": "c19f7a0b", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Irish and Italian", "question_id": "4100d0a0", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "30 minutes", "question_id": "29f2956b", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Denver", "question_id": "1faac195", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "24 hours", "question_id": "faba32e5", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "My sister", "question_id": "f4f1d8a4", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "c14c00dd", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Bronchitis", "question_id": "36580ce8", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "3d86fd0a", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Dark Souls 3 DLC", "question_id": "a82c026e", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "0862e8bf_abs", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "15745da0_abs", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "bc8a6e93_abs", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "19b5f2b3_abs", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "29f2956b_abs", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "f4f1d8a4_abs", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "7 days", "question_id": "gpt4_59149c77", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "The day I helped my friend prepare the nursery, the day I helped my cousin pick out stuff for her baby shower, the day I ordered a customized phone case for my friend's birthday.", "question_id": "gpt4_f49edff3", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "4 weeks ago", "question_id": "71017276", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "2 months", "question_id": "b46e15ed", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "6 days", "question_id": "gpt4_fa19884c", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "5 months", "question_id": "0bc8ad92", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "2 weeks ago", "question_id": "af082822", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Michael's engagement party happened first.", "question_id": "gpt4_4929293a", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "4 days", "question_id": "gpt4_b5700ca9", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "25 days ago", "question_id": "9a707b81", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "24 days", "question_id": "gpt4_1d4ab0c9", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "3 weeks ago", "question_id": "gpt4_e072b769", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "18 days", "question_id": "0db4c65d", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "2 days", "question_id": "gpt4_1d80365e", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Muir Woods, Big Sur and Monterey, Yosemite.", "question_id": "gpt4_7f6b06db", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "4 months ago", "question_id": "gpt4_6dc9b45b", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "10 days ago", "question_id": "gpt4_8279ba02", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "'I used a Buy One Get One Free coupon on Luvs diapers at Walmart', 'I redeemed $12 cashback for a $10 Amazon gift card from Ibotta', 'I signed up for", "question_id": "gpt4_18c2b244", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "8 weeks", "question_id": "gpt4_a1b77f9c", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "54 days", "question_id": "gpt4_1916e0ea", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "1 week", "question_id": "gpt4_7a0daae1", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "9 days ago", "question_id": "gpt4_468eb063", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Science Museum, Metropolitan Museum of Art, Museum of History, Modern Art Museum, Natural History Museum.", "question_id": "gpt4_7abb270c", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "6 days", "question_id": "gpt4_1e4a8aeb", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "37 days", "question_id": "gpt4_4fc4f797", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "24 days", "question_id": "4dfccbf7", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "3 weeks", "question_id": "gpt4_61e13b3c", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "The order of the sports events you watched in January is: NBA game (Lakers vs. Bulls) on January 5th, College Football National Championship on January 14th, and NFL Div", "question_id": "gpt4_45189cb4", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "21 days", "question_id": "2ebe6c90", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Spring Sprint Triathlon, Midsummer 5K Run, company's annual charity soccer tournament.", "question_id": "gpt4_e061b84f", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "12 weeks", "question_id": "370a8ff4", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Billie Eilish concert, free outdoor concert series, jazz night at a local bar, music festival in Brooklyn.", "question_id": "gpt4_d6585ce8", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "1 day", "question_id": "gpt4_4ef30696", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "A train.", "question_id": "gpt4_ec93e27f", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "3 weeks", "question_id": "6e984301", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "26 days ago", "question_id": "8077ef71", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Spirit Airlines, Delta, American Airlines, United Airlines.", "question_id": "gpt4_f420262c", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "14 days", "question_id": "gpt4_8e165409", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "29 days", "question_id": "gpt4_74aed68e", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "4 weeks ago", "question_id": "bcbe585f", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "6 months", "question_id": "gpt4_21adecb5", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "3 months ago", "question_id": "5e1b23de", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "The charity bake sale.", "question_id": "gpt4_98f46fc6", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "17 days ago", "question_id": "gpt4_af6db32f", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "19 days ago", "question_id": "eac54adc", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "3 days ago", "question_id": "gpt4_7ddcf75f", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "3 days ago", "question_id": "gpt4_a2d1d1f6", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "3 weeks ago", "question_id": "gpt4_85da3956", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "7 days ago", "question_id": "gpt4_b0863698", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "My post about vegan chili recipe happened first.", "question_id": "gpt4_68e94287", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "4 days", "question_id": "gpt4_e414231e", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Emma graduated first, Rachel second, and Alex third.", "question_id": "gpt4_7ca326fa", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "17 days ago", "question_id": "gpt4_7bc6cf22", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "The Nightingale", "question_id": "2ebe6c92", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "gpt4_e061b84g", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "71017277", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "\"Walk for Hunger\" charity event.", "question_id": "b46e15ee", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "gpt4_d6585ce9", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "gpt4_1e4a8aec", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "American Airlines", "question_id": "gpt4_f420262d", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "gpt4_59149c78", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "gpt4_e414231f", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Michael's engagement party.", "question_id": "gpt4_4929293b", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Emma", "question_id": "gpt4_468eb064", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Miles Davis", "question_id": "gpt4_fa19884d", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Strawberry shortcake.", "question_id": "9a707b82", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "eac54add", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "4dfccbf8", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "You visited with a friend.", "question_id": "0bc8ad93", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "6e984302", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "gpt4_8279ba03", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Episcopal Church", "question_id": "gpt4_b5700ca0", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "#PlankChallenge", "question_id": "gpt4_68e94288", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "8 miles", "question_id": "d3ab962e", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "2311e44b", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "$2.86", "question_id": "cc06de0d", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "100 followers", "question_id": "a11281a2", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Five antique items.", "question_id": "4f54b7c9", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "$50", "question_id": "85fa3a3f", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "$0.75", "question_id": "9aaed6a3", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "$750", "question_id": "1f2b8d4f", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "40%", "question_id": "e6041065", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "51c32626", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "20%", "question_id": "d905b33f", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Yes.", "question_id": "7405e8b1", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "27 episodes", "question_id": "f35224e0", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "5 tomato plants and 3 cucumber plants.", "question_id": "6456829e", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "50 hours", "question_id": "a4996e51", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "2.5 years", "question_id": "3c1045c8", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "12,000 people", "question_id": "60036106", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Two.", "question_id": "681a1674", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "$300", "question_id": "e25c3b8d", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "3 goals and 2 assists", "question_id": "4adc0475", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "$65", "question_id": "4bc144e2", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "ef66a6e5", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "Cooking and photography.", "question_id": "5025383b", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "a1cc6108", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "300 points", "question_id": "9ee3ecd6", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "7 days", "question_id": "3fdac837", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "$5,150", "question_id": "91b15a6e", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "27016adc", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "$75", "question_id": "720133ac", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "$300", "question_id": "77eafa52", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "8 lunches", "question_id": "8979f9ec", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "$12", "question_id": "0100672e", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Harvard University", "question_id": "a96c20ee", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "92a0aa75", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "$25,000", "question_id": "3fe836c9", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "$140", "question_id": "1c549ce4", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "3,000 miles", "question_id": "6c49646a", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "1192316e", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "2 miles per gallon", "question_id": "0ea62687", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "20 courses", "question_id": "67e0d0f2", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "$300", "question_id": "bb7c3b45", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "ba358f49", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "10 minutes faster", "question_id": "61f8c8f8", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Two dinner parties.", "question_id": "60159905", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "$300", "question_id": "ef9cf60a", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "73d42213", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "bc149d6b", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "099778bb", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "$30-$40", "question_id": "09ba9854", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "d6062bb9", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "43 years", "question_id": "157a136e", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "c18a7dc8", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "$200", "question_id": "a3332713", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "33 comments", "question_id": "55241a1f", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Four days", "question_id": "a08a253f", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "$1,300", "question_id": "f0e564bc", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "$50", "question_id": "078150f1", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "3.83", "question_id": "8cf4d046", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "12 minutes", "question_id": "a346bb18", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "37f165cf", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "8e91e7d9", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "$120", "question_id": "87f22b4a", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "$5 discount", "question_id": "e56a43b9", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "30 minutes", "question_id": "efc3f7c2", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "21d02d0d", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "2311e44b_abs", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "5 tomato plants. I don't know about chili peppers.", "question_id": "6456829e_abs", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "I don't know", "question_id": "e5ba910e_abs", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "Harvard University", "question_id": "a96c20ee_abs", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"hypothesis": "I don't know", "question_id": "ba358f49_abs", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"hypothesis": "\u00a51,000-2,000", "question_id": "09ba9854_abs", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}

@@ -1,0 +1,38 @@
+[
+  {
+    "question_id": "tiny_001",
+    "question": "Welche zwei Verfahren nutzt KnowWhere fuer Retrieval?",
+    "answer": "USearch und BM25",
+    "answer_session_ids": ["s1"],
+    "haystack_session_ids": ["s0", "s1"],
+    "haystack_sessions": [
+      [
+        {
+          "role": "user",
+          "content": "KnowWhere speichert Sessions pointer-first und hat Governance."
+        }
+      ],
+      [
+        {
+          "role": "assistant",
+          "content": "KnowWhere nutzt USearch und BM25 fuer Hybrid-Retrieval."
+        }
+      ]
+    ]
+  },
+  {
+    "question_id": "tiny_002_abs",
+    "question": "Wie lautet Nimars Passnummer?",
+    "answer": "I don't know",
+    "answer_session_ids": [],
+    "haystack_session_ids": ["a0"],
+    "haystack_sessions": [
+      [
+        {
+          "role": "user",
+          "content": "Im Kontext sind keine privaten Ausweisnummern enthalten."
+        }
+      ]
+    ]
+  }
+]

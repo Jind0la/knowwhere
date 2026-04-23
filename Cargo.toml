@@ -2,6 +2,7 @@
 name = "knowwhere-server"
 version = "0.1.0"
 edition = "2021"
+default-run = "knowwhere-server"
 description = "Pointer-first fractal memory service for AI agents"
 license = "MIT"
 repository = "https://github.com/NimarMoradbakhti/knowwhere"
@@ -45,6 +46,18 @@ postgres-storage = []
 # reqwest is always included (Ollama also needs it).
 openai-provider = []
 grok-provider = []
+
+[[bin]]
+name = "longmemeval_canary"
+path = "src/bin/longmemeval_canary.rs"
+
+[[bin]]
+name = "longmemeval_retrieval_eval"
+path = "src/bin/longmemeval_retrieval_eval.rs"
+
+[[bin]]
+name = "longmemeval_qa_eval"
+path = "src/bin/longmemeval_qa_eval.rs"
 
 [dev-dependencies]
 http-body-util = "0.1"

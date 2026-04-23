@@ -1,0 +1,35 @@
+{
+  "summary": {
+    "total_cases": 2,
+    "evaluated_cases": 1,
+    "top1": 1.0,
+    "recall_at_5": 1.0,
+    "mrr": 1.0
+  },
+  "cases": [
+    {
+      "question_id": "tiny_001",
+      "rank": 1,
+      "retrieved_session_ids": [
+        "s1",
+        "s1",
+        "s0",
+        "s0"
+      ],
+      "answer_session_ids": [
+        "s1"
+      ],
+      "is_abstention": false
+    },
+    {
+      "question_id": "tiny_002_abs",
+      "rank": null,
+      "retrieved_session_ids": [
+        "a0",
+        "a0"
+      ],
+      "answer_session_ids": [],
+      "is_abstention": true
+    }
+  ]
+}

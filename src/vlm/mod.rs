@@ -185,27 +185,30 @@ pub enum VlmModel {
     Grok4Fast,
     /// Ollama local LLM (e.g., llama3.2) — no API key needed
     Ollama,
+    /// Custom OpenAI-compatible provider (MiniMax, Together, etc.)
+    Custom,
 }
 
 impl VlmModel {
-    /// All models in fallback order.
-    pub fn fallback_chain() -> [Self; 4] {
-        [
-            Self::Gpt5Nano,
-            Self::Gpt4oMini,
-            Self::Grok4Fast,
-            Self::Ollama,
-        ]
+    /// Returns the configured fallback chain from VlmConfig.
+    pub fn fallback_chain_from_config(config: &VlmConfig) -> Vec<Self> {
+        config.fallback_chain()
     }
 
     /// API model identifier string.
-    /// For Ollama, this is loaded from OLLAMA_VLM_MODEL env var at runtime.
-    pub fn model_id(&self) -> &'static str {
+    /// For Ollama, loaded from OLLAMA_VLM_MODEL env var at runtime.
+    /// For Custom, loaded from VLM_MODEL env var at runtime.
+    pub fn model_id(&self, config: Option<&VlmConfig>) -> String {
         match self {
-            VlmModel::Gpt5Nano => "gpt-5-nano-2025-08-07",
-            VlmModel::Gpt4oMini => "gpt-4o-mini-2024-07-18",
-            VlmModel::Grok4Fast => "grok-4-1-fast",
-            VlmModel::Ollama => "llama3.2", // Default, overridden by OLLAMA_VLM_MODEL
+            VlmModel::Gpt5Nano => "gpt-5-nano-2025-08-07".to_string(),
+            VlmModel::Gpt4oMini => "gpt-4o-mini-2024-07-18".to_string(),
+            VlmModel::Grok4Fast => "grok-4-1-fast".to_string(),
+            VlmModel::Ollama => config
+                .and_then(|c| c.ollama_vlm_model.clone())
+                .unwrap_or_else(|| "llama3.2".to_string()),
+            VlmModel::Custom => config
+                .and_then(|c| c.custom_model.clone())
+                .unwrap_or_else(|| "custom".to_string()),
         }
     }
 
@@ -216,16 +219,39 @@ impl VlmModel {
             VlmModel::Gpt4oMini => "GPT-4o-mini Batch",
             VlmModel::Grok4Fast => "Grok-4-1-fast Batch",
             VlmModel::Ollama => "Ollama (local)",
+            VlmModel::Custom => "Custom (OpenAI-compatible)",
         }
     }
 
     /// Base URL for the API.
-    /// For Ollama, this is loaded from OLLAMA_URL env var at runtime (default: http://localhost:11434).
-    pub fn base_url(&self) -> &'static str {
+    /// For Custom/OpenAI-compatible, loaded from VLM_BASE_URL env var.
+    pub fn base_url(&self, config: Option<&VlmConfig>) -> String {
         match self {
-            VlmModel::Gpt5Nano | VlmModel::Gpt4oMini => "https://api.openai.com",
-            VlmModel::Grok4Fast => "https://api.x.ai",
-            VlmModel::Ollama => "http://localhost:11434", // Default, overridden by OLLAMA_URL
+            VlmModel::Gpt5Nano | VlmModel::Gpt4oMini => {
+                "https://api.openai.com".to_string()
+            }
+            VlmModel::Grok4Fast => "https://api.x.ai".to_string(),
+            VlmModel::Ollama => config
+                .and_then(|c| c.ollama_url.clone())
+                .unwrap_or_else(|| "http://localhost:11434".to_string()),
+            VlmModel::Custom => config
+                .and_then(|c| c.custom_base_url.clone())
+                .unwrap_or_else(|| "http://localhost:11434".to_string()),
+        }
+    }
+
+    /// Whether this model requires an API key.
+    pub fn needs_api_key(&self) -> bool {
+        !matches!(self, VlmModel::Ollama)
+    }
+
+    /// Get API key for this model from config.
+    pub fn api_key<'a>(&self, config: &'a VlmConfig) -> Option<&'a str> {
+        match self {
+            VlmModel::Gpt5Nano | VlmModel::Gpt4oMini => config.openai_api_key.as_deref(),
+            VlmModel::Grok4Fast => config.grok_api_key.as_deref(),
+            VlmModel::Ollama => Some(""), // No API key for Ollama
+            VlmModel::Custom => config.custom_api_key.as_deref(),
         }
     }
 
@@ -235,7 +261,7 @@ impl VlmModel {
             VlmModel::Gpt5Nano => 15,
             VlmModel::Gpt4oMini => 20,
             VlmModel::Grok4Fast => 30,
-            VlmModel::Ollama => 60, // Local models are slower
+            VlmModel::Ollama | VlmModel::Custom => 60,
         }
     }
 }
@@ -249,6 +275,14 @@ pub struct VlmConfig {
     pub ollama_url: Option<String>,
     /// Ollama VLM model for chat completions (e.g., llama3.2, mistral)
     pub ollama_vlm_model: Option<String>,
+    /// Custom/OpenAI-compatible base URL (e.g., https://api.minimax.chat/v1)
+    pub custom_base_url: Option<String>,
+    /// Custom provider API key
+    pub custom_api_key: Option<String>,
+    /// Custom provider model name (e.g., Minimax-M2)
+    pub custom_model: Option<String>,
+    /// Configurable fallback order (comma-separated: "ollama,openai,grok" or "openai,ollama")
+    pub fallback_order: Option<String>,
 }
 
 impl VlmConfig {
@@ -259,6 +293,10 @@ impl VlmConfig {
             grok_api_key: std::env::var("GROK_API_KEY").ok(),
             ollama_url: std::env::var("OLLAMA_URL").ok(),
             ollama_vlm_model: std::env::var("OLLAMA_VLM_MODEL").ok(),
+            custom_base_url: std::env::var("VLM_BASE_URL").ok(),
+            custom_api_key: std::env::var("VLM_API_KEY").ok(),
+            custom_model: std::env::var("VLM_MODEL").ok(),
+            fallback_order: std::env::var("VLM_FALLBACK_ORDER").ok(),
         }
     }
 
@@ -267,6 +305,49 @@ impl VlmConfig {
         self.openai_api_key.is_some()
             || self.grok_api_key.is_some()
             || self.ollama_vlm_model.is_some()
+            || self.custom_base_url.is_some()
+    }
+
+    /// Get the configured fallback chain based on VLM_FALLBACK_ORDER env var.
+    /// Default: ["ollama", "openai", "grok"] (local-first for privacy)
+    pub fn fallback_chain(&self) -> Vec<VlmModel> {
+        let order = self
+            .fallback_order
+            .as_deref()
+            .unwrap_or("ollama,openai,grok");
+        let mut chain = Vec::new();
+        for part in order.split(',') {
+            let part = part.trim().to_lowercase();
+            match part.as_str() {
+                "ollama" if self.ollama_vlm_model.is_some() => {
+                    chain.push(VlmModel::Ollama);
+                }
+                "openai" | "gpt" if self.openai_api_key.is_some() => {
+                    chain.push(VlmModel::Gpt5Nano);
+                }
+                "grok" | "xgrok" if self.grok_api_key.is_some() => {
+                    chain.push(VlmModel::Grok4Fast);
+                }
+                "custom" | "openai-compatible" if self.custom_base_url.is_some() => {
+                    chain.push(VlmModel::Custom);
+                }
+                _ => {}
+            }
+        }
+        // Fallback: add whatever is available but not yet in chain
+        if !chain.contains(&VlmModel::Ollama) && self.ollama_vlm_model.is_some() {
+            chain.push(VlmModel::Ollama);
+        }
+        if !chain.contains(&VlmModel::Gpt5Nano) && self.openai_api_key.is_some() {
+            chain.push(VlmModel::Gpt5Nano);
+        }
+        if !chain.contains(&VlmModel::Grok4Fast) && self.grok_api_key.is_some() {
+            chain.push(VlmModel::Grok4Fast);
+        }
+        if !chain.contains(&VlmModel::Custom) && self.custom_base_url.is_some() {
+            chain.push(VlmModel::Custom);
+        }
+        chain
     }
 }
 
@@ -352,7 +433,7 @@ impl VlmClient {
     ) -> Result<VlmSummary, VlmError> {
         let mut errors = Vec::new();
 
-        for model in VlmModel::fallback_chain() {
+        for model in config.fallback_chain() {
             match self
                 .call_model(prompt, context.clone(), model, config)
                 .await
@@ -403,17 +484,24 @@ impl VlmClient {
                 .as_ref()
                 .ok_or_else(|| VlmError::NoApiKey(model.name().to_string()))?,
             VlmModel::Ollama => "", // No API key needed for local Ollama
+            VlmModel::Custom => config
+                .custom_api_key
+                .as_ref()
+                .ok_or_else(|| VlmError::NoApiKey(model.name().to_string()))?,
         };
 
         let url = match model {
             VlmModel::Gpt5Nano | VlmModel::Gpt4oMini => {
-                format!("{}/v1/responses", model.base_url())
+                format!("{}/v1/responses", model.base_url(Some(config)))
             }
             VlmModel::Grok4Fast => {
-                format!("{}/v1/responses", model.base_url())
+                format!("{}/v1/responses", model.base_url(Some(config)))
             }
             VlmModel::Ollama => {
                 format!("{}/api/chat", ollama_url)
+            }
+            VlmModel::Custom => {
+                format!("{}/v1/responses", model.base_url(Some(config)))
             }
         };
 
@@ -504,7 +592,7 @@ impl VlmClient {
 
         // OpenAI / xAI format (gpt-5-nano, gpt-4o-mini, grok-4-fast)
         let mut body = serde_json::json!({
-            "model": model.model_id(),
+            "model": model.model_id(Some(config)),
             "input": [
                 {"role": "system", "content": system_msg},
                 {"role": "user", "content": user_prompt},

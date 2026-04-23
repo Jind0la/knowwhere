@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 use crate::api::auth::AuthContext;
 use crate::api::webhooks::{check_webhook_secret, DedupCache};
-use crate::embedding::{embed_document, embed_query, EmbeddingProvider};
+use crate::embedding::{embed_document, embed_document_batch, embed_query, EmbeddingProvider};
 use crate::memory::dream::DreamStatus;
 #[cfg(feature = "postgres-storage")]
 use crate::memory::skills::CreateSkillResponse;
@@ -32,6 +32,11 @@ pub use governance_events::*;
 #[path = "routes/vlm_webhooks.rs"]
 mod vlm_webhooks;
 pub use vlm_webhooks::*;
+
+use crate::api::subconscious_qa::{
+    is_multi_session_type, is_temporal_question, openai_qa_answer, qa_context_limit,
+    source_context_block, source_timestamp,
+};
 
 #[derive(Serialize, ToSchema)]
 pub struct RetrievalScoreDebug {
@@ -179,10 +184,16 @@ fn clean_for_embedding(text: &str) -> String {
         }
         out.push_str(cleaned);
     }
-    if out.len() > 1024 {
+    // Ollama-Embedder (z. B. nomic-embed-text-v2-moe) haben oft harte Token-Limits; inkl. Prefix
+    // `search_document: ` muss der Prompt unter der Kontextlänge bleiben.
+    let max_chars: usize = std::env::var("KNOWWHERE_EMBED_MAX_CHARS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .filter(|&n| n >= 64)
+        .unwrap_or(512);
+    if out.len() > max_chars {
         let original_len = out.len();
-        // Stable replacement for nightly-only floor_char_boundary
-        let mut end = 1024;
+        let mut end = max_chars;
         while !out.is_char_boundary(end) {
             end -= 1;
         }
@@ -190,12 +201,63 @@ fn clean_for_embedding(text: &str) -> String {
         tracing::debug!(
             original_len,
             truncated_to = out.len(),
+            max_chars,
             "clean_for_embedding: text truncated for embedding"
         );
     }
     out
 }
 use crate::storage::{HybridQuery, RetrievalProfile, StorageBackend};
+
+/// Split conversation text into rounds (user+assistant turn pairs).
+/// Falls back to the full text as a single chunk when no role prefixes are detected.
+fn chunk_into_rounds(text: &str, min_round_chars: usize) -> Vec<String> {
+    let role_prefixes = ["user:", "assistant:", "human:", "ai:", "User:", "Assistant:", "Human:", "AI:"];
+    let lines: Vec<&str> = text.lines().collect();
+    let mut rounds: Vec<String> = Vec::new();
+    let mut current = String::new();
+
+    for line in &lines {
+        let trimmed = line.trim();
+        let is_role_start = role_prefixes.iter().any(|p| trimmed.starts_with(p));
+
+        if is_role_start && !current.is_empty() {
+            let c = current.trim().to_string();
+            if !c.is_empty() {
+                rounds.push(c);
+            }
+            current.clear();
+        }
+        if !current.is_empty() {
+            current.push('\n');
+        }
+        current.push_str(line);
+    }
+    if !current.trim().is_empty() {
+        rounds.push(current.trim().to_string());
+    }
+
+    if rounds.len() <= 1 {
+        return vec![text.to_string()];
+    }
+
+    // Merge tiny rounds into their predecessor to avoid near-empty chunks
+    let mut merged: Vec<String> = Vec::new();
+    for r in rounds {
+        if let Some(last) = merged.last_mut() {
+            if last.len() < min_round_chars {
+                last.push('\n');
+                last.push_str(&r);
+                continue;
+            }
+        }
+        merged.push(r);
+    }
+    if merged.len() <= 1 {
+        return vec![text.to_string()];
+    }
+    merged
+}
 
 #[derive(Clone)]
 pub struct AppState {
@@ -520,6 +582,8 @@ fn ensure_retrieval_profile_allowed(
 pub struct StoreNodeResponse {
     pub id: Uuid,
     pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chunk_ids: Option<Vec<Uuid>>,
 }
 
 #[utoipa::path(
@@ -568,51 +632,146 @@ pub async fn store_session(
         }
     }
 
-    let vector = match req.vector {
-        Some(v) if !v.is_empty() => v,
-        _ => embed_document(&*state.embedding, &cleaned)
-            .await
-            .map_err(|e| {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("auto-embed failed: {e}"),
-                )
-            })?,
-    };
-
     let memory_type = MemoryType::parse(&req.memory_type).unwrap_or(MemoryType::Episodic);
     let source = MemorySource::parse(&req.source).unwrap_or(MemorySource::Conversation);
 
-    let mut metadata = req.metadata;
-    normalize_node_metadata(memory_type, source, &mut metadata);
-    let mut node = FractalNode::new_typed(
-        Some(req.content),
-        None,
-        vector,
-        metadata,
-        memory_type,
-        source,
-    );
-    if let Some(imp) = req.importance {
-        node.importance = imp.clamp(1, 10);
-    }
-    if let Some(sens) = req.sensitivity {
-        node.sensitivity = sens;
+    let min_round_chars: usize = std::env::var("KNOWWHERE_MIN_ROUND_CHARS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .filter(|&n| n >= 20)
+        .unwrap_or(80);
+
+    let chunks = chunk_into_rounds(&req.content, min_round_chars);
+
+    if chunks.len() <= 1 {
+        let vector = match req.vector {
+            Some(v) if !v.is_empty() => v,
+            _ => embed_document(&*state.embedding, &cleaned)
+                .await
+                .map_err(|e| {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("auto-embed failed: {e}"),
+                    )
+                })?,
+        };
+        let mut metadata = req.metadata;
+        normalize_node_metadata(memory_type, source, &mut metadata);
+        let mut node = FractalNode::new_typed(
+            Some(req.content),
+            None,
+            vector,
+            metadata,
+            memory_type,
+            source,
+        );
+        if let Some(imp) = req.importance {
+            node.importance = imp.clamp(1, 10);
+        }
+        if let Some(sens) = req.sensitivity {
+            node.sensitivity = sens;
+        }
+        let id = state
+            .store
+            .insert(node)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        tracing::info!(%id, ?memory_type, "session node stored");
+        return Ok((
+            StatusCode::CREATED,
+            Json(StoreNodeResponse {
+                id,
+                message: "session node created".to_string(),
+                chunk_ids: None,
+            }),
+        ));
     }
 
-    let id = state
-        .store
-        .insert(node)
+    let chunk_count = chunks.len();
+    let session_chunk_id = Uuid::new_v4().to_string();
+
+    let cleaned: Vec<(usize, String)> = chunks
+        .iter()
+        .enumerate()
+        .map(|(i, c)| (i, clean_for_embedding(c)))
+        .filter(|(_, c)| c.len() >= 4)
+        .collect();
+
+    if cleaned.is_empty() {
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "no embeddable chunks".to_string(),
+        ));
+    }
+
+    let refs: Vec<&str> = cleaned.iter().map(|(_, s)| s.as_str()).collect();
+    let vectors = embed_document_batch(&*state.embedding, &refs)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("batch embed failed: {e}"),
+            )
+        })?;
 
-    tracing::info!(%id, ?memory_type, "session node stored");
+    let mut all_ids: Vec<Uuid> = Vec::with_capacity(cleaned.len());
+    for ((idx, _), vector) in cleaned.iter().zip(vectors) {
+        let idx = *idx;
+        let mut metadata = req.metadata.clone();
+        metadata.insert(
+            "chunk_index".to_string(),
+            Value::Number(serde_json::Number::from(idx)),
+        );
+        metadata.insert(
+            "session_chunk_count".to_string(),
+            Value::Number(serde_json::Number::from(chunk_count)),
+        );
+        metadata.insert(
+            "session_chunk_group".to_string(),
+            Value::String(session_chunk_id.clone()),
+        );
+        normalize_node_metadata(memory_type, source, &mut metadata);
+
+        let content = if idx == 0 {
+            req.content.clone()
+        } else {
+            chunks[idx].clone()
+        };
+
+        let mut node = FractalNode::new_typed(
+            Some(content),
+            None,
+            vector,
+            metadata,
+            memory_type,
+            source,
+        );
+        if let Some(imp) = req.importance {
+            node.importance = imp.clamp(1, 10);
+        }
+        if let Some(sens) = req.sensitivity {
+            node.sensitivity = sens;
+        }
+        let id = state
+            .store
+            .insert(node)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        all_ids.push(id);
+    }
+
+    let primary_id = all_ids.first().copied().ok_or((
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "no chunks stored".to_string(),
+    ))?;
+    tracing::info!(%primary_id, ?memory_type, chunks = chunk_count, "session node stored (batch-embedded)");
 
     Ok((
         StatusCode::CREATED,
         Json(StoreNodeResponse {
-            id,
-            message: "session node created".to_string(),
+            id: primary_id,
+            message: format!("session node created ({chunk_count} chunks)"),
+            chunk_ids: Some(all_ids),
         }),
     ))
 }
@@ -731,6 +890,7 @@ pub async fn store_external(
         Json(StoreNodeResponse {
             id,
             message: "external pointer node created".to_string(),
+            chunk_ids: None,
         }),
     ))
 }
@@ -826,6 +986,12 @@ pub struct SubconsciousChatRequest {
     pub retrieval_profile: RetrievalProfile,
     #[serde(default)]
     pub include_debug: bool,
+    #[serde(default)]
+    pub question_type: Option<String>,
+    #[serde(default)]
+    pub question_date: Option<String>,
+    #[serde(default = "default_answer_mode")]
+    pub answer_mode: String,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -853,6 +1019,14 @@ fn truncate_chars(value: &str, max_chars: usize) -> String {
         Some((idx, _)) => format!("{}...", &value[..idx]),
         None => value.to_string(),
     }
+}
+
+fn default_answer_mode() -> String {
+    "context".to_string()
+}
+
+fn is_qa_mode(mode: &str) -> bool {
+    mode.eq_ignore_ascii_case("qa")
 }
 
 fn source_snippet(node: &FractalNode) -> String {
@@ -960,13 +1134,18 @@ pub async fn subconscious_chat(
     }
 
     let top_k = req.top_k.clamp(1, 20);
+    let qa_limit = if is_qa_mode(&req.answer_mode) {
+        qa_context_limit(top_k, &req.message, req.question_type.as_deref())
+    } else {
+        top_k
+    };
     let query_vector = embed_query(&*state.embedding, &req.message)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let query = HybridQuery::hybrid(
         req.message.clone(),
         query_vector,
-        top_k.saturating_mul(2),
+        qa_limit.saturating_mul(2),
         req.max_depth.clamp(1, 6),
     )
     .with_profile(req.retrieval_profile);
@@ -977,7 +1156,7 @@ pub async fn subconscious_chat(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     let validator = GovernanceValidator::new(state.governance_policy.read().await.clone());
-    let sources: Vec<SubconsciousSource> = results
+    let filtered_results: Vec<crate::storage::ScoredNode> = results
         .into_iter()
         .filter(|entry| {
             if !req.governance_enabled {
@@ -986,7 +1165,13 @@ pub async fn subconscious_chat(
             let validation = validator.validate(&entry.node.to_governance_candidate());
             !validation.has_hard_block()
         })
+        .take(qa_limit)
+        .collect();
+
+    let sources: Vec<SubconsciousSource> = filtered_results
+        .iter()
         .take(top_k)
+        .cloned()
         .map(|entry| {
             let score_debug = req
                 .include_debug
@@ -1014,7 +1199,42 @@ pub async fn subconscious_chat(
         })
         .collect();
 
-    let answer = compose_subconscious_answer(&req.message, &sources);
+    let answer = if is_qa_mode(&req.answer_mode) {
+        let temporal = is_temporal_question(&req.message, req.question_type.as_deref());
+        let mut qa_results = filtered_results.clone();
+        let sort_chrono =
+            temporal || is_multi_session_type(req.question_type.as_deref());
+        if sort_chrono {
+            qa_results.sort_by_key(|entry| source_timestamp(&entry.node));
+        }
+        let contexts: Vec<String> = qa_results
+            .iter()
+            .map(|entry| {
+                source_context_block(
+                    &req.message,
+                    req.question_type.as_deref(),
+                    temporal,
+                    entry,
+                )
+            })
+            .collect();
+        match openai_qa_answer(
+            &req.message,
+            req.question_type.as_deref(),
+            req.question_date.as_deref(),
+            &contexts,
+        )
+        .await
+        {
+            Ok(a) => a,
+            Err(e) => {
+                tracing::warn!("qa mode fallback to context answer: {e}");
+                compose_subconscious_answer(&req.message, &sources)
+            }
+        }
+    } else {
+        compose_subconscious_answer(&req.message, &sources)
+    };
     let mut stored = false;
     if req.persist {
         persist_chat_exchange(&state, &req.message, &answer)
@@ -1207,6 +1427,7 @@ pub async fn delete_node(
         Ok(true) => Ok(Json(StoreNodeResponse {
             id,
             message: "node deleted".to_string(),
+            chunk_ids: None,
         })),
         Ok(false) => Err((StatusCode::NOT_FOUND, format!("node {id} not found"))),
         Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
@@ -2924,5 +3145,76 @@ pub async fn match_skills(
     match store.match_task(&q.task, q.top_k).await {
         Ok(skills) => Ok(Json(skills)),
         Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
+    }
+}
+
+#[cfg(test)]
+mod chunking_tests {
+    use super::chunk_into_rounds;
+
+    #[test]
+    fn chunk_empty_text_returns_single_empty_chunk() {
+        let chunks = chunk_into_rounds("", 100);
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0], "");
+    }
+
+    #[test]
+    fn chunk_single_line_no_prefix_returns_single_chunk() {
+        let text = "Just a simple message without any role prefix";
+        let chunks = chunk_into_rounds(text, 100);
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0], text);
+    }
+
+    #[test]
+    fn chunk_user_assistant_pair_returns_two_chunks() {
+        let text = "user: Hello there\nassistant: Hi! How can I help?";
+        let chunks = chunk_into_rounds(text, 10);
+        assert_eq!(chunks.len(), 2);
+        assert!(chunks[0].contains("Hello there"));
+        assert!(chunks[1].contains("How can I help"));
+    }
+
+    #[test]
+    fn chunk_multiple_rounds_returns_correct_count() {
+        let text = "user: Question 1\nassistant: Answer 1\nuser: Question 2\nassistant: Answer 2\nuser: Question 3\nassistant: Answer 3";
+        let chunks = chunk_into_rounds(text, 10);
+        // Each role prefix starts a new chunk, so 6 chunks total
+        assert_eq!(chunks.len(), 6);
+    }
+
+    #[test]
+    fn chunk_human_ai_prefixes() {
+        let text = "human: Hello\nai: Hi there\nhuman: Question";
+        let chunks = chunk_into_rounds(text, 10);
+        // Each role prefix starts a new chunk
+        assert_eq!(chunks.len(), 3);
+    }
+
+    #[test]
+    fn chunk_merges_tiny_rounds_below_min_chars() {
+        let text = "user: Hi\nassistant: Hello\nuser: Bye\nassistant: Goodbye";
+        let chunks = chunk_into_rounds(text, 50);
+        // With min_round_chars=50, tiny rounds should be merged
+        assert!(chunks.len() <= 2);
+    }
+
+    #[test]
+    fn chunk_no_role_prefixes_returns_original_text() {
+        let text = "This is just a long text\nwith multiple lines\nbut no role prefixes at all";
+        let chunks = chunk_into_rounds(text, 100);
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0], text);
+    }
+
+    #[test]
+    fn chunk_preserves_multiline_content() {
+        let text = "user: Line 1\nLine 2\nLine 3\nassistant: Response 1\nResponse 2";
+        let chunks = chunk_into_rounds(text, 10);
+        assert_eq!(chunks.len(), 2);
+        assert!(chunks[0].contains("Line 1"));
+        assert!(chunks[0].contains("Line 3"));
+        assert!(chunks[1].contains("Response 1"));
     }
 }
