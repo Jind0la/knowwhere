@@ -220,11 +220,8 @@ fn chunk_into_rounds(text: &str, min_round_chars: usize) -> Vec<String> {
     for line in &lines {
         let trimmed = line.trim();
         let is_role_start = role_prefixes.iter().any(|p| trimmed.starts_with(p));
-        let is_user_start = is_role_start
-            && (trimmed.starts_with("user:") || trimmed.starts_with("User:")
-                || trimmed.starts_with("human:") || trimmed.starts_with("Human:"));
 
-        if is_user_start && !current.is_empty() {
+        if is_role_start && !current.is_empty() {
             let c = current.trim().to_string();
             if !c.is_empty() {
                 rounds.push(c);
@@ -3148,5 +3145,76 @@ pub async fn match_skills(
     match store.match_task(&q.task, q.top_k).await {
         Ok(skills) => Ok(Json(skills)),
         Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
+    }
+}
+
+#[cfg(test)]
+mod chunking_tests {
+    use super::chunk_into_rounds;
+
+    #[test]
+    fn chunk_empty_text_returns_single_empty_chunk() {
+        let chunks = chunk_into_rounds("", 100);
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0], "");
+    }
+
+    #[test]
+    fn chunk_single_line_no_prefix_returns_single_chunk() {
+        let text = "Just a simple message without any role prefix";
+        let chunks = chunk_into_rounds(text, 100);
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0], text);
+    }
+
+    #[test]
+    fn chunk_user_assistant_pair_returns_two_chunks() {
+        let text = "user: Hello there\nassistant: Hi! How can I help?";
+        let chunks = chunk_into_rounds(text, 10);
+        assert_eq!(chunks.len(), 2);
+        assert!(chunks[0].contains("Hello there"));
+        assert!(chunks[1].contains("How can I help"));
+    }
+
+    #[test]
+    fn chunk_multiple_rounds_returns_correct_count() {
+        let text = "user: Question 1\nassistant: Answer 1\nuser: Question 2\nassistant: Answer 2\nuser: Question 3\nassistant: Answer 3";
+        let chunks = chunk_into_rounds(text, 10);
+        // Each role prefix starts a new chunk, so 6 chunks total
+        assert_eq!(chunks.len(), 6);
+    }
+
+    #[test]
+    fn chunk_human_ai_prefixes() {
+        let text = "human: Hello\nai: Hi there\nhuman: Question";
+        let chunks = chunk_into_rounds(text, 10);
+        // Each role prefix starts a new chunk
+        assert_eq!(chunks.len(), 3);
+    }
+
+    #[test]
+    fn chunk_merges_tiny_rounds_below_min_chars() {
+        let text = "user: Hi\nassistant: Hello\nuser: Bye\nassistant: Goodbye";
+        let chunks = chunk_into_rounds(text, 50);
+        // With min_round_chars=50, tiny rounds should be merged
+        assert!(chunks.len() <= 2);
+    }
+
+    #[test]
+    fn chunk_no_role_prefixes_returns_original_text() {
+        let text = "This is just a long text\nwith multiple lines\nbut no role prefixes at all";
+        let chunks = chunk_into_rounds(text, 100);
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0], text);
+    }
+
+    #[test]
+    fn chunk_preserves_multiline_content() {
+        let text = "user: Line 1\nLine 2\nLine 3\nassistant: Response 1\nResponse 2";
+        let chunks = chunk_into_rounds(text, 10);
+        assert_eq!(chunks.len(), 2);
+        assert!(chunks[0].contains("Line 1"));
+        assert!(chunks[0].contains("Line 3"));
+        assert!(chunks[1].contains("Response 1"));
     }
 }

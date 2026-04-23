@@ -349,3 +349,204 @@ pub(crate) async fn openai_qa_answer(
         .to_string();
     Ok(answer)
 }
+
+#[cfg(test)]
+mod qa_tests {
+    use super::*;
+
+    #[test]
+    fn is_temporal_question_detects_temporal_type() {
+        assert!(is_temporal_question("What happened first?", Some("temporal-reasoning")));
+        assert!(!is_temporal_question("What is your name?", Some("single-session")));
+    }
+
+    #[test]
+    fn is_temporal_question_detects_keywords() {
+        assert!(is_temporal_question("Which event happened first?", None));
+        assert!(is_temporal_question("How many days ago?", None));
+        assert!(is_temporal_question("What did you do before lunch?", None));
+        assert!(!is_temporal_question("What is your favorite color?", None));
+    }
+
+    #[test]
+    fn is_multi_session_type_detects_correctly() {
+        assert!(is_multi_session_type(Some("multi-session")));
+        assert!(!is_multi_session_type(Some("single-session")));
+        assert!(!is_multi_session_type(None));
+    }
+
+    #[test]
+    fn qa_context_limit_for_preference() {
+        assert_eq!(qa_context_limit(5, "What do I prefer?", Some("single-session-preference")), 8);
+    }
+
+    #[test]
+    fn qa_context_limit_for_aggregation() {
+        assert_eq!(qa_context_limit(5, "How many total?", Some("multi-session")), 16);
+    }
+
+    #[test]
+    fn qa_context_limit_for_temporal() {
+        assert_eq!(qa_context_limit(5, "What happened first?", Some("temporal-reasoning")), 8);
+    }
+
+    #[test]
+    fn qa_context_limit_default() {
+        assert_eq!(qa_context_limit(5, "What is this?", Some("single-session")), 5);
+    }
+
+    #[test]
+    fn question_keywords_extracts_meaningful_words() {
+        let keywords = question_keywords("What programming language do you prefer?");
+        assert!(keywords.contains(&"programming".to_string()));
+        assert!(keywords.contains(&"language".to_string()));
+        assert!(keywords.contains(&"prefer".to_string()));
+        assert!(!keywords.contains(&"what".to_string())); // stopword
+        assert!(!keywords.contains(&"do".to_string()));   // stopword
+    }
+
+    #[test]
+    fn question_keywords_filters_short_tokens() {
+        let keywords = question_keywords("A B C D E");
+        assert!(keywords.is_empty());
+    }
+
+    #[test]
+    fn truncate_chars_works_correctly() {
+        assert_eq!(truncate_chars("Hello World", 5), "Hello...");
+        assert_eq!(truncate_chars("Hi", 10), "Hi");
+        assert_eq!(truncate_chars("", 5), "");
+    }
+
+    #[test]
+    fn source_timestamp_reads_benchmark_date() {
+        use std::collections::HashMap;
+        use crate::memory::FractalNode;
+        
+        let mut metadata = HashMap::new();
+        metadata.insert("benchmark_session_date".to_string(), serde_json::json!("2024-01-15"));
+        let node = FractalNode::new_session("test".to_string(), vec![], metadata);
+        assert_eq!(source_timestamp(&node), Some("2024-01-15".to_string()));
+    }
+
+    #[test]
+    fn source_timestamp_fallback_to_source_timestamp() {
+        use std::collections::HashMap;
+        use crate::memory::FractalNode;
+        
+        let mut metadata = HashMap::new();
+        metadata.insert("source_timestamp".to_string(), serde_json::json!("2024-02-20"));
+        let node = FractalNode::new_session("test".to_string(), vec![], metadata);
+        assert_eq!(source_timestamp(&node), Some("2024-02-20".to_string()));
+    }
+
+    #[test]
+    fn source_session_id_reads_metadata() {
+        use std::collections::HashMap;
+        use crate::memory::FractalNode;
+        
+        let mut metadata = HashMap::new();
+        metadata.insert("session_id".to_string(), serde_json::json!("sess_123"));
+        let node = FractalNode::new_session("test".to_string(), vec![], metadata);
+        assert_eq!(source_session_id(&node), Some("sess_123".to_string()));
+    }
+
+    #[test]
+    fn line_score_counts_keywords() {
+        let keywords = vec!["rust".to_string(), "programming".to_string()];
+        let score = line_score("I love rust programming", &keywords, false);
+        assert_eq!(score, 2);
+    }
+
+    #[test]
+    fn line_score_temporal_bonus() {
+        let keywords = vec![];
+        let score = line_score("Yesterday I went to the store", &keywords, true);
+        assert!(score >= 2); // temporal bonus for "yesterday"
+    }
+
+    #[test]
+    fn relevant_lines_returns_scored_lines() {
+        let question = "What about rust?";
+        let content = "Line one\nI love rust programming\nLine three\nRust is great";
+        let lines = relevant_lines(question, content, false, 2);
+        assert_eq!(lines.len(), 2);
+        // Should return lines containing "rust"
+        assert!(lines.iter().any(|l: &String| l.contains("rust")));
+    }
+
+    #[test]
+    fn relevant_lines_fallback_when_no_matches() {
+        let question = "Something unrelated";
+        let content = "Line one\nLine two\nLine three";
+        let lines = relevant_lines(question, content, false, 2);
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0], "Line one");
+        assert_eq!(lines[1], "Line two");
+    }
+
+    #[test]
+    fn is_aggregation_question_detects_keywords() {
+        assert!(is_aggregation_question("How many items?", None));
+        assert!(!is_aggregation_question("What is the total?", None)); // "total " needs trailing space
+        assert!(is_aggregation_question("How much combined?", None));
+        assert!(!is_aggregation_question("What is your name?", None));
+    }
+
+    #[test]
+    fn is_aggregation_question_respects_type() {
+        assert!(is_aggregation_question("What?", Some("multi-session")));
+    }
+
+    #[test]
+    fn qa_prompt_includes_question_and_context() {
+        let question = "What is rust?";
+        let contexts = vec!["Session 1: Rust is a language".to_string()];
+        let prompt = qa_prompt(question, None, None, &contexts);
+        assert!(prompt.contains("What is rust?"));
+        assert!(prompt.contains("Rust is a language"));
+        assert!(prompt.contains("Answer the user question"));
+    }
+
+    #[test]
+    fn qa_prompt_includes_temporal_instructions() {
+        let question = "What happened first?";
+        let contexts = vec![];
+        let prompt = qa_prompt(question, Some("temporal-reasoning"), None, &contexts);
+        assert!(prompt.contains("temporal reasoning"));
+        assert!(prompt.contains("session dates"));
+    }
+
+    #[test]
+    fn qa_prompt_includes_aggregation_instructions() {
+        let question = "How many total?";
+        let contexts = vec![];
+        let prompt = qa_prompt(question, Some("multi-session"), None, &contexts);
+        assert!(prompt.contains("Combine evidence"));
+        assert!(prompt.contains("count only explicit"));
+    }
+
+    #[test]
+    fn qa_prompt_includes_preference_instructions() {
+        let question = "What do I prefer?";
+        let contexts = vec![];
+        let prompt = qa_prompt(question, Some("single-session-preference"), None, &contexts);
+        assert!(prompt.contains("implied preferences"));
+        assert!(prompt.contains("user statements"));
+    }
+
+    #[test]
+    fn qa_max_output_tokens_preference() {
+        assert_eq!(qa_max_output_tokens("What do I prefer?", Some("single-session-preference")), 320);
+    }
+
+    #[test]
+    fn qa_max_output_tokens_aggregation() {
+        assert_eq!(qa_max_output_tokens("How many?", Some("multi-session")), 120);
+    }
+
+    #[test]
+    fn qa_max_output_tokens_default() {
+        assert_eq!(qa_max_output_tokens("What?", Some("single-session")), 40);
+    }
+}
