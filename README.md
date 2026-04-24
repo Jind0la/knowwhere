@@ -278,6 +278,16 @@ cargo build --features "postgres-storage,grok-provider"
 
 Contributions are welcome. Please open an issue or pull request on [GitHub](https://github.com/Jind0la/knowwhere).
 
+### Git Hook Setup
+
+This repo tracks a pre-commit hook in `scripts/pre-commit-hook.sh`. After cloning, activate it:
+
+```bash
+ln -sf scripts/pre-commit-hook.sh .git/hooks/pre-commit
+```
+
+The hook runs `cargo sqlx prepare` to keep the offline query cache up-to-date. PostgreSQL must be running on port 5433 (`docker start knowwhere-kw-postgres-1`) or you can skip the check with `git commit --no-verify`.
+
 ## License
 
 [MIT](LICENSE) — 2026 KnowWhere contributors
