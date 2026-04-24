@@ -43,9 +43,64 @@ Optional chat        -> chat/subconscious -> answer + cited sources
 External data        -> store_external -> pointer + metadata only
 ```
 
-## Quick start
+## Quick start (Docker Compose — recommended)
 
-### Local Rust server
+The fastest way to run KnowWhere is with Docker Compose. It starts PostgreSQL, Ollama, and KnowWhere together with zero local dependencies.
+
+### 1. Clone and start
+
+```bash
+git clone https://github.com/Jind0la/knowwhere.git
+cd knowwhere
+
+# Start everything (builds if needed)
+make up
+# or: docker compose up -d --build
+```
+
+Services started:
+
+| Service | Port | Purpose |
+|---------|------|---------|
+| KnowWhere | `3737` | REST API + Swagger UI |
+| PostgreSQL | `5433` | Persistent storage with pgvector |
+| Ollama | `11434` | Local embeddings + summarization |
+
+### 2. Verify health
+
+```bash
+curl http://localhost:3737/health
+# → {"status":"ok","node_count":0}
+```
+
+### 3. Run benchmarks (optional)
+
+```bash
+make benchmark
+# or: docker compose exec knowwhere /app/scripts/benchmark.sh
+```
+
+This runs the LongMemEval Canary benchmark against your local instance and reports Recall@5, MRR, and Abstention accuracy.
+
+### 4. View logs
+
+```bash
+make logs
+# or: docker compose logs -f knowwhere
+```
+
+### 5. Stop
+
+```bash
+make down
+# or: docker compose down
+```
+
+---
+
+## Local development (Rust + Ollama)
+
+For development, debugging, or when you prefer not to use Docker:
 
 Requires [Rust 1.85+](https://rustup.rs) and [Ollama](https://ollama.ai).
 
@@ -53,18 +108,97 @@ Requires [Rust 1.85+](https://rustup.rs) and [Ollama](https://ollama.ai).
 git clone https://github.com/Jind0la/knowwhere.git
 cd knowwhere
 ollama pull nomic-embed-text-v2-moe
-KNOWWHERE_API_KEY=my-secret-key cargo run
+KNOWWHERE_API_KEY=test cargo run
 ```
 
-Open [http://localhost:3737/swagger-ui/](http://localhost:3737/swagger-ui/) for the API docs.
-
-If you want a different local embedding model, set it explicitly before startup:
+If you want a different local embedding model:
 
 ```bash
 export OLLAMA_MODEL=snowflake-arctic-embed2
 export OLLAMA_EMBEDDING_DIMENSION=1024
-KNOWWHERE_API_KEY=my-secret-key cargo run
+KNOWWHERE_API_KEY=test cargo run
 ```
+
+Open [http://localhost:3737/swagger-ui/](http://localhost:3737/swagger-ui/) for the API docs.
+
+---
+
+## Docker quick test (single container)
+
+Good for a fast single-container smoke test without PostgreSQL:
+
+```bash
+git clone https://github.com/Jind0la/knowwhere.git
+cd knowwhere
+docker build -t knowwhere-server:local .
+docker run -d --name knowwhere -p 3737:3737 \
+  -e KNOWWHERE_API_KEY=test \
+  -e OLLAMA_URL=http://host.docker.internal:11434 \
+  -e RUST_LOG=info \
+  knowwhere-server:local
+```
+
+### 3. Verify health
+
+```bash
+make health
+# or: curl http://localhost:3737/health
+```
+
+### 4. Run benchmark (manual, optional)
+
+```bash
+make benchmark
+# or: docker compose exec knowwhere /app/scripts/benchmark.sh
+```
+
+### 5. Stop
+
+```bash
+make down
+# or: docker compose down
+```
+
+---
+
+### Makefile commands
+
+| Command | What it does |
+|---------|--------------|
+| `make up` | Start all services |
+| `make down` | Stop all services |
+| `make build` | Rebuild KnowWhere image |
+| `make logs` | Follow KnowWhere logs |
+| `make ps` | Show running services |
+| `make benchmark` | Run LongMemEval Canary inside container |
+| `make shell` | Open shell in KnowWhere container |
+| `make test` | Run `cargo test --lib` locally |
+| `make test-postgres` | Run integration tests (needs DATABASE_URL) |
+| `make clean` | Remove containers, volumes, build artifacts |
+
+---
+
+### Local Rust server (advanced / development)
+
+For development, debugging, or when you prefer not to use Docker:
+
+Requires [Rust 1.85+](https://rustup.rs), [Ollama](https://ollama.ai), and optionally PostgreSQL on port 5433.
+
+```bash
+# 1. Start PostgreSQL + Ollama manually, or use the compose services:
+docker compose up -d ollama kw-postgres
+
+# 2. Set env vars
+export KNOWWHERE_API_KEY=test
+export DATABASE_URL=postgresql://postgres:kw@localhost:5433/kw
+export OLLAMA_URL=http://localhost:11434
+export OLLAMA_MODEL=snowflake-arctic-embed2
+
+# 3. Run
+cargo run --features postgres-storage
+```
+
+Open [http://localhost:3737/swagger-ui/](http://localhost:3737/swagger-ui/) for the API docs.
 
 ### Dashboard
 
@@ -83,33 +217,6 @@ VITE_API_TARGET=http://localhost:3750 npm run dev
 ```
 
 Open [http://localhost:5173](http://localhost:5173), paste a Bearer token into the UI, and the dashboard will load capabilities from `GET /auth/me`.
-
-### Docker
-
-Quick test, default build:
-
-```bash
-docker build -t knowwhere-server:local .
-docker run -d --name knowwhere -p 3737:3737 \
-  -e KNOWWHERE_API_KEY=my-secret-key \
-  -e OLLAMA_URL=http://host.docker.internal:11434 \
-  -e RUST_LOG=info \
-  knowwhere-server:local
-```
-
-Persistent PostgreSQL setup via the checked-in compose file:
-
-```bash
-export KNOWWHERE_API_KEY=my-secret-key
-export POSTGRES_PASSWORD=kw
-docker compose up -d
-```
-
-Notes:
-
-- `docker-compose.yml` builds with `FEATURES=postgres-storage`
-- The compose file defaults `OLLAMA_MODEL` to `snowflake-arctic-embed2`
-- On Linux, set `OLLAMA_URL` to a reachable host address if `host.docker.internal` is unavailable
 
 ## Pointer-first data model
 

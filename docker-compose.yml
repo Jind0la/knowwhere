@@ -1,24 +1,16 @@
 services:
-  knowwhere:
-    build:
-      context: .
-      args:
-        FEATURES: postgres-storage
+  ollama:
+    image: ollama/ollama:latest
     ports:
-      - "3737:3737"
-    environment:
-      - RUST_LOG=info
-      - KNOWWHERE_API_KEY=${KNOWWHERE_API_KEY:-kw_admin_default_change_me}
-      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-kw}@kw-postgres:5432/kw
-      - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434}
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-snowflake-arctic-embed2}
-      - OLLAMA_VLM_MODEL=${OLLAMA_VLM_MODEL:-llama3.2}
-      - KNOWWHERE_DATA_DIR=/app/data
+      - "11434:11434"
     volumes:
-      - knowwhere-data:/app/data
-    depends_on:
-      kw-postgres:
-        condition: service_healthy
+      - ollama-data:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
     restart: unless-stopped
 
   kw-postgres:
@@ -37,6 +29,31 @@ services:
       - postgres-data:/var/lib/postgresql/data
     restart: unless-stopped
 
+  knowwhere:
+    build:
+      context: .
+      args:
+        FEATURES: postgres-storage
+    ports:
+      - "3737:3737"
+    environment:
+      - RUST_LOG=${RUST_LOG:-info}
+      - KNOWWHERE_API_KEY=${KNOWWHERE_API_KEY:-kw_default_$(openssl rand -hex 8)}
+      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-kw}@kw-postgres:5432/kw
+      - OLLAMA_URL=http://ollama:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-snowflake-arctic-embed2}
+      - OLLAMA_VLM_MODEL=${OLLAMA_VLM_MODEL:-llama3.2}
+      - KNOWWHERE_DATA_DIR=/app/data
+    volumes:
+      - knowwhere-data:/app/data
+    depends_on:
+      ollama:
+        condition: service_healthy
+      kw-postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   knowwhere-data:
   postgres-data:
+  ollama-data:

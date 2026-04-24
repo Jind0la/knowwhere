@@ -6,7 +6,7 @@
 # IMPORTANT: When using postgres-storage feature, you must also run a PostgreSQL server
 # with the pgvector extension. Use the docker-compose.yml which provides pgvector/pgvector:pg16.
 # The knowwhere-server binary is a client — it connects to an external Postgres instance.
-ARG OLLAMA_API_URL=http://host.docker.internal:11434
+ARG OLLAMA_API_URL=http://ollama:11434
 ARG OLLAMA_MODEL=snowflake-arctic-embed2
 ARG OLLAMA_VLM_MODEL=llama3.2
 
@@ -34,11 +34,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl iproute2 &
     rm -rf /var/lib/apt/lists/*
 COPY --from=builder /app/target/release/knowwhere-server /usr/local/bin/
 COPY --from=builder /app/frontend /app/frontend
+COPY scripts/benchmark.sh /app/scripts/benchmark.sh
+RUN chmod +x /app/scripts/benchmark.sh
 WORKDIR /app
 ENV RUST_LOG=info
-# Ollama URL - on macOS/Windows, use host.docker.internal:11434
-# On Linux, you may need to add --add-host=host.docker.internal:host-gateway to docker run
-ENV OLLAMA_API_URL=http://host.docker.internal:11434
+# Ollama URL - inside Docker Compose network, use the ollama service name
+ENV OLLAMA_API_URL=http://ollama:11434
 ENV OLLAMA_MODEL=snowflake-arctic-embed2
 ENV OLLAMA_VLM_MODEL=llama3.2
 ENV KNOWWHERE_PORT=3737
