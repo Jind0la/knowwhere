@@ -7,3 +7,4 @@ pub mod scheduler;
 pub mod services;
 pub mod storage;
 pub mod vlm;
+pub mod summarizer;

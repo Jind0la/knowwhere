@@ -36,8 +36,12 @@ utoipa-swagger-ui = { version = "9", features = ["axum"] }
 bm25 = "2.3.2"
 futures = "0.3"
 
+# Local summarization for tiered compaction
+# Uses Ollama HTTP API (no extra dependencies — reqwest already included)
+# Feature flag allows disabling if Ollama not available
+
 [features]
-default = []
+default = ["summarizer"]
 # Enable PostgreSQL-backed storage layer (requires DATABASE_URL env var at runtime)
 postgres-storage = []
 
@@ -46,6 +50,11 @@ postgres-storage = []
 # reqwest is always included (Ollama also needs it).
 openai-provider = []
 grok-provider = []
+
+# Enable local summarization via Ollama for L2→L1→L0 compaction
+# Requires Ollama installed: https://ollama.com
+# Default model: llama3.2 (3B parameters, fast on CPU)
+summarizer = []
 
 [[bin]]
 name = "longmemeval_canary"

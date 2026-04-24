@@ -186,6 +186,10 @@ pub enum UpdateOperation {
     SetParentTierId(Uuid),
     /// Set the node status (used by AuditScheduler).
     SetStatus(MemoryStatus),
+    /// Set the overview_content for L1 tier (used by ConsolidationScheduler).
+    SetOverviewContent(String),
+    /// Set the summary_content for L0 tier (used by ConsolidationScheduler).
+    SetSummaryContent(String),
     /// Composite operation: set weight + optionally status (used by AuditScheduler).
     /// This must be atomic — both changes happen together.
     ApplyAudit {
@@ -211,6 +215,12 @@ impl UpdateOperation {
             }
             UpdateOperation::SetStatus(status) => {
                 node.status = *status;
+            }
+            UpdateOperation::SetOverviewContent(content) => {
+                node.overview_content = Some(content.clone());
+            }
+            UpdateOperation::SetSummaryContent(content) => {
+                node.summary_content = Some(content.clone());
             }
             UpdateOperation::ApplyAudit { weight, status } => {
                 node.weight = *weight;

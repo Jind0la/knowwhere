@@ -1,10 +1,16 @@
 //! Consolidation Scheduler — Dream Mode Part 1
 //!
 //! Periodically finds L2-Nodes (context_tier = Raw, not yet consolidated)
-//! and enqueues them for VLM summarization via `VlmWorkerHandle`.
+//! and compacts them via TieredCompactionWorker with LocalSummarizer.
+//!
+//! # Compaction Strategy
+//!
+//! 1. **PRIMARY**: LocalSummarizer (Ollama) — deterministic, fast, no API key
+//! 2. **FALLBACK**: VLM (cloud) — if user configured API key
+//! 3. **NEVER**: Truncation — information loss unacceptable
 //!
 //! Consolidation targets memories that are old enough and unprocessed,
-//! grouping them into batches and enqueuing VLM jobs to create L1/L0 summaries.
+//! grouping them into batches and processing via TieredCompactionWorker.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -17,12 +23,17 @@ use uuid::Uuid;
 use crate::memory::types::{ContextTier, MemoryStatus};
 use crate::scheduler::SchedulerConfig;
 use crate::storage::{StorageBackend, UpdateOperation};
+use crate::summarizer::TieredSummarizer;
 use crate::vlm::{SummaryContext, VlmJob, VlmWorkerHandle};
 
 /// Consolidation Scheduler state.
+///
+/// Uses TieredCompactionWorker with LocalSummarizer as PRIMARY,
+/// VLM as OPTIONAL fallback. NEVER uses truncation.
 pub struct ConsolidationScheduler {
     store: Arc<dyn StorageBackend>,
     vlm_worker: Option<VlmWorkerHandle>,
+    local_summarizer: TieredSummarizer,
     config: SchedulerConfig,
     /// Track last run so we don't re-process recently consolidated nodes.
     last_run: Arc<RwLock<Option<Instant>>>,
@@ -34,14 +45,26 @@ pub struct ConsolidationScheduler {
 
 impl ConsolidationScheduler {
     /// Create a new ConsolidationScheduler.
+    ///
+    /// Initializes TieredSummarizer for local compaction.
+    /// VLM worker is optional — LocalSummarizer is always preferred.
     pub fn new(
         store: Arc<dyn StorageBackend>,
         vlm_worker: Option<VlmWorkerHandle>,
         config: SchedulerConfig,
     ) -> Self {
+        let local_summarizer = TieredSummarizer::new();
+        if !local_summarizer.is_available() {
+            tracing::warn!(
+                "LocalSummarizer not available. Install Ollama: https://ollama.com \
+                 Or configure VLM (OPENAI_API_KEY) for cloud fallback."
+            );
+        }
+        
         Self {
             store,
             vlm_worker,
+            local_summarizer,
             config,
             last_run: Arc::new(RwLock::new(None)),
             last_enqueued: Arc::new(RwLock::new(0)),
@@ -93,6 +116,14 @@ impl ConsolidationScheduler {
     }
 
     /// Run one consolidation pass.
+    ///
+    /// # Compaction Strategy
+    ///
+    /// 1. **PRIMARY**: LocalSummarizer (Ollama) — deterministic, fast, no API key
+    /// 2. **FALLBACK**: VLM (cloud) — if user configured API key
+    /// 3. **NEVER**: Truncation — information loss unacceptable
+    ///
+    /// Each candidate is processed individually for quality control.
     async fn run(&self) {
         let start = Instant::now();
         let batch_size = self.config.consolidation_batch_size;
@@ -108,41 +139,65 @@ impl ConsolidationScheduler {
 
         tracing::info!(
             count = candidates.len(),
+            local_available = self.local_summarizer.is_available(),
+            vlm_available = self.vlm_worker.is_some(),
             "ConsolidationScheduler: found candidates"
         );
 
         let mut enqueued = 0;
+        let mut failed = 0;
 
-        for batch in candidates.chunks(batch_size) {
-            let node_ids: Vec<Uuid> = batch.iter().map(|(id, _)| *id).collect();
-
-            if let Some(ref handle) = self.vlm_worker {
-                let job = VlmJob::new(node_ids.clone(), SummaryContext::Overview);
-                match handle.enqueue(job).await {
+        for (node_id, _created_at) in &candidates {
+            // PRIMARY: Try LocalSummarizer first
+            if self.local_summarizer.is_available() {
+                match self.process_local_compaction(*node_id).await {
                     Ok(()) => {
-                        tracing::debug!(ids = node_ids.len(), "enqueued consolidation batch");
-                        enqueued += node_ids.len();
+                        enqueued += 1;
+                        continue;
                     }
                     Err(e) => {
-                        tracing::error!(error = %e, "failed to enqueue consolidation batch");
+                        tracing::warn!(
+                            node_id = %node_id,
+                            error = %e,
+                            "Local compaction failed, trying VLM fallback"
+                        );
+                    }
+                }
+            }
+
+            // FALLBACK: VLM (if available)
+            if let Some(ref handle) = self.vlm_worker {
+                let job = VlmJob::new(vec![*node_id], SummaryContext::Overview);
+                match handle.enqueue(job).await {
+                    Ok(()) => {
+                        tracing::debug!(node_id = %node_id, "enqueued VLM consolidation job");
+                        enqueued += 1;
+                    }
+                    Err(e) => {
+                        tracing::error!(
+                            node_id = %node_id,
+                            error = %e,
+                            "VLM enqueue failed"
+                        );
+                        failed += 1;
                     }
                 }
             } else {
-                tracing::debug!(
-                    ids = ?node_ids,
-                    "VLM worker not available, skipping enqueue (VLM disabled)"
+                // NO TRUNCATION — log failure but don't lose information
+                tracing::error!(
+                    node_id = %node_id,
+                    "Compaction failed: no summarizer available. \
+                     Install Ollama (https://ollama.com) or configure VLM. \
+                     Truncation disabled — memory preserved in original form."
                 );
+                failed += 1;
             }
 
-            // Mark these nodes as consolidation-in-progress by setting parent_tier_id to self.
-            // This prevents re-processing the same nodes in the next interval.
-            // We use the node ID itself as a temporary marker.
-            for node_id in &node_ids {
-                let _ = self
-                    .store
-                    .update(node_id, UpdateOperation::SetParentTierId(*node_id))
-                    .await;
-            }
+            // Mark node as processed (even if failed, to avoid infinite retries)
+            let _ = self
+                .store
+                .update(node_id, UpdateOperation::SetParentTierId(*node_id))
+                .await;
         }
 
         *self.last_enqueued.write().await = enqueued;
@@ -150,9 +205,54 @@ impl ConsolidationScheduler {
 
         tracing::info!(
             enqueued,
+            failed,
             elapsed_ms = start.elapsed().as_millis(),
             "ConsolidationScheduler: run complete"
         );
+    }
+
+    /// Process a single node using LocalSummarizer.
+    ///
+    /// Fetches node content, generates L1 overview via Ollama,
+    /// stores result in overview_content column.
+    async fn process_local_compaction(&self, node_id: Uuid) -> anyhow::Result<()> {
+        // Fetch node content
+        let node = match self.store.get(&node_id).await? {
+            Some(n) => n,
+            None => {
+                anyhow::bail!("node {} not found", node_id);
+            }
+        };
+
+        let content = node.content.unwrap_or_default();
+        if content.is_empty() {
+            anyhow::bail!("node {} has empty content", node_id);
+        }
+
+        // Generate L1 overview via LocalSummarizer
+        let summary = self
+            .local_summarizer
+            .summarize_for_tier(&content, ContextTier::Overview)
+            .await?;
+
+        // Store overview in database
+        self.store
+            .update(&node_id, UpdateOperation::SetOverviewContent(summary.text.clone()))
+            .await?;
+
+        // Mark as compacted
+        self.store
+            .update(&node_id, UpdateOperation::SetParentTierId(node_id))
+            .await?;
+
+        tracing::info!(
+            node_id = %node_id,
+            model = %summary.model_used,
+            output_len = summary.text.len(),
+            "Local compaction complete"
+        );
+
+        Ok(())
     }
 
     /// Find consolidation candidates.

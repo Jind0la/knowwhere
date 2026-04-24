@@ -915,9 +915,19 @@ mod worker {
                     s.text
                 }
                 Err(e) => {
-                    // All models failed — use truncation fallback
-                    tracing::warn!(job_id = %job.id, "VLM unavailable, using truncation fallback: {}", e);
-                    Self::truncation_fallback_text(&combined, &job.context)
+                    // All models failed — DO NOT use truncation
+                    // Information loss is unacceptable per project principles
+                    tracing::error!(
+                        job_id = %job.id,
+                        error = %e,
+                        "VLM summarization failed for all models. \
+                         Truncation is DISABLED — cannot compact without quality loss. \
+                         Configure LocalSummarizer (DistilBART) or VLM to enable compaction."
+                    );
+                    return Err(anyhow::anyhow!(
+                        "VLM summarization failed and truncation is disabled: {}",
+                        e
+                    ));
                 }
             };
 
@@ -992,34 +1002,15 @@ mod worker {
         }
 
         /// Fallback text compression when VLM is unavailable.
-        /// Uses token-count limits from SummaryContext::target_tokens().
-        pub(crate) fn truncation_fallback_text(
-            combined_content: &str,
-            context: &SummaryContext,
+        ///
+        /// ⚠️ DEPRECATED: Never use in production. Information loss unacceptable.
+        /// Truncation is disabled — always prefer LocalSummarizer or VLM.
+        #[deprecated(since = "0.2.0", note = "Truncation causes information loss. Use LocalSummarizer or configure VLM.")]
+        pub(crate) fn _truncation_fallback_text(
+            _combined_content: &str,
+            _context: &SummaryContext,
         ) -> String {
-            let limit = context.target_tokens();
-            // Rough: ~4 chars per token
-            let char_limit = limit * 4;
-
-            if combined_content.len() <= char_limit {
-                return combined_content.to_string();
-            }
-
-            // Find a good break point (sentence or clause boundary)
-            let truncated = &combined_content[..char_limit];
-
-            // Try to break at sentence end, clause, or comma
-            if let Some(pos) = truncated.rfind(['.', '!', '?', ';', ',', '\n']) {
-                let pos = if truncated.chars().nth(pos) == Some(',') && pos > char_limit / 2 {
-                    // Prefer sentence end over mid-clause comma
-                    truncated[..pos].rfind(['.', '!', '?']).unwrap_or(pos)
-                } else {
-                    pos
-                };
-                format!("{}...", truncated[..pos].trim())
-            } else {
-                format!("{}...", truncated.trim())
-            }
+            panic!("truncation fallback disabled — use LocalSummarizer or configure VLM")
         }
     }
 

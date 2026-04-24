@@ -1311,6 +1311,22 @@ impl StorageBackend for PostgresStore {
                 .bind(*id);
                 query.execute(&self.pool).await?;
             }
+            UpdateOperation::SetOverviewContent(content) => {
+                let query = sqlx::query(
+                    "UPDATE memories SET overview_content = $1 WHERE id = $2",
+                )
+                .bind(content)
+                .bind(*id);
+                query.execute(&self.pool).await?;
+            }
+            UpdateOperation::SetSummaryContent(content) => {
+                let query = sqlx::query(
+                    "UPDATE memories SET summary_content = $1 WHERE id = $2",
+                )
+                .bind(content)
+                .bind(*id);
+                query.execute(&self.pool).await?;
+            }
             UpdateOperation::SetStatus(status) => {
                 let status_str = match status {
                     crate::memory::types::MemoryStatus::Active => "active",
