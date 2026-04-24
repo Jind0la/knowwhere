@@ -96,16 +96,16 @@ impl SelfHealingService {
             .join(" ");
 
         // 3. Store in DB
-        sqlx::query!(
+        sqlx::query(
             r#"
             UPDATE memories
             SET content_hash = $1, semantic_thumbnail = $2
             WHERE id = $3
             "#,
-            hash_hex,
-            thumbnail,
-            memory_id,
         )
+        .bind(&hash_hex)
+        .bind(&thumbnail)
+        .bind(memory_id)
         .execute(&self.pool)
         .await
         .context("failed to update content_hash/semantic_thumbnail for memory")?;
@@ -132,14 +132,14 @@ impl SelfHealingService {
         tracing::info!(%memory_id, uri, "pointer broken, attempting self-healing");
 
         // Fetch memory row to get hash + thumbnail
-        let row = sqlx::query!(
+        let row: Option<(Option<String>, Option<String>)> = sqlx::query_as(
             r#"
             SELECT content_hash, semantic_thumbnail
             FROM memories
             WHERE id = $1 AND status != 'deleted'
             "#,
-            memory_id,
         )
+        .bind(memory_id)
         .fetch_optional(&self.pool)
         .await
         .context("failed to fetch memory for self-healing")?;
@@ -150,7 +150,7 @@ impl SelfHealingService {
         };
 
         // Attempt 1: Hash-based recovery
-        if let Some(hash) = row.content_hash {
+        if let Some(hash) = row.0 {
             if let Some(new_path) = self.find_by_hash(&hash).await? {
                 let new_uri = self.path_to_uri(&new_path);
                 self.update_pointer(memory_id, uri, &new_uri, RepairStatus::RepairedHash)
@@ -160,7 +160,7 @@ impl SelfHealingService {
         }
 
         // Attempt 2: Semantic thumbnail fallback
-        if let Some(thumbnail) = row.semantic_thumbnail {
+        if let Some(thumbnail) = row.1 {
             if let Some(new_path) = self.find_by_semantic(&thumbnail).await? {
                 let new_uri = self.path_to_uri(&new_path);
                 self.update_pointer(memory_id, uri, &new_uri, RepairStatus::RepairedSemantic)
@@ -177,19 +177,19 @@ impl SelfHealingService {
 
     /// Get full health check result for a memory (for the /health endpoint).
     pub async fn health_check(&self, memory_id: Uuid) -> Result<HealthCheckResult> {
-        let row = sqlx::query!(
+        let row: Option<(String,)> = sqlx::query_as(
             r#"
             SELECT content
             FROM memories
             WHERE id = $1 AND status != 'deleted'
             "#,
-            memory_id,
         )
+        .bind(memory_id)
         .fetch_optional(&self.pool)
         .await
         .context("failed to fetch memory for health check")?;
 
-        let uri = row.map(|r| r.content).unwrap_or_default();
+        let uri = row.map(|r| r.0).unwrap_or_default();
 
         let path = self.uri_to_path(&uri);
         let pointer_valid = path.exists();
@@ -388,15 +388,15 @@ impl SelfHealingService {
         new_uri: &str,
         status: RepairStatus,
     ) -> Result<()> {
-        sqlx::query!(
+        sqlx::query(
             r#"
             UPDATE memories
             SET content = $1, updated_at = NOW()
             WHERE id = $2
             "#,
-            new_uri,
-            memory_id,
         )
+        .bind(new_uri)
+        .bind(memory_id)
         .execute(&self.pool)
         .await
         .context("failed to update repaired pointer in DB")?;
@@ -422,16 +422,16 @@ impl SelfHealingService {
             RepairStatus::Unrepaired => "unrepaired",
         };
 
-        sqlx::query!(
+        sqlx::query(
             r#"
             INSERT INTO self_healing_log (memory_id, broken_uri, repair_status, new_uri)
             VALUES ($1, $2, $3, $4)
             "#,
-            memory_id,
-            broken_uri,
-            status_str,
-            new_uri,
         )
+        .bind(memory_id)
+        .bind(broken_uri)
+        .bind(status_str)
+        .bind(new_uri)
         .execute(&self.pool)
         .await
         .context("failed to log self-healing event")?;

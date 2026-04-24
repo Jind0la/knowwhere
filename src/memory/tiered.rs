@@ -78,8 +78,7 @@ impl TieredCompactionWorker {
         target_tier: Option<ContextTier>,
     ) -> Result<Uuid> {
         // Fetch the current memory to determine its tier
-        let row = sqlx::query_as!(
-            MemoryRowTiered,
+        let row = sqlx::query_as::<_, MemoryRowTiered>(
             r#"
             SELECT id as "id!", memory_type as "memory_type!",
                    content as "content!", importance as "importance!",
@@ -88,19 +87,20 @@ impl TieredCompactionWorker {
                    source as "source!", depth as "depth!",
                    access_count as "access_count!",
                    created_at as "created_at!", updated_at as "updated_at!",
-                   superseded_by, source_id, provenance as "provenance!", parent_id,
+                   superseded_by, source_id, provenance as "provenance!",
+                   parent_id,
                    last_accessed, deleted_at, metadata as "metadata!", entities as "entities!",
                    COALESCE(tags, ARRAY[]::TEXT[])::TEXT[] as "tags!",
                    content_preview,
                    context_tier::text AS "context_tier!",
                    parent_tier_id,
                    summary_content, overview_content,
-                   embedding as "embedding: _"
+                   embedding::float4[] as "embedding: _"
             FROM memories
             WHERE id = $1 AND status = 'active'
             "#,
-            memory_id
         )
+        .bind(memory_id)
         .fetch_optional(&self.pool)
         .await?;
 
@@ -250,7 +250,7 @@ impl TieredCompactionWorker {
     /// them asynchronously.
     pub async fn compact_session(&self, session_id: &str) -> Result<usize> {
         // Find all L2 (raw) memories for this session
-        let rows = sqlx::query!(
+        let rows: Vec<(Uuid, String)> = sqlx::query_as(
             r#"
             SELECT id, content
             FROM memories
@@ -259,15 +259,15 @@ impl TieredCompactionWorker {
               AND status = 'active'
               AND char_length(content) > $2
             "#,
-            session_id,
-            L1_MAX_TOKENS as i32 * 4, // rough char estimate for token > 300
         )
+        .bind(session_id)
+        .bind(L1_MAX_TOKENS as i32 * 4)
         .fetch_all(&self.pool)
         .await?;
 
         let mut count = 0;
-        for row in rows {
-            if self.compact_memory(row.id, None).await.is_ok() {
+        for (id, _content) in rows {
+            if self.compact_memory(id, None).await.is_ok() {
                 count += 1;
             }
         }

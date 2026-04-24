@@ -1538,18 +1538,66 @@ pub async fn reembed_all(State(state): State<AppState>) -> Json<ReembedResponse>
                 }
             }
             Err(e) => {
-                tracing::warn!(id = %node.id, "reembed failed: {e}");
+                tracing::warn!(%node.id, "re-embed failed: {}", e);
                 failed += 1;
             }
         }
     }
 
-    tracing::info!(updated, failed, "reembed_all complete");
     Json(ReembedResponse {
         updated,
         failed,
-        message: format!("{updated} nodes re-embedded, {failed} failed"),
+        message: format!("re-embedded {updated} nodes, {failed} failed"),
     })
+}
+
+// -- Repair Embedding Dimensions (1536 → 1024) --
+
+#[derive(Serialize, ToSchema)]
+pub struct RepairEmbeddingsResponse {
+    pub scanned: usize,
+    pub repaired: usize,
+    pub skipped: usize,
+    pub target_dimension: usize,
+    pub message: String,
+}
+
+#[utoipa::path(
+    post,
+    path = "/maintenance/repair_embeddings",
+    tag = "maintenance",
+    responses(
+        (status = 200, description = "Embedding repair complete", body = RepairEmbeddingsResponse),
+        (status = 403, description = "Admin only")
+    )
+)]
+pub async fn repair_embeddings(
+    State(state): State<AppState>,
+    auth: axum::Extension<AuthContext>,
+) -> Result<Json<RepairEmbeddingsResponse>, StatusCode> {
+    // Admin-only: require admin API key
+    if !auth.is_admin() {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    match state.store.repair_embedding_dimensions(&*state.embedding).await {
+        Ok(report) => {
+            Ok(Json(RepairEmbeddingsResponse {
+                scanned: report.scanned,
+                repaired: report.repaired,
+                skipped: report.skipped,
+                target_dimension: report.target_dimension,
+                message: format!(
+                    "Repaired {} of {} memories ({} skipped). Target dimension: {}",
+                    report.repaired, report.scanned, report.skipped, report.target_dimension
+                ),
+            }))
+        }
+        Err(e) => {
+            tracing::error!("Embedding repair failed: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
 }
 
 // -- Dream Status --
@@ -2401,13 +2449,13 @@ pub async fn reindex_external_node(
 
     // Fetch updated hash/thumbnail for response
     let (content_hash, thumbnail_words) = {
-        let row = sqlx::query!(
+        let row: (Option<String>, Option<String>) = sqlx::query_as(
             r#"
             SELECT content_hash, semantic_thumbnail
             FROM memories WHERE id = $1
             "#,
-            id,
         )
+        .bind(id)
         .fetch_one(match state.trajectory_pool.as_ref() {
             Some(arc) => &**arc,
             None => {
@@ -2415,14 +2463,14 @@ pub async fn reindex_external_node(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "no trajectory pool".into(),
                 )
-                    .into())
+                .into())
             }
         })
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
         (
-            row.content_hash,
-            row.semantic_thumbnail
+            row.0,
+            row.1
                 .as_ref()
                 .map(|t| t.split_whitespace().count())
                 .unwrap_or(0),

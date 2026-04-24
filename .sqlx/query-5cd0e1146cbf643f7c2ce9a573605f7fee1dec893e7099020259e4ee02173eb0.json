@@ -31,7 +31,7 @@
       {
         "ordinal": 5,
         "name": "memory_type_hint",
-        "type_info": "Varchar"
+        "type_info": "Text"
       }
     ],
     "parameters": {

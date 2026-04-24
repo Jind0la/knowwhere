@@ -58,6 +58,10 @@ pub struct AuthContext {
 }
 
 impl AuthContext {
+    pub fn is_admin(&self) -> bool {
+        matches!(self.token_kind, AuthTokenKind::Admin)
+    }
+
     pub fn full_access() -> Self {
         Self {
             token_kind: AuthTokenKind::Admin,

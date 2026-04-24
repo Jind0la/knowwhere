@@ -16,7 +16,7 @@
       {
         "ordinal": 2,
         "name": "category!",
-        "type_info": "Varchar"
+        "type_info": "Text"
       },
       {
         "ordinal": 3,
@@ -61,13 +61,13 @@
       false,
       false,
       false,
+      false,
       true,
-      true,
-      true,
+      false,
       null,
       null,
       true,
-      true
+      false
     ]
   },
   "hash": "3a6356ca2b28a5b43f5d73e8afe005c7bb94323b9614db7763ddc1ff5db05fa1"

@@ -273,46 +273,42 @@ impl<'a> TrajectoryStore<'a> {
         let run_id = Uuid::new_v4();
 
         // Insert the run row
-        sqlx::query!(
-            r#"
+        sqlx::query(r#"
             INSERT INTO retrieval_runs (
                 id, query_text, embedding, run_at,
                 total_candidates, retrieved_count, execution_time_ms, max_depth_used, metadata
             )
             VALUES ($1, $2, $3, NOW(), $4, $5, $6, $7, $8)
-            "#,
-            run_id,
-            &trajectory.query_text,
-            trajectory.query_embedding.clone() as _,
-            trajectory.total_candidates as i32,
-            trajectory.retrieved_count as i32,
-            trajectory.execution_time_ms as i32,
-            trajectory.max_depth_used as i32,
-            serde_json::json!({}),
-        )
+            "#)
+        .bind(run_id)
+        .bind(&trajectory.query_text)
+        .bind(trajectory.query_embedding.clone())
+        .bind(trajectory.total_candidates as i32)
+        .bind(trajectory.retrieved_count as i32)
+        .bind(trajectory.execution_time_ms as i32)
+        .bind(trajectory.max_depth_used as i32)
+        .bind(serde_json::json!({}))
         .execute(self.pool)
         .await?;
 
         // Insert all steps
         for (i, step) in trajectory.steps.iter().enumerate() {
-            sqlx::query!(
-                r#"
+            sqlx::query(r#"
                 INSERT INTO retrieval_trajectory (
                     run_id, step_index, step_type, memory_id,
                     score_before, score_after, rank, decision, filter_reason
                 )
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                "#,
-                run_id,
-                i as i32,
-                &step.step_type,
-                step.memory_id,
-                step.similarity as _, // similarity maps to score_after
-                step.similarity as _, // we don't have score_before, use same
-                step.remaining_depth.map(|d| d as i32), // rank from remaining_depth if available
-                step.filter_reason.clone(),
-                step.filter_reason.clone(),
-            )
+                "#)
+            .bind(run_id)
+            .bind(i as i32)
+            .bind(&step.step_type)
+            .bind(step.memory_id)
+            .bind(step.similarity as f32)
+            .bind(step.similarity as f32)
+            .bind(step.remaining_depth.map(|d| d as i32))
+            .bind(step.filter_reason.clone())
+            .bind(step.filter_reason.clone())
             .execute(self.pool)
             .await?;
         }

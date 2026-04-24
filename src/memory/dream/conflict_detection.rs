@@ -201,14 +201,10 @@ impl ConflictDetector {
 
         // Log the detection run — only possible when we have a direct pool.
         if let Some(pool) = self.pool() {
-            sqlx::query!(
-                r#"
+            sqlx::query(r#"
                 INSERT INTO conflict_detection_runs (id, conflicts_found, conflicts_resolved, run_at)
                 VALUES ($1, $2, 0, NOW())
-                "#,
-                run_id,
-                total as i32,
-            )
+                "#).bind(run_id).bind(total as i32)
             .execute(pool)
             .await?;
         }
@@ -230,7 +226,7 @@ impl ConflictDetector {
             .context("detect_entity_conflicts requires a PgPool")?;
 
         // Get all active memories with entities
-        let rows = sqlx::query!(
+        let rows: Vec<(Uuid, String, String, Option<serde_json::Value>, Option<serde_json::Value>, chrono::DateTime<chrono::Utc>, Option<f64>)> = sqlx::query_as(
             r#"
             SELECT id, memory_type, content, entities, metadata, created_at, confidence
             FROM memories
@@ -247,7 +243,7 @@ impl ConflictDetector {
         let mut entity_groups: std::collections::HashMap<String, Vec<_>> =
             std::collections::HashMap::new();
         for row in &rows {
-            if let Some(serde_json::Value::Array(entities)) = &row.entities {
+            if let Some(serde_json::Value::Array(entities)) = &row.3 {
                 for entity in entities {
                     if let Some(name) = entity.as_str() {
                         entity_groups.entry(name.to_string()).or_default().push(row);
@@ -268,13 +264,13 @@ impl ConflictDetector {
             let mut conflicting_ids = Vec::new();
 
             for mem in &memories {
-                if !mem.content.is_empty() {
-                    if !contents.insert(mem.content.clone()) {
+                if !mem.2.is_empty() {
+                    if !contents.insert(mem.2.clone()) {
                         // Duplicate content — not a conflict
                         continue;
                     }
                 }
-                conflicting_ids.push(mem.id);
+                conflicting_ids.push(mem.0);
             }
 
             // If we have multiple different contents for same entity → conflict
@@ -289,27 +285,18 @@ impl ConflictDetector {
                 let id = Uuid::new_v4();
 
                 // Insert conflict record
-                sqlx::query!(
-                    r#"
+                sqlx::query(r#"
                     INSERT INTO memory_conflicts (id, conflicting_memory_ids, conflict_type, description, detected_at, state)
                     VALUES ($1, $2, $3, $4, NOW(), 'pending')
-                    "#,
-                    id,
-                    &conflicting_ids,
-                    "entity",
-                    description,
-                )
+                    "#).bind(id).bind(&conflicting_ids).bind("entity").bind(description.clone())
                 .execute(pool)
                 .await?;
 
                 // Mark memories as having pending conflict
                 for mem_id in &conflicting_ids {
-                    sqlx::query!(
-                        r#"
+                    sqlx::query(r#"
                         UPDATE memories SET conflict_state = 'pending' WHERE id = $1
-                        "#,
-                        *mem_id,
-                    )
+                        "#).bind(*mem_id)
                     .execute(pool)
                     .await?;
                 }
@@ -318,7 +305,7 @@ impl ConflictDetector {
                     id,
                     conflicting_memory_ids: conflicting_ids,
                     conflict_type: ConflictType::Entity,
-                    description,
+                    description: description.clone(),
                     detected_at: chrono::Utc::now(),
                     state: "pending".to_string(),
                 });
@@ -375,7 +362,7 @@ impl ConflictDetector {
         const BATCH_SIZE: usize = 50;
 
         // Fetch active memories with embeddings in batches.
-        let rows = sqlx::query!(
+        let rows: Vec<(Uuid, String, Option<f64>, Option<String>)> = sqlx::query_as(
             r#"
             SELECT id, content, confidence, embedding::text as embedding
             FROM memories
@@ -395,17 +382,16 @@ impl ConflictDetector {
 
         // Build a lookup: memory ID → (content, confidence, embedding)
         let memories: Vec<_> = rows
-            .iter()
-            .filter_map(|r| {
-                let embedding_text: Option<String> = r.embedding.clone();
+            .into_iter()
+            .filter_map(|(id, content, confidence, embedding_text)| {
                 let embedding: Vec<f32> = embedding_text
                     .and_then(|s| serde_json::from_str::<Vec<f32>>(&s).ok())
                     .unwrap_or_default();
                 if embedding.is_empty() {
                     return None;
                 }
-                let confidence: f64 = r.confidence.unwrap_or(0.0);
-                Some((r.id, r.content.clone(), confidence, embedding))
+                let confidence: f64 = confidence.unwrap_or(0.0);
+                Some((id, content, confidence, embedding))
             })
             .collect();
 
@@ -464,26 +450,17 @@ impl ConflictDetector {
 
                     let id = Uuid::new_v4();
 
-                    sqlx::query!(
-                        r#"
+                    sqlx::query(r#"
                         INSERT INTO memory_conflicts (id, conflicting_memory_ids, conflict_type, description, detected_at, state)
                         VALUES ($1, $2, $3, $4, NOW(), 'pending')
-                        "#,
-                        id,
-                        &conflicting_ids[..],
-                        "confidence",
-                        description,
-                    )
+                        "#).bind(id).bind(&conflicting_ids[..]).bind("confidence").bind(description.clone())
                     .execute(pool)
                     .await?;
 
                     for mid in &conflicting_ids {
-                        sqlx::query!(
-                            r#"
+                        sqlx::query(r#"
                             UPDATE memories SET conflict_state = 'pending' WHERE id = $1
-                            "#,
-                            *mid,
-                        )
+                            "#).bind(*mid)
                         .execute(pool)
                         .await?;
                     }
@@ -492,7 +469,7 @@ impl ConflictDetector {
                         id,
                         conflicting_memory_ids: conflicting_ids,
                         conflict_type: ConflictType::Confidence,
-                        description,
+                        description: description.clone(),
                         detected_at: chrono::Utc::now(),
                         state: "pending".to_string(),
                     });
@@ -513,7 +490,7 @@ impl ConflictDetector {
             .pool()
             .context("string conflict detection requires a PgPool")?;
 
-        let rows = sqlx::query!(
+        let rows: Vec<(Uuid, String, String, Option<f64>, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
             r#"
             SELECT id, memory_type, content, confidence, created_at
             FROM memories
@@ -535,7 +512,7 @@ impl ConflictDetector {
             let mut same_content: Vec<_> = vec![current];
 
             // Find all memories with same content
-            while j < rows.len() && rows[j].content == current.content {
+            while j < rows.len() && rows[j].2 == current.2 {
                 same_content.push(&rows[j]);
                 j += 1;
             }
@@ -543,41 +520,32 @@ impl ConflictDetector {
             // Check if any pair has significantly different confidence
             for k in 0..same_content.len() {
                 for l in (k + 1)..same_content.len() {
-                    let diff = (same_content[k].confidence.unwrap_or(0.0)
-                        - same_content[l].confidence.unwrap_or(0.0))
+                    let diff = (same_content[k].3.unwrap_or(0.0)
+                        - same_content[l].3.unwrap_or(0.0))
                     .abs();
                     if diff > 0.3 {
                         let conflicting_ids: Vec<Uuid> =
-                            same_content.iter().map(|m| m.id).collect();
+                            same_content.iter().map(|m| m.0).collect();
                         let description = format!(
                             "Same content has confidence scores {} and {} (diff: {:.2})",
-                            same_content[k].confidence.unwrap_or(0.0),
-                            same_content[l].confidence.unwrap_or(0.0),
+                            same_content[k].3.unwrap_or(0.0),
+                            same_content[l].3.unwrap_or(0.0),
                             diff
                         );
 
                         let id = Uuid::new_v4();
 
-                        sqlx::query!(
-                            r#"
+                        sqlx::query(r#"
                             INSERT INTO memory_conflicts (id, conflicting_memory_ids, conflict_type, description, detected_at, state)
                             VALUES ($1, $2, $3, $4, NOW(), 'pending')
-                            "#,
-                            id,
-                            &conflicting_ids,
-                            "confidence",
-                            description,
-                        )
+                            "#).bind(id).bind(&conflicting_ids).bind("confidence").bind(description.clone())
                         .execute(pool)
                         .await?;
 
                         for mem_id in &conflicting_ids {
-                            sqlx::query!(
-                                r#"
+                            sqlx::query(r#"
                                 UPDATE memories SET conflict_state = 'pending' WHERE id = $1
-                                "#,
-                                *mem_id,
-                            )
+                                "#).bind(*mem_id)
                             .execute(pool)
                             .await?;
                         }
@@ -586,7 +554,7 @@ impl ConflictDetector {
                             id,
                             conflicting_memory_ids: conflicting_ids,
                             conflict_type: ConflictType::Confidence,
-                            description,
+                            description: description.clone(),
                             detected_at: chrono::Utc::now(),
                             state: "pending".to_string(),
                         });
@@ -607,7 +575,7 @@ impl ConflictDetector {
             .pool()
             .context("list_pending_conflicts requires a PgPool")?;
 
-        let rows = sqlx::query!(
+        let rows: Vec<(Uuid, Vec<Uuid>, String, String, chrono::DateTime<chrono::Utc>, String)> = sqlx::query_as(
             r#"
             SELECT id, conflicting_memory_ids, conflict_type, description, detected_at, state
             FROM memory_conflicts
@@ -621,13 +589,13 @@ impl ConflictDetector {
         Ok(rows
             .into_iter()
             .map(|r| ConflictGroup {
-                id: r.id,
-                conflicting_memory_ids: r.conflicting_memory_ids,
-                conflict_type: ConflictType::parse(&r.conflict_type)
+                id: r.0,
+                conflicting_memory_ids: r.1,
+                conflict_type: ConflictType::parse(&r.2)
                     .unwrap_or(ConflictType::Entity),
-                description: r.description,
-                detected_at: r.detected_at,
-                state: r.state,
+                description: r.3,
+                detected_at: r.4,
+                state: r.5,
             })
             .collect())
     }
@@ -640,14 +608,12 @@ impl ConflictDetector {
         let pool = self.pool().context("resolve_conflict requires a PgPool")?;
 
         // Get the conflict group
-        let conflict = sqlx::query!(
-            r#"
+        let conflict: Option<(Uuid, Vec<Uuid>)> = sqlx::query_as(r#"
             SELECT id, conflicting_memory_ids
             FROM memory_conflicts
             WHERE id = $1 AND state = 'pending'
-            "#,
-            conflict_id,
-        )
+            "#)
+        .bind(conflict_id)
         .fetch_optional(pool)
         .await?;
 
@@ -656,7 +622,7 @@ impl ConflictDetector {
             None => anyhow::bail!("conflict {} not found or already resolved", conflict_id),
         };
 
-        let memory_ids: Vec<Uuid> = conflict.conflicting_memory_ids;
+        let memory_ids: Vec<Uuid> = conflict.1;
 
         // Ensure winner is in the conflict group
         if !memory_ids.contains(&winning_memory_id) {
@@ -670,41 +636,31 @@ impl ConflictDetector {
         // Mark losing memories as superseded
         for mem_id in &memory_ids {
             if *mem_id != winning_memory_id {
-                sqlx::query!(
-                    r#"
+                sqlx::query(r#"
                     UPDATE memories
                     SET superseded_by = $1, status = 'superseded', conflict_state = 'resolved', updated_at = NOW()
                     WHERE id = $2
-                    "#,
-                    winning_memory_id,
-                    *mem_id,
-                )
+                    "#).bind(winning_memory_id).bind(*mem_id)
                 .execute(pool)
                 .await?;
             }
         }
 
         // Mark conflict as resolved
-        sqlx::query!(
-            r#"
+        sqlx::query(r#"
             UPDATE memory_conflicts
             SET state = 'resolved'
             WHERE id = $1
-            "#,
-            conflict_id,
-        )
+            "#).bind(conflict_id)
         .execute(pool)
         .await?;
 
         // Update winning memory: clear conflict state
-        sqlx::query!(
-            r#"
+        sqlx::query(r#"
             UPDATE memories
             SET conflict_state = 'resolved', updated_at = NOW()
             WHERE id = $1
-            "#,
-            winning_memory_id,
-        )
+            "#).bind(winning_memory_id)
         .execute(pool)
         .await?;
 
@@ -725,17 +681,13 @@ impl ConflictDetector {
     pub async fn recent_runs(&self, limit: i32) -> Result<Vec<ConflictDetectionRunRow>> {
         let pool = self.pool().context("recent_runs requires a PgPool")?;
 
-        let rows = sqlx::query_as!(
-            ConflictDetectionRunRow,
-            r#"
+        let rows = sqlx::query_as::<_, ConflictDetectionRunRow>(r#"
             SELECT id as "id!", conflicts_found as "conflicts_found!",
                    conflicts_resolved as "conflicts_resolved!", run_at as "run_at!"
             FROM conflict_detection_runs
             ORDER BY run_at DESC
             LIMIT $1::bigint
-            "#,
-            limit as i64
-        )
+            "#).bind(limit as i64)
         .fetch_all(pool)
         .await?;
         Ok(rows)

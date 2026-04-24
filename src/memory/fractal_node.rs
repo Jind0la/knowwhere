@@ -99,8 +99,13 @@ pub struct FractalNode {
     #[serde(default = "default_context_tier")]
     pub context_tier: ContextTier,
     /// ID of the parent tier memory (e.g., summary → overview → raw chain).
+    /// L2 (Raw) → L1 (Overview) → L0 (Summary)
     #[serde(default)]
     pub parent_tier_id: Option<Uuid>,
+    /// IDs of child tier memories (reverse of parent_tier_id).
+    /// Enables fractal zooming: L0 → [L1 nodes] → [L2 nodes]
+    #[serde(default)]
+    pub children_tier_ids: Vec<Uuid>,
     /// L0 summary content (one-sentence).
     #[serde(default)]
     pub summary_content: Option<String>,
@@ -293,6 +298,7 @@ impl FractalNode {
             access_count: 0,
             context_tier: ContextTier::Raw,
             parent_tier_id: None,
+            children_tier_ids: Vec::new(),
             summary_content: None,
             overview_content: None,
         }
@@ -329,6 +335,7 @@ impl FractalNode {
             access_count: 0,
             context_tier: ContextTier::Raw,
             parent_tier_id: None,
+            children_tier_ids: Vec::new(),
             summary_content: None,
             overview_content: None,
         }
@@ -366,6 +373,7 @@ impl FractalNode {
             access_count: 0,
             context_tier: ContextTier::Raw,
             parent_tier_id: None,
+            children_tier_ids: Vec::new(),
             summary_content: None,
             overview_content: None,
         }
@@ -405,6 +413,7 @@ impl FractalNode {
             access_count: 0,
             context_tier: ContextTier::Raw,
             parent_tier_id: None,
+            children_tier_ids: Vec::new(),
             summary_content: None,
             overview_content: None,
         }

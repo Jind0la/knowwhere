@@ -21,19 +21,35 @@ use tokio::time::{interval, Duration, Instant};
 use uuid::Uuid;
 
 use crate::memory::types::{ContextTier, MemoryStatus};
+use crate::memory::{FractalNode, MemorySource, MemoryType};
 use crate::scheduler::SchedulerConfig;
 use crate::storage::{StorageBackend, UpdateOperation};
 use crate::summarizer::TieredSummarizer;
 use crate::vlm::{SummaryContext, VlmJob, VlmWorkerHandle};
+use crate::embedding::EmbeddingProvider;
 
 /// Consolidation Scheduler state.
 ///
 /// Uses TieredCompactionWorker with LocalSummarizer as PRIMARY,
 /// VLM as OPTIONAL fallback. NEVER uses truncation.
+///
+/// # Fractal Compaction Chain
+///
+/// For each L2 (Raw) node:
+/// 1. Generate L1 (Overview) via LocalSummarizer
+/// 2. Embed L1 content
+/// 3. Create L1 node with parent_tier_id → L2
+/// 4. Generate L0 (Summary) from L1
+/// 5. Embed L0 content
+/// 6. Create L0 node with parent_tier_id → L1, children_tier_ids → [L2]
+/// 7. Update L1 parent_tier_id → L0
+///
+/// Result: L2 ↔ L1 ↔ L0 bidirectional links with embeddings
 pub struct ConsolidationScheduler {
     store: Arc<dyn StorageBackend>,
     vlm_worker: Option<VlmWorkerHandle>,
     local_summarizer: TieredSummarizer,
+    embedding: Arc<dyn EmbeddingProvider>,
     config: SchedulerConfig,
     /// Track last run so we don't re-process recently consolidated nodes.
     last_run: Arc<RwLock<Option<Instant>>>,
@@ -51,6 +67,7 @@ impl ConsolidationScheduler {
     pub fn new(
         store: Arc<dyn StorageBackend>,
         vlm_worker: Option<VlmWorkerHandle>,
+        embedding: Arc<dyn EmbeddingProvider>,
         config: SchedulerConfig,
     ) -> Self {
         let local_summarizer = TieredSummarizer::new();
@@ -65,6 +82,7 @@ impl ConsolidationScheduler {
             store,
             vlm_worker,
             local_summarizer,
+            embedding,
             config,
             last_run: Arc::new(RwLock::new(None)),
             last_enqueued: Arc::new(RwLock::new(0)),
@@ -214,14 +232,14 @@ impl ConsolidationScheduler {
     /// Process a single node using LocalSummarizer.
     ///
     /// Fetches node content, generates L1 overview via Ollama,
-    /// stores result in overview_content column.
+    /// creates L1 summary node with embedding,
+    /// links L2 → L1 via parent_tier_id,
+    /// links L1 → L2 via children_tier_ids.
     async fn process_local_compaction(&self, node_id: Uuid) -> anyhow::Result<()> {
-        // Fetch node content
+        // Fetch L2 (Raw) node content
         let node = match self.store.get(&node_id).await? {
             Some(n) => n,
-            None => {
-                anyhow::bail!("node {} not found", node_id);
-            }
+            None => anyhow::bail!("node {} not found", node_id),
         };
 
         let content = node.content.unwrap_or_default();
@@ -235,24 +253,95 @@ impl ConsolidationScheduler {
             .summarize_for_tier(&content, ContextTier::Overview)
             .await?;
 
-        // Store overview in database
+        // Step 1: Create L1 (Overview) node with embedding
+        let l1_content = summary.text.clone();
+        let l1_embedding = self.embed_text(&l1_content).await?;
+        
+        let mut l1_node = FractalNode::new_typed(
+            Some(l1_content),
+            None,
+            l1_embedding,
+            node.metadata.clone(),
+            MemoryType::Semantic,
+            MemorySource::Consolidation,
+        );
+        l1_node.context_tier = ContextTier::Overview;
+        l1_node.parent_tier_id = Some(node_id); // L1 → L2
+        l1_node.children_tier_ids = vec![]; // Will be populated when L0 is created
+        l1_node.importance = node.importance;
+        l1_node.confidence = node.confidence * 0.95; // Slightly lower confidence for derived content
+        
+        // Step 2: Store L1 node
+        let l1_id = self.store.insert(l1_node).await?;
+        
+        // Step 3: Link L2 → L1 (parent_tier_id on L2 points to L1)
         self.store
-            .update(&node_id, UpdateOperation::SetOverviewContent(summary.text.clone()))
+            .update(&node_id, UpdateOperation::SetParentTierId(l1_id))
             .await?;
-
-        // Mark as compacted
+        
+        // Step 4: Link L1 → L2 (children_tier_ids on L1 includes L2)
         self.store
-            .update(&node_id, UpdateOperation::SetParentTierId(node_id))
+            .update(&l1_id, UpdateOperation::AddChildTierId(node_id))
             .await?;
-
+        
+        // Step 5: Generate L0 (Summary) from L1 content
+        let l0_summary = self
+            .local_summarizer
+            .summarize_for_tier(&summary.text, ContextTier::Summary)
+            .await?;
+        
+        let l0_content = l0_summary.text.clone();
+        let l0_embedding = self.embed_text(&l0_content).await?;
+        
+        let mut l0_node = FractalNode::new_typed(
+            Some(l0_content),
+            None,
+            l0_embedding,
+            node.metadata.clone(),
+            MemoryType::Semantic,
+            MemorySource::Consolidation,
+        );
+        l0_node.context_tier = ContextTier::Summary;
+        l0_node.parent_tier_id = Some(l1_id); // L0 → L1
+        l0_node.children_tier_ids = vec![node_id]; // L0 → L2 (direct, skipping L1 for fast zoom)
+        l0_node.importance = node.importance;
+        l0_node.confidence = node.confidence * 0.90; // Lower confidence for double-derived
+        
+        // Step 6: Store L0 node
+        let l0_id = self.store.insert(l0_node).await?;
+        
+        // Step 7: Link L1 → L0 (parent_tier_id on L1 points to L0)
+        self.store
+            .update(&l1_id, UpdateOperation::SetParentTierId(l0_id))
+            .await?;
+        
+        // Step 8: Update L1 children_tier_ids to include L2
+        self.store
+            .update(&l1_id, UpdateOperation::AddChildTierId(node_id))
+            .await?;
+        
         tracing::info!(
-            node_id = %node_id,
+            l2_node_id = %node_id,
+            l1_node_id = %l1_id,
+            l0_node_id = %l0_id,
             model = %summary.model_used,
-            output_len = summary.text.len(),
-            "Local compaction complete"
+            "Fractal compaction complete: L2 → L1 → L0 with embeddings"
         );
 
         Ok(())
+    }
+    
+    /// Embed text using the configured embedding provider.
+    async fn embed_text(&self, text: &str) -> anyhow::Result<Vec<f32>> {
+        use crate::embedding::embed_document;
+        
+        match embed_document(self.embedding.as_ref(), text).await {
+            Ok(vector) => Ok(vector),
+            Err(e) => {
+                tracing::warn!("embedding failed, using zero vector: {}", e);
+                Ok(vec![0.0_f32; self.embedding.dimension()])
+            }
+        }
     }
 
     /// Find consolidation candidates.

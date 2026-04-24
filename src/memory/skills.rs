@@ -154,22 +154,20 @@ impl<'a> SkillsStore<'a> {
     pub async fn create(&self, req: &CreateSkillRequest) -> anyhow::Result<Uuid> {
         let id = Uuid::new_v4();
 
-        sqlx::query!(
-            r#"
+        sqlx::query(r#"
             INSERT INTO agent_skills (
                 id, skill_name, category, proficiency, components, prerequisites, namespace_id, metadata
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-            "#,
-            id,
-            req.skill_name,
-            req.category,
-            req.proficiency,
-            &req.components,
-            &req.prerequisites,
-            req.namespace_id,
-            req.metadata,
-        )
+            "#)
+        .bind(id)
+        .bind(&req.skill_name)
+        .bind(&req.category)
+        .bind(req.proficiency)
+        .bind(&req.components)
+        .bind(&req.prerequisites)
+        .bind(req.namespace_id)
+        .bind(&req.metadata)
         .execute(self.pool)
         .await?;
 
@@ -178,9 +176,7 @@ impl<'a> SkillsStore<'a> {
 
     /// Get a skill by ID.
     pub async fn get(&self, id: Uuid) -> anyhow::Result<Option<AgentSkill>> {
-        let row = sqlx::query_as!(
-            AgentSkillRow,
-            r#"
+        let row = sqlx::query_as::<_, AgentSkillRow>(r#"
             SELECT id as "id!", skill_name as "skill_name!",
                    category as "category!", proficiency as "proficiency!",
                    last_used, success_rate,
@@ -189,9 +185,7 @@ impl<'a> SkillsStore<'a> {
                    namespace_id, metadata
             FROM agent_skills
             WHERE id = $1
-            "#,
-            id,
-        )
+            "#).bind(id)
         .fetch_optional(self.pool)
         .await?;
 
@@ -206,9 +200,7 @@ impl<'a> SkillsStore<'a> {
     ) -> anyhow::Result<Vec<AgentSkill>> {
         let rows = match (category, min_proficiency) {
             (Some(cat), Some(min_prof)) => {
-                sqlx::query_as!(
-                    AgentSkillRow,
-                    r#"
+                sqlx::query_as::<_, AgentSkillRow>(r#"
                     SELECT id as "id!", skill_name as "skill_name!",
                            category as "category!", proficiency as "proficiency!",
                            last_used, success_rate,
@@ -218,17 +210,12 @@ impl<'a> SkillsStore<'a> {
                     FROM agent_skills
                     WHERE category = $1 AND proficiency >= $2
                     ORDER BY proficiency DESC, skill_name ASC
-                    "#,
-                    cat,
-                    min_prof,
-                )
+                    "#).bind(cat).bind(min_prof)
                 .fetch_all(self.pool)
                 .await?
             }
             (Some(cat), None) => {
-                sqlx::query_as!(
-                    AgentSkillRow,
-                    r#"
+                sqlx::query_as::<_, AgentSkillRow>(r#"
                     SELECT id as "id!", skill_name as "skill_name!",
                            category as "category!", proficiency as "proficiency!",
                            last_used, success_rate,
@@ -238,16 +225,12 @@ impl<'a> SkillsStore<'a> {
                     FROM agent_skills
                     WHERE category = $1
                     ORDER BY proficiency DESC, skill_name ASC
-                    "#,
-                    cat,
-                )
+                    "#).bind(cat)
                 .fetch_all(self.pool)
                 .await?
             }
             (None, Some(min_prof)) => {
-                sqlx::query_as!(
-                    AgentSkillRow,
-                    r#"
+                sqlx::query_as::<_, AgentSkillRow>(r#"
                     SELECT id as "id!", skill_name as "skill_name!",
                            category as "category!", proficiency as "proficiency!",
                            last_used, success_rate,
@@ -257,16 +240,12 @@ impl<'a> SkillsStore<'a> {
                     FROM agent_skills
                     WHERE proficiency >= $1
                     ORDER BY proficiency DESC, skill_name ASC
-                    "#,
-                    min_prof,
-                )
+                    "#).bind(min_prof)
                 .fetch_all(self.pool)
                 .await?
             }
             (None, None) => {
-                sqlx::query_as!(
-                    AgentSkillRow,
-                    r#"
+                sqlx::query_as::<_, AgentSkillRow>(r#"
                     SELECT id as "id!", skill_name as "skill_name!",
                            category as "category!", proficiency as "proficiency!",
                            last_used, success_rate,
@@ -275,8 +254,7 @@ impl<'a> SkillsStore<'a> {
                            namespace_id, metadata
                     FROM agent_skills
                     ORDER BY proficiency DESC, skill_name ASC
-                    "#,
-                )
+                    "#)
                 .fetch_all(self.pool)
                 .await?
             }
@@ -303,8 +281,7 @@ impl<'a> SkillsStore<'a> {
             .unwrap_or(existing.prerequisites);
         let metadata = updates.metadata.clone().unwrap_or(existing.metadata);
 
-        sqlx::query!(
-            r#"
+        sqlx::query(r#"
             UPDATE agent_skills
             SET skill_name = $2,
                 category = $3,
@@ -314,15 +291,14 @@ impl<'a> SkillsStore<'a> {
                 metadata = $7,
                 updated_at = NOW()
             WHERE id = $1
-            "#,
-            id,
-            skill_name,
-            category,
-            proficiency,
-            &components,
-            &prerequisites,
-            metadata,
-        )
+            "#)
+        .bind(id)
+        .bind(skill_name)
+        .bind(category)
+        .bind(proficiency)
+        .bind(&components)
+        .bind(&prerequisites)
+        .bind(metadata)
         .execute(self.pool)
         .await?;
 
@@ -331,7 +307,8 @@ impl<'a> SkillsStore<'a> {
 
     /// Delete a skill by ID.
     pub async fn delete(&self, id: Uuid) -> anyhow::Result<()> {
-        let result = sqlx::query!("DELETE FROM agent_skills WHERE id = $1", id)
+        let result = sqlx::query("DELETE FROM agent_skills WHERE id = $1")
+            .bind(id)
             .execute(self.pool)
             .await?;
 
@@ -348,17 +325,13 @@ impl<'a> SkillsStore<'a> {
         // Rolling average in a single UPDATE: new = old * 0.75 + (success ? 0.25 : 0)
         // COALESCE handles NULL (never used) as 0.0
         let delta = if success { 0.25 } else { 0.0 };
-        sqlx::query!(
-            r#"
+        sqlx::query(r#"
             UPDATE agent_skills
             SET last_used = NOW(),
                 success_rate = COALESCE(success_rate, 0.0) * 0.75 + $2,
                 updated_at = NOW()
             WHERE id = $1
-            "#,
-            id,
-            delta,
-        )
+            "#).bind(id).bind(delta)
         .execute(self.pool)
         .await?;
 
@@ -376,9 +349,7 @@ impl<'a> SkillsStore<'a> {
     ) -> anyhow::Result<Vec<AgentSkill>> {
         let pattern = format!("%{task_query}%");
 
-        let rows = sqlx::query_as!(
-            AgentSkillRow,
-            r#"
+        let rows = sqlx::query_as::<_, AgentSkillRow>(r#"
             SELECT id as "id!", skill_name as "skill_name!",
                    category as "category!", proficiency as "proficiency!",
                    last_used, success_rate,
@@ -391,11 +362,7 @@ impl<'a> SkillsStore<'a> {
                OR $2 = ANY(components)
             ORDER BY proficiency DESC
             LIMIT $3
-            "#,
-            pattern,
-            task_query,
-            top_k as i32,
-        )
+            "#).bind(pattern).bind(task_query).bind(top_k as i32)
         .fetch_all(self.pool)
         .await?;
 
@@ -409,16 +376,11 @@ impl<'a> SkillsStore<'a> {
         memory_id: Uuid,
         relation_type: &str,
     ) -> anyhow::Result<()> {
-        sqlx::query!(
-            r#"
+        sqlx::query(r#"
             INSERT INTO skill_memories (skill_id, memory_id, relation_type)
             VALUES ($1, $2, $3)
             ON CONFLICT (skill_id, memory_id) DO UPDATE SET relation_type = EXCLUDED.relation_type
-            "#,
-            skill_id,
-            memory_id,
-            relation_type,
-        )
+            "#).bind(skill_id).bind(memory_id).bind(relation_type)
         .execute(self.pool)
         .await?;
 
@@ -427,36 +389,33 @@ impl<'a> SkillsStore<'a> {
 
     /// Get the agent/skills namespace ID, creating it if it doesn't exist.
     pub async fn get_or_create_agent_skills_namespace(&self) -> anyhow::Result<Uuid> {
-        let row = sqlx::query_scalar!(
+        let row: Option<(Uuid,)> = sqlx::query_as(
             r#"
             SELECT id FROM memory_namespaces WHERE path = 'agent/skills'
-            "#,
+            "#
         )
         .fetch_optional(self.pool)
         .await?;
 
-        if let Some(id) = row {
+        if let Some((id,)) = row {
             return Ok(id);
         }
 
         // Create it
         let id = Uuid::new_v4();
-        sqlx::query!(
-            r#"
+        sqlx::query(r#"
             INSERT INTO memory_namespaces (id, path, depth, description)
             VALUES ($1, 'agent/skills', 2, 'Agent capabilities and skills')
             ON CONFLICT (path) DO NOTHING
-            "#,
-            id,
-        )
+            "#).bind(id)
         .execute(self.pool)
         .await?;
 
         // Fetch again in case of race
-        sqlx::query_scalar!(r#"SELECT id FROM memory_namespaces WHERE path = 'agent/skills'"#,)
+        let row: (Uuid,) = sqlx::query_as(r#"SELECT id FROM memory_namespaces WHERE path = 'agent/skills'"#)
             .fetch_one(self.pool)
-            .await
-            .map_err(Into::into)
+            .await?;
+        Ok(row.0)
     }
 }
 

@@ -47,7 +47,7 @@ use uuid::Uuid;
 // =============================================================================
 
 /// A pair of duplicate memories with their similarity score.
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
 pub struct DuplicatePair {
     pub id_a: Uuid,
     pub id_b: Uuid,
@@ -55,7 +55,7 @@ pub struct DuplicatePair {
 }
 
 /// A memory used during merge (fetched from DB).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, sqlx::FromRow)]
 struct MemoryForMerge {
     id: Uuid,
     memory_type: String,
@@ -142,9 +142,7 @@ impl<'a> DeduplicationWorker<'a> {
         // We want similarity > threshold, which means distance < (1 - threshold).
         let max_distance = 1.0 - threshold as f64;
 
-        let rows = sqlx::query_as!(
-            DuplicatePair,
-            r#"
+        let rows = sqlx::query_as::<_, DuplicatePair>(r#"
             WITH neighbors AS (
                 SELECT
                     m.id as source_id,
@@ -168,9 +166,7 @@ impl<'a> DeduplicationWorker<'a> {
             WHERE similarity > $1::float4
             ORDER BY similarity DESC
             LIMIT 1000
-            "#,
-            max_distance as f32,
-        )
+            "#).bind(max_distance as f32)
         .fetch_all(self.pool)
         .await?;
 
@@ -196,9 +192,7 @@ impl<'a> DeduplicationWorker<'a> {
     /// Both original memories are marked `superseded` with `conflict_state = resolved`.
     pub async fn merge_duplicates(&self, id_a: Uuid, id_b: Uuid) -> Result<Uuid> {
         // Fetch both memories
-        let rows = sqlx::query_as!(
-            MemoryForMerge,
-            r#"
+        let rows = sqlx::query_as::<_, MemoryForMerge>(r#"
             SELECT id as "id!", memory_type as "memory_type!",
                    content as "content!", importance as "importance!",
                    confidence as "confidence!",
@@ -206,9 +200,8 @@ impl<'a> DeduplicationWorker<'a> {
                    summary_content, overview_content
             FROM memories
             WHERE id = ANY($1) AND status = 'active'
-            "#,
-            &[id_a, id_b] as _,
-        )
+            "#)
+        .bind(&[id_a, id_b] as &[Uuid])
         .fetch_all(self.pool)
         .await?;
 
@@ -278,8 +271,7 @@ impl<'a> DeduplicationWorker<'a> {
         let new_id = Uuid::new_v4();
 
         // Insert merged memory (no embedding — we don't re-embed during deduplication)
-        sqlx::query!(
-            r#"
+        sqlx::query(r#"
             INSERT INTO memories (
                 id, memory_type, content, embedding,
                 importance, confidence, sensitivity, status,
@@ -296,32 +288,20 @@ impl<'a> DeduplicationWorker<'a> {
                 NULL, NULL,
                 NOW(), NOW()
             )
-            "#,
-            new_id,
-            combined_content,
-            max_importance,
-            max_confidence,
-            provenance,
-            serde_json::json!(all_entities),
-            all_tags.as_slice(),
-        )
+            "#).bind(new_id).bind(combined_content).bind(max_importance).bind(max_confidence).bind(provenance).bind(serde_json::json!(all_entities)).bind(all_tags.as_slice())
         .execute(self.pool)
         .await?;
 
         // Mark originals as superseded
         for mem_id in &[id_a, id_b] {
-            sqlx::query!(
-                r#"
+            sqlx::query(r#"
                 UPDATE memories
                 SET status = 'superseded',
                     superseded_by = $1,
                     conflict_state = 'resolved',
                     updated_at = NOW()
                 WHERE id = $2
-                "#,
-                new_id,
-                *mem_id,
-            )
+                "#).bind(new_id).bind(*mem_id)
             .execute(self.pool)
             .await?;
         }
@@ -369,15 +349,10 @@ impl<'a> DeduplicationWorker<'a> {
 
         // Log the run
         let run_id = Uuid::new_v4();
-        sqlx::query!(
-            r#"
+        sqlx::query(r#"
             INSERT INTO deduplication_runs (id, pairs_found, pairs_merged, run_at)
             VALUES ($1, $2, $3, NOW())
-            "#,
-            run_id,
-            pairs_found as i32,
-            pairs_merged as i32,
-        )
+            "#).bind(run_id).bind(pairs_found as i32).bind(pairs_merged as i32)
         .execute(self.pool)
         .await?;
 
@@ -398,18 +373,14 @@ impl<'a> DeduplicationWorker<'a> {
 
     /// Get recent deduplication runs.
     pub async fn recent_runs(&self, limit: i32) -> Result<Vec<DeduplicationRunRow>> {
-        let rows = sqlx::query_as!(
-            DeduplicationRunRow,
-            r#"
+        let rows = sqlx::query_as::<_, DeduplicationRunRow>(r#"
             SELECT id as "id!", pairs_found as "pairs_found!",
                    pairs_merged as "pairs_merged!",
                    run_at as "run_at!"
             FROM deduplication_runs
             ORDER BY run_at DESC
             LIMIT $1
-            "#,
-            limit as i64
-        )
+            "#).bind(limit as i64)
         .fetch_all(self.pool)
         .await?;
         Ok(rows)

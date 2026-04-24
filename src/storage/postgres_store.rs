@@ -76,15 +76,13 @@ impl PostgresStore {
         payload: &serde_json::Value,
     ) -> Result<Uuid> {
         let id = Uuid::new_v4();
-        sqlx::query!(
-            r#"
+        sqlx::query(r#"
             INSERT INTO events (id, event_type, payload, created_at)
             VALUES ($1, $2, $3, NOW())
-            "#,
-            id,
-            event_type,
-            payload,
-        )
+            "#)
+        .bind(id)
+        .bind(event_type)
+        .bind(payload)
         .execute(&self.pool)
         .await?;
         Ok(id)
@@ -93,31 +91,24 @@ impl PostgresStore {
     /// Read events for replay (used for rebuilding state from event log).
     pub async fn read_events(&self, after_id: Option<Uuid>, limit: i64) -> Result<Vec<Event>> {
         let rows = if let Some(after) = after_id {
-            sqlx::query_as!(
-                Event,
-                r#"
+            sqlx::query_as::<_, Event>(r#"
                 SELECT id, event_type, payload, created_at
                 FROM events
                 WHERE id > $1
                 ORDER BY created_at ASC
                 LIMIT $2::bigint
-                "#,
-                after,
-                limit as i64
-            )
+                "#)
+            .bind(after)
+            .bind(limit as i64)
             .fetch_all(&self.pool)
             .await?
         } else {
-            sqlx::query_as!(
-                Event,
-                r#"
+            sqlx::query_as::<_, Event>(r#"
                 SELECT id, event_type, payload, created_at
                 FROM events
                 ORDER BY created_at ASC
                 LIMIT $1::bigint
-                "#,
-                limit as i64
-            )
+                "#).bind(limit as i64)
             .fetch_all(&self.pool)
             .await?
         };
@@ -153,28 +144,26 @@ impl PostgresStore {
             MemoryType::Meta => "meta",
         };
 
-        sqlx::query!(
-            r#"
+        sqlx::query(r#"
             INSERT INTO memories (
                 id, memory_type, content, embedding, entities, tags,
                 provenance, source, source_id, importance, confidence,
                 sensitivity, status, access_count, created_at, updated_at
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'active', 0, NOW(), NOW())
-            "#,
-            id,
-            memory_type_str,
-            content,
-            embedding as _,
-            serde_json::json!(entities),
-            &tags,
-            provenance,
-            source,
-            source_id,
-            importance as _,
-            confidence,
-            sensitivity,
-        )
+            "#)
+        .bind(id)
+        .bind(memory_type_str)
+        .bind(content)
+        .bind(embedding)
+        .bind(serde_json::to_value(&entities).unwrap_or(serde_json::json!([])))
+        .bind(&tags)
+        .bind(provenance)
+        .bind(source)
+        .bind(source_id)
+        .bind(importance)
+        .bind(confidence)
+        .bind(sensitivity)
         .execute(&self.pool)
         .await?;
 
@@ -194,26 +183,22 @@ impl PostgresStore {
 
     /// Retrieve a single memory by ID.
     pub async fn get_memory(&self, id: Uuid) -> Result<Option<MemoryRow>> {
-        let row = sqlx::query_as!(
-            MemoryRow,
-            r#"
+        let row = sqlx::query_as::<_, MemoryRow>(r#"
             SELECT 
-                id as "id!", memory_type as "memory_type!",
-                content as "content!", content_preview,
-                importance as "importance!", confidence as "confidence!",
-                sensitivity as "sensitivity!", status as "status!",
-                superseded_by, conflict_state as "conflict_state!",
-                source as "source!", source_id, provenance as "provenance!",
-                parent_id, depth as "depth!", access_count as "access_count!",
-                last_accessed, created_at as "created_at!", updated_at as "updated_at!",
-                deleted_at, metadata as "metadata!", entities as "entities!",
-                COALESCE(tags, ARRAY[]::TEXT[]) as "tags!",
-                embedding::float4[] as "embedding: _"
+                id , memory_type ,
+                content , content_preview,
+                importance , confidence ,
+                sensitivity , status ,
+                superseded_by, conflict_state ,
+                source , source_id, provenance ,
+                parent_id, depth , access_count ,
+                last_accessed, created_at , updated_at ,
+                deleted_at, metadata , entities ,
+                COALESCE(tags, ARRAY[]::TEXT[]) AS tags ,
+                embedding::float4[] 
             FROM memories
             WHERE id = $1 AND status != 'deleted'
-            "#,
-            id
-        )
+            "#).bind(id)
         .fetch_optional(&self.pool)
         .await?;
 
@@ -222,14 +207,11 @@ impl PostgresStore {
 
     /// Update access statistics.
     pub async fn record_access(&self, id: Uuid) -> Result<()> {
-        sqlx::query!(
-            r#"
+        sqlx::query(r#"
             UPDATE memories
             SET access_count = access_count + 1, last_accessed = NOW()
             WHERE id = $1
-            "#,
-            id
-        )
+            "#).bind(id)
         .execute(&self.pool)
         .await?;
         Ok(())
@@ -237,15 +219,13 @@ impl PostgresStore {
 
     /// Mark a memory as superseded by another.
     pub async fn supersede(&self, memory_id: Uuid, superseded_by_id: Uuid) -> Result<()> {
-        sqlx::query!(
-            r#"
+        sqlx::query(r#"
             UPDATE memories
             SET status = 'superseded', superseded_by = $2, updated_at = NOW()
             WHERE id = $1
-            "#,
-            memory_id,
-            superseded_by_id
-        )
+            "#)
+        .bind(0)
+        .bind(superseded_by_id)
         .execute(&self.pool)
         .await?;
 
@@ -263,15 +243,13 @@ impl PostgresStore {
 
     /// Update memory status.
     pub async fn update_status(&self, id: Uuid, status: &str) -> Result<()> {
-        sqlx::query!(
-            r#"
+        sqlx::query(r#"
             UPDATE memories
             SET status = $2, updated_at = NOW()
             WHERE id = $1
-            "#,
-            id,
-            status
-        )
+            "#)
+        .bind(0)
+        .bind(status)
         .execute(&self.pool)
         .await?;
         Ok(())
@@ -279,14 +257,11 @@ impl PostgresStore {
 
     /// Soft delete a memory.
     pub async fn delete(&self, id: Uuid) -> Result<()> {
-        sqlx::query!(
-            r#"
+        sqlx::query(r#"
             UPDATE memories
             SET status = 'deleted', deleted_at = NOW(), updated_at = NOW()
             WHERE id = $1
-            "#,
-            id
-        )
+            "#).bind(id)
         .execute(&self.pool)
         .await?;
 
@@ -301,15 +276,13 @@ impl PostgresStore {
 
     /// Update a memory's embedding vector.
     pub async fn update_vector(&self, id: Uuid, new_embedding: Vec<f32>) -> Result<bool> {
-        let result = sqlx::query!(
-            r#"
+        let result = sqlx::query(r#"
             UPDATE memories
             SET embedding = $2, updated_at = NOW()
             WHERE id = $1 AND status != 'deleted'
-            "#,
-            id,
-            new_embedding as _
-        )
+            "#)
+        .bind(id)
+        .bind(new_embedding)
         .execute(&self.pool)
         .await?;
 
@@ -329,19 +302,16 @@ impl PostgresStore {
             rank: f64,
         }
 
-        let rows: Vec<Bm25Row> = sqlx::query_as!(
-            Bm25Row,
-            r#"
-            SELECT id, COALESCE(ts_rank(to_tsvector('english', content), plainto_tsquery('english', $1)), 0.0)::float8 AS "rank!"
+        let rows: Vec<Bm25Row> = sqlx::query_as::<_, Bm25Row>(r#"
+            SELECT id, COALESCE(ts_rank(to_tsvector('english', content), plainto_tsquery('english', $1)), 0.0)::float8 AS rank
             FROM memories
             WHERE status = 'active'
               AND to_tsvector('english', content) @@ plainto_tsquery('english', $1)
             ORDER BY ts_rank(to_tsvector('english', content), plainto_tsquery('english', $1)) DESC
             LIMIT $2::bigint
-            "#,
-            query_text,
-            top_k as i64
-        )
+            "#)
+        .bind(query_text)
+        .bind(top_k as i64)
         .fetch_all(&self.pool)
         .await?;
 
@@ -376,20 +346,19 @@ impl PostgresStore {
         // Build dynamic query with optional filters
         let rows = if let Some(mt) = memory_type {
             if let Some(mi) = min_importance {
-                sqlx::query_as!(
-                    MemoryWithScore,
-                    r#"
-                    SELECT id as "id!", memory_type as "memory_type!",
-                           content as "content!", importance as "importance!",
-                           COALESCE(confidence, 0.0::double precision) as "confidence!",
-                           sensitivity as "sensitivity!",
-                           status as "status!", source as "source!",
-                           access_count as "access_count!",
-                           created_at as "created_at!", updated_at as "updated_at!",
+                let embedding_str = format!("[{}]", embedding.iter().map(|f| f.to_string()).collect::<Vec<_>>().join(","));
+                sqlx::query_as::<_, MemoryWithScore>(r#"
+                    SELECT id, memory_type,
+                           content, importance,
+                           COALESCE(confidence, 0.0::double precision) as confidence,
+                           sensitivity,
+                           status, source,
+                           access_count,
+                           created_at, updated_at,
                            source_id, provenance, last_accessed,
                            content_preview,
-                           COALESCE((1 - (embedding <=> $1::vector))::float, 0.0) AS "similarity: f64",
-                           embedding::float4[] as "embedding: _"
+                           COALESCE((1 - (embedding <=> $1::vector))::float, 0.0) AS similarity,
+                           embedding::float4[] as embedding
                     FROM memories
                     WHERE status = 'active'
                       AND embedding IS NOT NULL
@@ -397,69 +366,64 @@ impl PostgresStore {
                       AND importance >= $4
                     ORDER BY embedding <=> $1::vector
                     LIMIT $2::bigint
-                    "#,
-                    embedding as _,
-                    limit as i64,
-                    mt,
-                    mi as _
-                )
+                    "#)
+                .bind(&embedding_str)
+                .bind(limit as i64)
+                .bind(mt)
+                .bind(mi)
                 .fetch_all(&self.pool)
                 .await?
             } else {
-                sqlx::query_as!(
-                    MemoryWithScore,
-                    r#"
-                    SELECT id as "id!", memory_type as "memory_type!",
-                           content as "content!", importance as "importance!",
-                           COALESCE(confidence, 0.0::double precision)::double precision AS "confidence: f64",
-                           sensitivity as "sensitivity!",
-                           status as "status!", source as "source!",
-                           access_count as "access_count!",
-                           created_at as "created_at!", updated_at as "updated_at!",
+                let embedding_str = format!("[{}]", embedding.iter().map(|f| f.to_string()).collect::<Vec<_>>().join(","));
+                sqlx::query_as::<_, MemoryWithScore>(r#"
+                    SELECT id, memory_type,
+                           content, importance,
+                           COALESCE(confidence, 0.0::double precision)::double precision AS confidence,
+                           sensitivity,
+                           status, source,
+                           access_count,
+                           created_at, updated_at,
                            source_id, provenance,
                            last_accessed,
                            content_preview,
-                           COALESCE((1 - (embedding <=> $1::vector))::float, 0.0) AS "similarity: f64",
-                           embedding::float4[] as "embedding: _"
+                           COALESCE((1 - (embedding <=> $1::vector))::float, 0.0) AS similarity,
+                           embedding::float4[] as embedding
                     FROM memories
                     WHERE status = 'active'
                       AND embedding IS NOT NULL
                       AND memory_type = $3
                     ORDER BY embedding <=> $1::vector
                     LIMIT $2::bigint
-                    "#,
-                    embedding as _,
-                    limit as i64,
-                    mt
-                )
+                    "#)
+                .bind(&embedding_str)
+                .bind(limit as i64)
+                .bind(mt)
                 .fetch_all(&self.pool)
                 .await?
             }
         } else {
-            sqlx::query_as!(
-                MemoryWithScore,
-                r#"
-                SELECT id as "id!", memory_type as "memory_type!",
-                       content as "content!", importance as "importance!",
-                       COALESCE(confidence, 0.0::double precision) as "confidence!",
-                       sensitivity as "sensitivity!",
-                       status as "status!", source as "source!",
-                       access_count as "access_count!",
-                       created_at as "created_at!", updated_at as "updated_at!",
+            let embedding_str = format!("[{}]", embedding.iter().map(|f| f.to_string()).collect::<Vec<_>>().join(","));
+            sqlx::query_as::<_, MemoryWithScore>(r#"
+                SELECT id, memory_type,
+                       content, importance,
+                       COALESCE(confidence, 0.0::double precision) as confidence,
+                       sensitivity,
+                       status, source,
+                       access_count,
+                       created_at, updated_at,
                        source_id, provenance,
                        last_accessed,
                        content_preview,
-                       COALESCE((1 - (embedding <=> $1::vector))::float, 0.0) AS "similarity: f64",
-                       embedding::float4[] as "embedding: _"
+                       COALESCE((1 - (embedding <=> $1::vector))::float, 0.0) AS similarity,
+                       embedding::float4[] as embedding
                 FROM memories
                 WHERE status = 'active'
                   AND embedding IS NOT NULL
                 ORDER BY embedding <=> $1::vector
                 LIMIT $2::bigint
-                "#,
-                embedding as _,
-                limit as i64
-            )
+                "#)
+            .bind(&embedding_str)
+            .bind(limit as i64)
             .fetch_all(&self.pool)
             .await?
         };
@@ -469,28 +433,24 @@ impl PostgresStore {
 
     /// Recent memories.
     pub async fn recent_memories(&self, limit: i32) -> Result<Vec<MemoryRow>> {
-        let rows = sqlx::query_as!(
-            MemoryRow,
-            r#"
+        let rows = sqlx::query_as::<_, MemoryRow>(r#"
             SELECT 
-                id as "id!", memory_type as "memory_type!",
-                content as "content!", content_preview,
-                importance as "importance!", confidence as "confidence!",
-                sensitivity as "sensitivity!", status as "status!",
-                superseded_by, conflict_state as "conflict_state!",
-                source as "source!", source_id, provenance as "provenance!",
-                parent_id, depth as "depth!", access_count as "access_count!",
-                last_accessed, created_at as "created_at!", updated_at as "updated_at!",
-                deleted_at, metadata as "metadata!", entities as "entities!",
-                COALESCE(tags, ARRAY[]::TEXT[]) as "tags!",
-                embedding::float4[] as "embedding: _"
+                id , memory_type ,
+                content , content_preview,
+                importance , confidence ,
+                sensitivity , status ,
+                superseded_by, conflict_state ,
+                source , source_id, provenance ,
+                parent_id, depth , access_count ,
+                last_accessed, created_at , updated_at ,
+                deleted_at, metadata , entities ,
+                COALESCE(tags, ARRAY[]::TEXT[]) ,
+                embedding::float4[] 
             FROM memories
             WHERE status = 'active'
             ORDER BY created_at DESC
             LIMIT $1::bigint
-            "#,
-            limit as i64
-        )
+            "#).bind(limit as i64)
         .fetch_all(&self.pool)
         .await?;
         Ok(rows)
@@ -498,26 +458,23 @@ impl PostgresStore {
 
     /// List all active memories (for list_all).
     pub async fn list_memories(&self) -> Result<Vec<MemoryRow>> {
-        let rows = sqlx::query_as!(
-            MemoryRow,
-            r#"
+        let rows = sqlx::query_as::<_, MemoryRow>(r#"
             SELECT 
-                id as "id!", memory_type as "memory_type!",
-                content as "content!", content_preview,
-                importance as "importance!", confidence as "confidence!",
-                sensitivity as "sensitivity!", status as "status!",
-                superseded_by, conflict_state as "conflict_state!",
-                source as "source!", source_id, provenance as "provenance!",
-                parent_id, depth as "depth!", access_count as "access_count!",
-                last_accessed, created_at as "created_at!", updated_at as "updated_at!",
-                deleted_at, metadata as "metadata!", entities as "entities!",
-                COALESCE(tags, ARRAY[]::TEXT[]) as "tags!",
-                embedding::float4[] as "embedding: _"
+                id , memory_type ,
+                content , content_preview,
+                importance , confidence ,
+                sensitivity , status ,
+                superseded_by, conflict_state ,
+                source , source_id, provenance ,
+                parent_id, depth , access_count ,
+                last_accessed, created_at , updated_at ,
+                deleted_at, metadata , entities ,
+                COALESCE(tags, ARRAY[]::TEXT[]) ,
+                embedding::float4[] 
             FROM memories
             WHERE status = 'active'
             ORDER BY created_at DESC
-            "#
-        )
+            "#)
         .fetch_all(&self.pool)
         .await?;
         Ok(rows)
@@ -567,22 +524,20 @@ impl PostgresStore {
         reason: Option<&str>,
     ) -> Result<Uuid> {
         let id = Uuid::new_v4();
-        sqlx::query!(
-            r#"
+        sqlx::query(r#"
             INSERT INTO knowledge_edges
                 (id, from_node_id, to_node_id, edge_type, strength, confidence, bidirectional, reason, created_at)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
             ON CONFLICT (from_node_id, to_node_id, edge_type) DO NOTHING
-            "#,
-            id,
-            from_node_id,
-            to_node_id,
-            edge_type,
-            strength,
-            confidence,
-            bidirectional,
-            reason
-        )
+            "#)
+        .bind(id)
+        .bind(from_node_id)
+        .bind(to_node_id)
+        .bind(edge_type)
+        .bind(strength)
+        .bind(confidence)
+        .bind(0)
+        .bind(reason)
         .execute(&self.pool)
         .await?;
         Ok(id)
@@ -590,19 +545,15 @@ impl PostgresStore {
 
     /// Get edges from a node.
     pub async fn get_edges(&self, from_node_id: Uuid) -> Result<Vec<EdgeRow>> {
-        let rows = sqlx::query_as!(
-            EdgeRow,
-            r#"
-            SELECT id as "id!", from_node_id as "from_node_id!", to_node_id as "to_node_id!",
+        let rows = sqlx::query_as::<_, EdgeRow>(r#"
+            SELECT id , from_node_id as "from_node_id!", to_node_id as "to_node_id!",
                    edge_type as "edge_type!", strength as "strength!",
-                   confidence as "confidence!", causality as "causality!",
+                   confidence , causality as "causality!",
                    bidirectional as "bidirectional!",
-                   reason, created_at as "created_at!", metadata
+                   reason, created_at , metadata
             FROM knowledge_edges
             WHERE from_node_id = $1 OR to_node_id = $1
-            "#,
-            from_node_id
-        )
+            "#).bind(from_node_id)
         .fetch_all(&self.pool)
         .await?;
         Ok(rows)
@@ -622,15 +573,13 @@ impl PostgresStore {
 
     /// Set parent (for fractal zoom).
     pub async fn set_parent(&self, memory_id: Uuid, parent_id: Uuid) -> Result<()> {
-        sqlx::query!(
-            r#"
+        sqlx::query(r#"
             UPDATE memories
             SET parent_id = $2, depth = (SELECT depth + 1 FROM memories WHERE id = $2), updated_at = NOW()
             WHERE id = $1
-            "#,
-            memory_id,
-            parent_id
-        )
+            "#)
+        .bind(0)
+        .bind(parent_id)
         .execute(&self.pool)
         .await?;
         Ok(())
@@ -639,9 +588,7 @@ impl PostgresStore {
     /// Get fractal children (for zoom retrieval).
     /// Uses a properly structured CTE with column aliases defined once in the CTE header.
     pub async fn get_children(&self, memory_id: Uuid, max_depth: i32) -> Result<Vec<MemoryRow>> {
-        let rows = sqlx::query_as!(
-            MemoryRow,
-            r#"
+        let rows = sqlx::query_as::<_, MemoryRow>(r#"
             WITH RECURSIVE fractal_tree(
                 id, memory_type, content, importance, confidence, sensitivity,
                 status, conflict_state, source, depth, access_count,
@@ -669,24 +616,23 @@ impl PostgresStore {
                 INNER JOIN fractal_tree ft ON m.parent_id = ft.id
                 WHERE m.status = 'active' AND ft.level < $2
             )
-            SELECT id as "id!", memory_type as "memory_type!",
-                   content as "content!", importance as "importance!",
-                   confidence as "confidence!", sensitivity as "sensitivity!",
-                   status as "status!", conflict_state as "conflict_state!",
-                   source as "source!", depth as "depth!",
-                   access_count as "access_count!",
-                   created_at as "created_at!", updated_at as "updated_at!",
+            SELECT id , memory_type ,
+                   content , importance ,
+                   confidence , sensitivity ,
+                   status , conflict_state ,
+                   source , depth ,
+                   access_count ,
+                   created_at , updated_at ,
                    superseded_by, source_id, provenance, parent_id,
                    last_accessed, deleted_at, metadata, entities,
-                   COALESCE(tags, ARRAY[]::TEXT[]) as "tags!",
+                   COALESCE(tags, ARRAY[]::TEXT[]) ,
                    content_preview,
-                   embedding::float4[] as "embedding: _"
+                   embedding::float4[] 
             FROM fractal_tree
             ORDER BY level
-            "#,
-            memory_id,
-            max_depth
-        )
+            "#)
+        .bind(0)
+        .bind(max_depth)
         .fetch_all(&self.pool)
         .await?;
         Ok(rows)
@@ -709,25 +655,23 @@ impl PostgresStore {
         error_message: Option<&str>,
     ) -> Result<Uuid> {
         let id = Uuid::new_v4();
-        sqlx::query!(
-            r#"
+        sqlx::query(r#"
             INSERT INTO consolidation_history (
                 id, consolidation_date, session_id, conversation_id,
                 memories_processed, new_memories_created, edges_created,
                 processing_time_ms, status, error_message, created_at
             )
             VALUES ($1, CURRENT_DATE, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
-            "#,
-            id,
-            session_id,
-            conversation_id,
-            memories_processed as _,
-            new_memories_created as _,
-            edges_created as _,
-            processing_time_ms,
-            status,
-            error_message
-        )
+            "#)
+        .bind(id)
+        .bind(session_id)
+        .bind(conversation_id)
+        .bind(memories_processed)
+        .bind(new_memories_created)
+        .bind(edges_created)
+        .bind(processing_time_ms)
+        .bind(status)
+        .bind(error_message)
         .execute(&self.pool)
         .await?;
         Ok(id)
@@ -735,23 +679,19 @@ impl PostgresStore {
 
     /// Get recent consolidation runs.
     pub async fn recent_consolidations(&self, limit: i32) -> Result<Vec<ConsolidationRow>> {
-        let rows = sqlx::query_as!(
-            ConsolidationRow,
-            r#"
-            SELECT id as "id!", consolidation_date,
+        let rows = sqlx::query_as::<_, ConsolidationRow>(r#"
+            SELECT id , consolidation_date,
                    session_id, conversation_id,
                    memories_processed as "memories_processed!",
                    new_memories_created as "new_memories_created!",
                    edges_created as "edges_created!",
                    processing_time_ms as "processing_time_ms!",
-                   status as "status!",
-                   error_message, created_at as "created_at!"
+                   status ,
+                   error_message, created_at 
             FROM consolidation_history
             ORDER BY created_at DESC
             LIMIT $1::bigint
-            "#,
-            limit as i64
-        )
+            "#).bind(limit as i64)
         .fetch_all(&self.pool)
         .await?;
         Ok(rows)
@@ -772,19 +712,17 @@ impl PostgresStore {
         action_taken: Option<&str>,
     ) -> Result<Uuid> {
         let id = Uuid::new_v4();
-        sqlx::query!(
-            r#"
+        sqlx::query(r#"
             INSERT INTO audit_log (id, run_id, issue_type, memory_id, severity, description, action_taken, created_at)
             VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-            "#,
-            id,
-            run_id,
-            issue_type,
-            memory_id,
-            severity,
-            description,
-            action_taken
-        )
+            "#)
+        .bind(id)
+        .bind(run_id)
+        .bind(issue_type)
+        .bind(memory_id)
+        .bind(severity)
+        .bind(0)
+        .bind(action_taken)
         .execute(&self.pool)
         .await?;
         Ok(id)
@@ -1358,6 +1296,14 @@ impl StorageBackend for PostgresStore {
                 .bind(*id);
                 query.execute(&self.pool).await?;
             }
+            UpdateOperation::AddChildTierId(child_id) => {
+                let query = sqlx::query(
+                    "UPDATE memories SET children_tier_ids = array_append(COALESCE(children_tier_ids, ARRAY[]::uuid[]), $1) WHERE id = $2",
+                )
+                .bind(child_id)
+                .bind(*id);
+                query.execute(&self.pool).await?;
+            }
         }
         Ok(())
     }
@@ -1370,7 +1316,7 @@ impl StorageBackend for PostgresStore {
 /// Convert a MemoryRow into a FractalNode.
 fn memory_row_to_fractal_node(row: MemoryRow) -> FractalNode {
     let metadata: std::collections::HashMap<String, serde_json::Value> =
-        serde_json::from_value(row.metadata.clone()).unwrap_or_default();
+        serde_json::from_value(row.metadata.clone().unwrap_or(serde_json::json!({}))).unwrap_or_default();
 
     // Parse structured fields from strings stored in the DB
     let memory_type = MemoryType::parse(&row.memory_type).unwrap_or(MemoryType::Episodic);
@@ -1404,6 +1350,7 @@ fn memory_row_to_fractal_node(row: MemoryRow) -> FractalNode {
         weight: 1.0,
         multimodal,
         children,
+        children_tier_ids: vec![],
         relations,
         created_at: row.created_at,
         last_accessed: row.last_accessed.unwrap_or(row.created_at),
@@ -1446,6 +1393,7 @@ fn memory_with_score_to_fractal_node(row: MemoryWithScore) -> Option<FractalNode
         weight: 1.0,
         multimodal: None,
         children: vec![],
+        children_tier_ids: vec![],
         relations: vec![],
         created_at: row.created_at,
         last_accessed: row.last_accessed.unwrap_or(row.created_at),
@@ -1523,8 +1471,8 @@ pub struct MemoryRow {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub deleted_at: Option<DateTime<Utc>>,
-    pub metadata: serde_json::Value,
-    pub entities: serde_json::Value,
+    pub metadata: Option<serde_json::Value>,
+    pub entities: Option<serde_json::Value>,
     pub tags: Vec<String>,
     /// Dense vector embedding (stored as f32 array, deserialized from PostgreSQL vector type).
     pub embedding: Option<Vec<f32>>,

@@ -111,7 +111,8 @@ async fn run() -> anyhow::Result<()> {
     let embedding = init_embedding_provider();
 
     tracing::info!(provider = embedding.name(), "embedding provider ready");
-    runtime::repair_legacy_embeddings(&store, &embedding).await?;
+    // NOTE: repair_legacy_embeddings disabled — use POST /maintenance/repair_embeddings instead
+    // runtime::repair_legacy_embeddings(&store, &embedding).await?;
 
     tokio::spawn(dream.clone().micro_dream_loop());
     tracing::info!("dream mode started (micro-dream every 1h)");
@@ -163,10 +164,11 @@ async fn run() -> anyhow::Result<()> {
     let scheduler_config = SchedulerConfig::from_env();
     let consolidation_scheduler: Option<Arc<ConsolidationScheduler>>;
     if scheduler_config.is_enabled() {
-        // ConsolidationScheduler: periodically enqueues L2 nodes for VLM summarization
+        // ConsolidationScheduler: periodically compacts L2 nodes via LocalSummarizer
         let consolidation = ConsolidationScheduler::new(
             store.clone(),
             vlm_worker.clone(),
+            embedding.clone(),
             scheduler_config.clone(),
         );
         let (scheduler, _) = consolidation.spawn();
@@ -225,6 +227,7 @@ async fn run() -> anyhow::Result<()> {
         .route("/nodes/recent", get(routes::recent_nodes))
         .route("/nodes/purge_dummy", post(routes::purge_dummy))
         .route("/nodes/reembed_all", post(routes::reembed_all))
+        .route("/maintenance/repair_embeddings", post(routes::repair_embeddings))
         .route("/nodes/{id}", delete(routes::delete_node))
         .route("/dream/status", get(routes::dream_status))
         // -- VLM Summarization Worker (3-stage fallback) --

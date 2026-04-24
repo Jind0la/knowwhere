@@ -190,6 +190,8 @@ pub enum UpdateOperation {
     SetOverviewContent(String),
     /// Set the summary_content for L0 tier (used by ConsolidationScheduler).
     SetSummaryContent(String),
+    /// Add a child tier ID to children_tier_ids (used by ConsolidationScheduler for fractal linking).
+    AddChildTierId(Uuid),
     /// Composite operation: set weight + optionally status (used by AuditScheduler).
     /// This must be atomic — both changes happen together.
     ApplyAudit {
@@ -221,6 +223,11 @@ impl UpdateOperation {
             }
             UpdateOperation::SetSummaryContent(content) => {
                 node.summary_content = Some(content.clone());
+            }
+            UpdateOperation::AddChildTierId(child_id) => {
+                if !node.children_tier_ids.contains(child_id) {
+                    node.children_tier_ids.push(*child_id);
+                }
             }
             UpdateOperation::ApplyAudit { weight, status } => {
                 node.weight = *weight;
@@ -340,7 +347,7 @@ pub trait StorageBackend: Send + Sync {
     /// Re-embed legacy nodes whose stored vector dimension no longer matches the active provider.
     async fn repair_embedding_dimensions(
         &self,
-        _provider: &dyn EmbeddingProvider,
+        provider: &dyn EmbeddingProvider,
     ) -> anyhow::Result<EmbeddingRepairReport> {
         Ok(EmbeddingRepairReport::default())
     }

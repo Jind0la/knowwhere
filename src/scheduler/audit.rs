@@ -316,20 +316,18 @@ impl AuditScheduler {
 
     #[cfg(feature = "postgres-storage")]
     async fn find_winner(&self, pool: &PgPool, memory_ids: &[Uuid]) -> Result<Option<Uuid>> {
-        let row = sqlx::query!(
-            r#"
+        let row: Option<(Uuid,)> = sqlx::query_as(r#"
             SELECT id
             FROM memories
             WHERE id = ANY($1) AND status = 'active'
             ORDER BY confidence DESC
             LIMIT 1
-            "#,
-            memory_ids as _
-        )
+            "#)
+        .bind(memory_ids)
         .fetch_optional(pool)
         .await?;
 
-        Ok(row.map(|r| r.id))
+        Ok(row.map(|r| r.0))
     }
 
     /// Get the number of memories updated in the last run.

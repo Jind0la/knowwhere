@@ -1153,7 +1153,6 @@ async fn embed_text_returns_vector() {
 
 #[tokio::test]
 #[cfg(feature = "postgres-storage")]
-#[ignore = "requires DATABASE_URL — run: DATABASE_URL='postgresql://...' cargo test --features postgres-storage -- --include-ignored"]
 async fn postgres_store_hybrid_retrieve_bm25_only() {
     // Isolated test for hybrid_retrieve with BM25-only query (no query_vector).
     // This test verifies the BM25 fallback path works correctly when only
@@ -1224,7 +1223,6 @@ async fn postgres_store_hybrid_retrieve_bm25_only() {
 
 #[tokio::test]
 #[cfg(feature = "postgres-storage")]
-#[ignore = "requires DATABASE_URL — run: DATABASE_URL='postgresql://...' cargo test --features postgres-storage -- --include-ignored"]
 async fn postgres_store_hybrid_retrieve_with_vector() {
     // Test hybrid_retrieve with a real query vector.
     // Uses the vector search path (HNSW index) combined with BM25 via RRF.
@@ -1283,7 +1281,6 @@ async fn postgres_store_hybrid_retrieve_with_vector() {
 
 #[tokio::test]
 #[cfg(feature = "postgres-storage")]
-#[ignore = "requires DATABASE_URL — run: DATABASE_URL='postgresql://...' cargo test --features postgres-storage -- --include-ignored"]
 async fn postgres_store_count_matches_active_memories() {
     // Verify that store.count() correctly returns the number of active memories.
     // Previously this returned 0 even when active memories existed in the DB,
@@ -1329,7 +1326,6 @@ async fn postgres_store_count_matches_active_memories() {
 
 #[tokio::test]
 #[cfg(feature = "postgres-storage")]
-#[ignore = "requires DATABASE_URL — run: DATABASE_URL='postgresql://...' cargo test --features postgres-storage -- --include-ignored"]
 async fn postgres_api_key_fingerprint_lookup_and_rotation() {
     use knowwhere_server::storage::postgres_store::{stored_api_key_fingerprint, PostgresStore};
     use std::env;
@@ -1391,7 +1387,6 @@ async fn postgres_api_key_fingerprint_lookup_and_rotation() {
 
 #[tokio::test]
 #[cfg(feature = "postgres-storage")]
-#[ignore = "requires DATABASE_URL — run: DATABASE_URL='postgresql://...' cargo test --features postgres-storage -- --include-ignored"]
 async fn postgres_retention_flow_decay_low_energy_and_compress() {
     use knowwhere_server::memory::dream::energy_decay::EnergyDecayWorker;
     use knowwhere_server::memory::types::{MemorySource, MemoryType};
@@ -1443,7 +1438,7 @@ async fn postgres_retention_flow_decay_low_energy_and_compress() {
     assert!(decay.memories_marked_stale >= 2);
 
     let low = worker
-        .find_low_energy_memories(10)
+        .find_low_energy_memories(100)
         .await
         .expect("list low energy");
     let low_ids: std::collections::HashSet<_> = low.into_iter().map(|m| m.id).collect();
@@ -1460,7 +1455,6 @@ async fn postgres_retention_flow_decay_low_energy_and_compress() {
 
 #[tokio::test]
 #[cfg(feature = "postgres-storage")]
-#[ignore = "requires DATABASE_URL — run: DATABASE_URL='postgresql://...' cargo test --features postgres-storage -- --include-ignored"]
 async fn postgres_auth_http_e2e_register_login_refresh_rotation() {
     use knowwhere_server::storage::PostgresStore;
     use serde_json::Value;

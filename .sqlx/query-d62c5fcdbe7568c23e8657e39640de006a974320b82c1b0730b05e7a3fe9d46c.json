@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE agent_skills\n            SET last_used = NOW(),\n                success_rate = COALESCE(success_rate, 0.0) * 0.75 + $2,\n                updated_at = NOW()\n            WHERE id = $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d62c5fcdbe7568c23e8657e39640de006a974320b82c1b0730b05e7a3fe9d46c"
+}
