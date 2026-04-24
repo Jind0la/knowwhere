@@ -597,11 +597,12 @@ impl VlmClient {
                 {"role": "system", "content": system_msg},
                 {"role": "user", "content": user_prompt},
             ],
-            "max_output_tokens": context.target_tokens(),
         });
 
-        // Only add temperature for models that support it (not gpt-5-nano)
+        // GPT-5-nano does NOT support max_output_tokens or temperature
+        // When set, it returns "incomplete" status with empty output
         if model != VlmModel::Gpt5Nano {
+            body["max_output_tokens"] = serde_json::json!(context.target_tokens());
             body["temperature"] = serde_json::json!(0.3);
         }
 
