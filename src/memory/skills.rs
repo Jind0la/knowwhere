@@ -345,30 +345,19 @@ impl<'a> SkillsStore<'a> {
     ///
     /// Updates `last_used` and recalculates the rolling `success_rate`.
     pub async fn mark_used(&self, id: Uuid, success: bool) -> anyhow::Result<()> {
-        // Fetch current success_rate for rolling average
-        let current =
-            sqlx::query_scalar!("SELECT success_rate FROM agent_skills WHERE id = $1", id,)
-                .fetch_optional(self.pool)
-                .await?;
-
-        let current_rate = current.flatten().unwrap_or(0.0);
-        // Simple rolling average: new = (old * 3 + (1 if success else 0)) / 4
-        let new_rate = if success {
-            current_rate * 0.75 + 0.25
-        } else {
-            current_rate * 0.75
-        };
-
+        // Rolling average in a single UPDATE: new = old * 0.75 + (success ? 0.25 : 0)
+        // COALESCE handles NULL (never used) as 0.0
+        let delta = if success { 0.25 } else { 0.0 };
         sqlx::query!(
             r#"
             UPDATE agent_skills
             SET last_used = NOW(),
-                success_rate = $2,
+                success_rate = COALESCE(success_rate, 0.0) * 0.75 + $2,
                 updated_at = NOW()
             WHERE id = $1
             "#,
             id,
-            new_rate,
+            delta,
         )
         .execute(self.pool)
         .await?;
