@@ -108,7 +108,7 @@ Gemeinsame Felder:
 - Provenance und Relations
 - Zeitstempel
 
-Die Vektordimension ist **modellabhaengig**, nicht fest. Standard lokal ist `nomic-embed-text-v2-moe` mit `768`, alternative Ollama-Modelle koennen andere Dimensionen haben.
+Die Vektordimension ist **modellabhaengig**, nicht fest. Standard lokal ist `snowflake-arctic-embed2` mit `1024` (multilingual: EN+DE/FR/ES/IT). Alternative Ollama-Modelle: `nomic-embed-text-v2-moe` mit `768`.
 
 ## 7. Retrieval-Ansatz
 

@@ -58,4 +58,14 @@ if [ -f ".gitignore" ] && grep -q "^\.sqlx/" .gitignore; then
 fi
 
 echo "${GREEN}✅ Pre-commit checks passed${NC}"
+
+# --- Doc Sentinel: Dokumentations-Konsistenz ---
+echo ""
+echo "🔍 Running Doc Sentinel..."
+if [ -f "scripts/doc-sentinel.sh" ]; then
+    bash scripts/doc-sentinel.sh || exit $?
+else
+    echo "${YELLOW}⚠️  doc-sentinel.sh not found, skipping doc checks${NC}"
+fi
+
 exit 0

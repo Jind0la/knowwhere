@@ -2,7 +2,109 @@
 
 > Diese Datei enthaelt sowohl aktuelle Notizen als auch historische Bug-Eintraege. Versionsbegriffe hier sind Bug-Epochenmarker und nicht die autoritative Produktversion des aktuellen `main`-Standes.
 
-**Last Updated:** 2026-04-02
+**Last Updated:** 2026-04-24
+
+---
+
+## Recent Fixes (Post-April-02)
+
+### BUG-012: VLM GPT-5-nano max_output_tokens Bug ✅ FIXED 2026-04-23
+
+**Date Reported:** 2026-04-23
+**Date Resolved:** 2026-04-23
+**Status:** Fixed
+
+**Description:**
+GPT-5-nano Batch model returned `status: incomplete` with empty output when `max_output_tokens` was set (even to 200-700).
+
+**Root Cause:**
+`gpt-5-nano-2025-08-07` requires `max_output_tokens` to be OMITTED from the request entirely.
+
+**Fix:**
+In `src/vlm/mod.rs`, `call_model()` — for `VlmModel::Gpt5Nano`, do NOT set `max_output_tokens` and do NOT set `temperature`. All other models get both.
+
+**Verification:**
+VLM jobs now process successfully. Jobs: processed > 0, failed = 0, last_model_used = "GPT-5-nano Batch".
+
+---
+
+### BUG-013: L2→L1→L0 Compaction Broken Without API Key ✅ FIXED 2026-04-24
+
+**Date Reported:** 2026-04-02
+**Date Resolved:** 2026-04-24
+**Status:** Fixed
+
+**Description:**
+ConsolidationScheduler enqueued 0 jobs because VLM worker required OPENAI_API_KEY. Without internet/API key, fractal compaction was completely disabled.
+
+**Root Cause:**
+VLM was the ONLY compaction path. No fallback existed.
+
+**Fix:**
+LocalSummarizer via Ollama HTTP API as PRIMARY compaction provider.
+- Model: llama3.2 (3B params, Q4_K_M, ~2GB)
+- Deterministic: temperature=0, seed=42
+- Feature flag: `summarizer` (default enabled)
+- New UpdateOperations: `SetOverviewContent(String)`, `SetSummaryContent(String)`
+- Truncation completely DISABLED (deprecated + panic if called)
+
+**Verification:**
+- `test_local_summarizer_basic`: ✅ PASSED
+- `test_summarize_deterministic`: ✅ PASSED
+- All 70 unit tests: ✅ PASS
+
+---
+
+### BUG-014: sqlx Offline vs Online Mode Type Mismatch ✅ FIXED 2026-04-24
+
+**Date Reported:** 2026-04-24
+**Date Resolved:** 2026-04-24
+**Status:** Fixed
+
+**Description:**
+`cargo test --features postgres-storage` with `DATABASE_URL` set failed to compile due to type mismatch in `src/memory/skills.rs` `mark_used()`.
+
+**Root Cause:**
+sqlx `query_scalar!` on nullable columns returns `Option<Option<T>>` in offline mode but `Option<T>` in online mode. Rust-side `unwrap_or` incompatible with one mode.
+
+**Fix:**
+Move computation into SQL using `COALESCE`:
+```rust
+sqlx::query!(
+    "UPDATE agent_skills SET success_rate = COALESCE(success_rate, 0.0) * 0.75 + $2 WHERE id = $1",
+    id, delta
+).execute(...).await?;
+```
+
+**Rule of thumb:** When sqlx type mismatches appear only with `--features postgres-storage` + `DATABASE_URL` set, suspect offline/online divergence. Fix by pushing nullable handling into SQL.
+
+**Verification:**
+All 41 postgres integration tests pass.
+
+---
+
+### BUG-015: .sqlx/ Offline Cache Deleted ✅ FIXED 2026-04-24
+
+**Date Reported:** 2026-04-24
+**Date Resolved:** 2026-04-24
+**Status:** Fixed
+
+**Description:**
+`git reset --hard` deleted 87 .sqlx/ query cache files from working tree. `SQLX_OFFLINE=true cargo build` would fail on fresh clones/CI.
+
+**Root Cause:**
+.sqlx/ files were tracked but physically removed.
+
+**Fix:**
+1. `git checkout .sqlx/` — restored all 87 files
+2. Pre-commit hook at `scripts/pre-commit-hook.sh`:
+   - Detects SQL-related changes
+   - Auto-runs `cargo sqlx prepare --features postgres-storage`
+   - Stages updated .sqlx/ files automatically
+3. Hook tracked in repo (symlink to `.git/hooks/pre-commit`)
+
+**Verification:**
+`SQLX_OFFLINE=true cargo build --features postgres-storage`: ✅ SUCCESS
 
 ---
 

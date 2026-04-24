@@ -114,12 +114,12 @@ Das Plugin befindet sich in:
 | Plan-Punkt | Status | Anmerkung |
 |-----------|--------|-----------|
 | **Webhook-Infrastruktur** (DedupCache, Secret-Check) | ✅ | `src/api/webhooks.rs` existiert |
-| **POST /webhooks/frigate** | ✅ | Implementiert in `routes.rs:2562` |
-| **POST /webhooks/homeassistant** | ❌ FEHLT | Nicht in `routes.rs` |
-| **POST /dream/full** Admin-Endpoint | ❌ FEHLT | Nicht in `routes.rs` |
+| **POST /webhooks/frigate** | ✅ DONE | Implementiert in `routes.rs` + `main.rs` |
+| **POST /webhooks/homeassistant** | ❌ BACKLOG | Route fehlt in `routes.rs` / `main.rs` |
+| **POST /dream/full** Admin-Endpoint | ❌ BACKLOG | Nicht in `routes.rs` |
 | **Google Drive Connector** | ⚠️ PLACEHOLDER | `drive.rs` gibt nur Dummy-Daten |
 | **Cross-Modal Embedding** | ⚠️ PLACEHOLDER | Code-Placeholder, nicht funktional |
-| **OpenAPI + Integration-Tests** | ❌ FEHLT | — |
+| **OpenAPI + Integration-Tests** | ✅ PARTIAL | OpenAPI Contract Tests existieren (2 tests passing). Chunking/QA Integrationstests fehlen. |
 
 ### Was wirklich existiert (Phase 1 + Core)
 

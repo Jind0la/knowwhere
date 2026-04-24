@@ -1,8 +1,8 @@
 # KnowWhere Retrieval Quality Test Plan
 
 **Erstellt:** 2026-03-28
-**Letztes Update:** 2026-04-07
-**Status:** Tier 1 + Tier 2 implementiert (MemoryStore-Baselines), Tier 3 offen
+**Letztes Update:** 2026-04-24
+**Status:** Tier 1 + Tier 2 implementiert (MemoryStore + PostgresStore Baselines). Benchmark-Binaries (LongMemEval Canary/Retrieval/QA) existieren. Tier 3 (Real-World Traces) offen.
 
 ---
 
