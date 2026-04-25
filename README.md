@@ -53,47 +53,68 @@ The fastest way to run KnowWhere is with Docker Compose. It starts PostgreSQL, O
 git clone https://github.com/Jind0la/knowwhere.git
 cd knowwhere
 
+# Copy environment template
+cp .env.example .env
+
 # Start everything (builds if needed)
-make up
-# or: docker compose up -d --build
+docker compose up -d --build
 ```
 
-Services started:
-
-| Service | Port | Purpose |
-|---------|------|---------|
-| KnowWhere | `3737` | REST API + Swagger UI |
-| PostgreSQL | `5433` | Persistent storage with pgvector |
-| Ollama | `11434` | Local embeddings + summarization |
+> **Note:** On first start, Ollama will automatically download the required models (`snowflake-arctic-embed2` and `llama3.2`). This can take 5–10 minutes depending on your connection. The `start_period` in the healthcheck is set to 60s to account for this.
 
 ### 2. Verify health
 
 ```bash
+# Wait for all services to be healthy (first start may take a minute)
+docker compose ps
+
+# Check KnowWhere
 curl http://localhost:3737/health
 # → {"status":"ok","node_count":0}
+
+# Check Ollama
+curl http://localhost:11434/api/tags
+# → {"models":[{"name":"snowflake-arctic-embed2"}, {"name":"llama3.2"}]}
 ```
 
-### 3. Run benchmarks (optional)
+### 3. First API call (store + retrieve)
 
 ```bash
-make benchmark
-# or: docker compose exec knowwhere /app/scripts/benchmark.sh
+# Get your API key from .env or use the default
+curl -X POST http://localhost:3737/store_session \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer kw_adm...2024" \
+  -d '{"content": "Hello from Docker!"}'
+
+# Retrieve it
+curl -X POST http://localhost:3737/retrieve_fractal \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer kw_adm...2024" \
+  -d '{"query_text": "Hello"}'
+```
+
+### 4. Run benchmarks (optional)
+
+```bash
+docker compose exec knowwhere /app/scripts/benchmark.sh
 ```
 
 This runs the LongMemEval Canary benchmark against your local instance and reports Recall@5, MRR, and Abstention accuracy.
 
-### 4. View logs
+### 5. View logs
 
 ```bash
-make logs
-# or: docker compose logs -f knowwhere
+docker compose logs -f knowwhere
+docker compose logs -f ollama
+docker compose logs -f kw-postgres
 ```
 
-### 5. Stop
+### 6. Stop
 
 ```bash
-make down
-# or: docker compose down
+docker compose down
+# To also remove data volumes:
+docker compose down -v
 ```
 
 ---

@@ -83,7 +83,7 @@ export KNOWWHERE_API_KEY="${API_KEY}"
 export KNOWWHERE_BENCH_MAX_CASES="${KNOWWHERE_BENCH_MAX_CASES:-10}"
 
 CANARY_OUTPUT=$(mktemp)
-if ./target/release/longmemeval_canary > "$CANARY_OUTPUT" 2>&1; then
+if /usr/local/bin/longmemeval_canary > "$CANARY_OUTPUT" 2>&1; then
     echo -e "${GREEN}✓ Canary PASSED${NC}"
     grep -E "recall_at_5|mrr|abstention|exact" "$CANARY_OUTPUT" || true
 else

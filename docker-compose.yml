@@ -5,12 +5,24 @@ services:
       - "11434:11434"
     volumes:
       - ollama-data:/root/.ollama
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        # Start ollama in background and pull required models
+        ollama serve &
+        sleep 5
+        echo "Pulling snowflake-arctic-embed2..."
+        ollama pull snowflake-arctic-embed2 || true
+        echo "Pulling llama3.2..."
+        ollama pull llama3.2 || true
+        echo "Models ready. Continuing ollama serve..."
+        wait
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:11434/api/tags >/dev/null 2>&1 || exit 1"]
       interval: 5s
       timeout: 5s
       retries: 20
-      start_period: 30s
+      start_period: 60s
     restart: unless-stopped
 
   kw-postgres:
@@ -38,7 +50,7 @@ services:
       - "3737:3737"
     environment:
       - RUST_LOG=${RUST_LOG:-info}
-      - KNOWWHERE_API_KEY=${KNOWWHERE_API_KEY:-kw_default_$(openssl rand -hex 8)}
+      - KNOWWHERE_API_KEY=${KNOWWHERE_API_KEY:-kw_$(openssl rand -hex 8)}
       - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-kw}@kw-postgres:5432/kw
       - OLLAMA_URL=http://ollama:11434
       - OLLAMA_MODEL=${OLLAMA_MODEL:-snowflake-arctic-embed2}

@@ -6,7 +6,9 @@ CREATE TABLE IF NOT EXISTS memories (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     memory_type     VARCHAR(50) NOT NULL,
     content         TEXT,
-    embedding       vector(768),
+    content_preview TEXT,
+    energy          DOUBLE PRECISION DEFAULT 50.0,
+    last_energy_update TIMESTAMPTZ DEFAULT NOW(),
     entities        JSONB,
     tags            TEXT[],
     provenance      JSONB,
@@ -28,6 +30,7 @@ CREATE TABLE IF NOT EXISTS memories (
     overview_content TEXT,
     tier            INTEGER DEFAULT 0,
     children_tier_ids UUID[],
+    embedding       vector(1024),
     content_hash    VARCHAR(64),
     metadata        JSONB
 );
@@ -156,7 +159,7 @@ CREATE TABLE IF NOT EXISTS conflict_detection_runs (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     run_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     conflicts_found INTEGER NOT NULL DEFAULT 0,
-    resolved_count INTEGER NOT NULL DEFAULT 0,
+    conflicts_resolved INTEGER NOT NULL DEFAULT 0,
     execution_time_ms INTEGER NOT NULL DEFAULT 0
 );
 
@@ -185,7 +188,7 @@ CREATE INDEX IF NOT EXISTS idx_healing_memory ON self_healing_log(memory_id);
 CREATE TABLE IF NOT EXISTS retrieval_runs (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     query_text          TEXT,
-    embedding           vector(768),
+    embedding           vector(1024),
     run_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     total_candidates    INTEGER NOT NULL DEFAULT 0,
     retrieved_count     INTEGER NOT NULL DEFAULT 0,
