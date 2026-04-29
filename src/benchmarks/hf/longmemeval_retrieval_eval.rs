@@ -111,8 +111,8 @@ fn session_text(session: &Value) -> String {
 }
 
 /// Stream cases from a JSON array file — never loads the entire dataset into memory.
-/// This enables processing 500+ cases from 265MB+ files without OOM.
-fn stream_cases(path: &str, max_cases: usize) -> Result<impl Iterator<Item = Result<RawCase>>> {
+/// Uses serde_json::StreamDeserializer to yield one case at a time from a top-level array.
+fn stream_cases(path: &str, max_cases: usize) -> Result<Vec<RawCase>> {
     use serde_json::Deserializer;
     use std::fs::File;
     use std::io::BufReader;
@@ -127,10 +127,14 @@ fn stream_cases(path: &str, max_cases: usize) -> Result<impl Iterator<Item = Res
         .and_then(|s| s.parse::<usize>().ok())
         .unwrap_or(0);
     
-    Ok(stream
-        .skip(offset)
-        .take(max_cases.max(1))
-        .map(|r| r.map_err(|e| anyhow!("dataset parse error: {}", e))))
+    let mut cases = Vec::with_capacity(max_cases);
+    for (i, result) in stream.enumerate() {
+        if i < offset { continue; }
+        let case = result.map_err(|e| anyhow!("dataset parse error at case {}: {}", i, e))?;
+        cases.push(case);
+        if cases.len() >= max_cases { break; }
+    }
+    Ok(cases)
 }
 
 async fn post_json(
@@ -414,9 +418,9 @@ async fn evaluate_case(
 pub async fn run(cfg: EvalConfig) -> Result<EvalReport> {
     let client = reqwest::Client::new();
     let mut results = Vec::new();
-    for (idx, case) in stream_cases(&cfg.dataset_path, cfg.max_cases)?.enumerate() {
-        let case = case?;
-        let result = evaluate_case(&client, &cfg, &case, idx).await?;
+    let cases = stream_cases(&cfg.dataset_path, cfg.max_cases)?;
+    for (idx, case) in cases.iter().enumerate() {
+        let result = evaluate_case(&client, &cfg, case, idx).await?;
         println!(
             "eval_case id={} rank={:?} abstention={}",
             result.question_id, result.rank, result.is_abstention
