@@ -1,232 +1,212 @@
 # KnowWhere — Product Requirements Document
 
-> Stand: April 2026 — Repository `main`, Paketversion `0.1.0`
+> Stand: April 2026 — Repository `main`, Version `0.3.0`
 
 ## 1. Produktname und One-Sentence Pitch
 
 **KnowWhere**
 
-"Ein pointer-first Langzeitgedaechtnis fuer KI-Agenten, das Sessions voll speichert und externe Daten nur referenziert."
+"Ein lossless fractal memory substrate für KI-Agenten — jede Information hat eine Adresse in der Hierarchie, nichts geht verloren."
 
-KnowWhere ist kein allgemeiner Dateispeicher und kein Ersatz fuer bestehende Memory-Systeme. Es ist eine additive Memory-Schicht, die Kontext strukturiert speichert, wiederfindbar macht und sicher an Agenten oder Dashboards ausliefert.
+KnowWhere ist kein Faktenspeicher der Konversationen zu isolierten Aussagen reduziert. Es ist eine Wissens-Infrastruktur die jede Information in einer durchsuchbaren, durchzoom-baren Fraktal-Struktur ablegt. Sessions bleiben als vollständige Einheiten erhalten. Externe Daten werden per Pointer referenziert. Retrieval funktioniert auf jeder Auflösungsebene — von der Übersicht bis zum atomaren Fakt.
 
 ## 2. Das Problem
 
-Heutige KI-Systeme sind stark im Moment, aber schwach ueber Zeit. Wichtige Entscheidungen, Nutzerpraeferenzen, Projektverlauf und externe Referenzen gehen zwischen Sessions verloren oder muessen immer wieder manuell neu erklaert werden.
+Heutige KI-Memory-Systeme haben drei fundamentale Schwächen:
 
-Das Kernproblem hat drei Teile:
-
-1. **Amnesie:** Kontext verschwindet zwischen Anfragen.
-2. **Datenhoheit:** Externe Rohdaten sollten nicht blind kopiert werden.
-3. **Operativer Realismus:** Bestehende Agent-Systeme duerfen nicht gebrochen oder ersetzt werden.
+1. **Informationsverlust durch Extraktion.** Systeme wie Hindsight extrahieren "Fakten" aus Konversationen und verwerfen den Rest. Nuancen, Kontext, Subtext — alles was der Extraktor nicht als Fakt erkennt, ist für Retrieval unsichtbar.
+2. **Keine Hierarchie.** Flache Vektor-Datenbanken (Pinecone, Weaviate) kennen nur eine Ebene. Es gibt keine Möglichkeit, von einer Übersicht in die Details zu zoomen.
+3. **Keine Provenance.** Woher kommt eine Information? Wie vertrauenswürdig ist sie? Wurde sie vom Nutzer gesagt oder vom System synthetisiert? Bestehende Systeme beantworten diese Fragen nicht.
 
 ## 3. Produktprinzipien
 
-1. **Pointer-first.** Externe Quellen werden nur als Pointer plus Metadaten gespeichert.
-2. **Sessionen duerfen voll gespeichert werden.** Chat- und Session-Inhalte bleiben als Text plus Embedding erhalten.
-3. **Hybrid retrieval statt nur Vector Search.** Semantik und Schlagwoerter werden kombiniert.
-4. **Additiv, niemals destruktiv.** Host-Systeme werden ergaenzt, nicht ersetzt.
-5. **Capabilities statt impliziter Rechte.** Der Client liest ueber `GET /auth/me`, was ein Token darf.
-6. **Saubere Betriebsmodi.** Einfache lokale Defaults, aber klarer Ausbaupfad Richtung PostgreSQL und erweiterte Features.
+1. **Lossless.** Keine Information wird durch Extraktion oder Consolidation verloren. Originaldaten bleiben immer über Fractal Zoom erreichbar.
+2. **Pointer-first.** Externe Quellen werden als Pointer plus Metadaten gespeichert, nie als Rohdaten-Kopien.
+3. **Fractal Hierarchy.** L0 (atomic) → L1 (summary) → L2 (overview). Suche auf jeder Ebene, zoome in Details.
+4. **Typed Memory.** 5 Typen mit typspezifischer Consolidation-Logik: Episodic, Semantic, Preference, Procedural, Meta.
+5. **Trust-aware.** Jeder Knoten hat einen auto-detektierten Trust Tier (primary/reference/derived/volatile) der das Retrieval-Ranking beeinflusst.
+6. **Additiv, niemals destruktiv.** Host-Systeme werden ergänzt, nicht ersetzt.
 
-## 4. Zielbild fuer Nutzer
+## 4. Zielbild
 
 Ein Nutzer oder Agent-Betreiber soll:
 
-- Kontext ueber Wochen und Monate wiederfinden koennen
-- historische Entscheidungen, Vorlieben und Referenzen wiederverwenden koennen
-- externe Quellen integrieren koennen, ohne deren Rohdaten zu duplizieren
-- sicher entscheiden koennen, welche Retrieval-Sicht ein Client bekommt
+- Kontext über Monate verlustfrei wiederfinden
+- Von Übersichten (L2) zu atomaren Fakten (L0) zoomen können
+- Den gesamten Entscheidungspfad nachvollziehen — nicht nur das Endergebnis
+- Wissen mit voller Provenance speichern und abrufen
 
-Erwarteter Produktwert:
+## 5. Aktueller Produktumfang (v0.3.0)
 
-- deutlich weniger Wiederholungen im Agent-Dialog
-- bessere rueckbezogene Antworten
-- nachvollziehbarere Retrieval-Ergebnisse durch Quellen und Debug-Scores
+### 5.1 Kernfunktionalität
 
-## 5. Aktueller Produktumfang auf `main`
+| Bereich | Beschreibung | Status |
+|---------|-------------|--------|
+| `store_session` | Session als vollwertige Memory mit auto-chunking speichern | ✅ |
+| `store_external` | Externe Referenz pointer-first speichern | ✅ |
+| `retrieve_fractal` | Hybrid Retrieval mit Fractal Zoom und Profilen | ✅ |
+| `chat/subconscious` | Retrieval-gestützte Antwort mit Quellenangaben | ✅ |
+| `dream/status` | Compaction Scheduler Status | ✅ |
+| `governance/policy` | Governance Policy lesen/setzen | ✅ |
 
-### 5.1 Kernfunktionalitaet
+### 5.2 5-Type Memory System
 
+| Typ | Beschreibung | Consolidation-Logik | Halbwertszeit |
+|-----|-------------|--------------------|--------------|
+| **Episodic** | Ereignisse, Session-Fakten | Hohe temporale Sensitivität, wird zu Semantic summarized | 7 Tage |
+| **Semantic** | Stabilisiertes Wissen, Fakten | Konflikt- und Supersession-fähig | 90 Tage |
+| **Preference** | Persönliche Präferenzen | Version-sensitive, alte Versionen archiviert | 30 Tage |
+| **Procedural** | Regeln, Workflows, How-to | Governance-kritisch, Änderungen nur mit Override | 180 Tage |
+| **Meta** | Metakognitives Wissen über das System | Audit-kritisch | 14 Tage |
 
-| Bereich                                       | Beschreibung                                       | Status     |
-| --------------------------------------------- | -------------------------------------------------- | ---------- |
-| `store_session`                               | Session/Text als vollwertige Memory speichern      | Verfuegbar |
-| `store_external`                              | Externe Referenz pointer-first speichern           | Verfuegbar |
-| `embed`                                       | Text mit aktivem Provider embedden                 | Verfuegbar |
-| `retrieve_fractal`                            | Hybrid Retrieval mit Profilen und optionalem Debug | Verfuegbar |
-| `chat/subconscious`                           | Retrieval-gestuetzte Antwort mit Quellen           | Verfuegbar |
-| `dream/status`, `events`, `governance/policy` | Operator-Sicht und Steuerung                       | Verfuegbar |
+### 5.3 Trust Tiers
 
+| Tier | Beschreibung | Retrieval-Multiplier |
+|------|-------------|---------------------|
+| **primary** | Direkte Nutzereingaben, importierte Kernartefakte | 1.18x |
+| **reference** | Dokumente, manuelle Einträge | 1.0x |
+| **derived** | Assistant-Outputs, System-Zusammenfassungen | 0.88x |
+| **volatile** | Unsichere oder temporäre Daten | 0.72x |
 
-### 5.2 Auth und Rollen
+Tiers werden automatisch aus Metadaten (role, derivation, source) erkannt.
 
+### 5.4 L2→L1→L0 Fractal Compaction
 
-| Modus                | Beschreibung                                                     | Status     |
-| -------------------- | ---------------------------------------------------------------- | ---------- |
-| Statischer Admin-Key | `KNOWWHERE_API_KEY` als Bearer-Token                             | Verfuegbar |
-| Self-Service User    | `/register`, `/login`, `/refresh` mit PostgreSQL                 | Beta       |
-| Capability-Endpoint  | `GET /auth/me` liefert Token-Art plus erlaubte Retrieval-Profile | Verfuegbar |
+| Ebene | Inhalt | Generierung |
+|-------|--------|-------------|
+| **L0 (Raw)** | Originaltext der Session-Runde | Direkt gespeichert |
+| **L1 (Overview)** | Paragraph-Zusammenfassung mehrerer L0s | LocalSummarizer (Ollama llama3.2, temp=0) |
+| **L2 (Summary)** | Ein-Satz-Zusammenfassung mehrerer L1s | LocalSummarizer + VLM-Fallback-Chain |
 
+Compaction ist deterministisch (temperature=0, seed=42) und läuft über den ConsolidationScheduler.
 
-### 5.3 Retrieval-Profile
+### 5.5 Retrieval-Ansatz
 
+1. **USearch Vector Search** — semantische Nähe via cosine similarity
+2. **BM25 Keyword Search** — exakte Begriffs-Matches
+3. **Reciprocal Rank Fusion** — Zusammenführung beider Ergebnislisten
+4. **Fractal Zoom** — hierarchisches Zoomen: L2-Match → expandiert zu L1-Kindern → L0-Enkeln
+5. **Profilbasierte Gewichtung** — Trust Tier × Retrieval Profile
+6. **Score-Debugging** — optionales Debug für Operatoren
 
-| Profil          | Ziel                              | Aktueller Zugriff |
-| --------------- | --------------------------------- | ----------------- |
-| `user-facing`   | sichere, konsumierbare Ergebnisse | Admin + User      |
-| `agent-debug`   | Debug-Sicht mit Score-Einblicken  | nur Admin         |
-| `full-fidelity` | rohe, maximale Sicht              | nur Admin         |
+### 5.6 Energy Decay (Ebbinghaus)
 
+Memories verlieren mit der Zeit an Energie. Der Decay folgt der Ebbinghaus-Vergessenskurve:
+- `/energy/decay` — wendet Decay auf alle Memories an
+- `/energy/low` — listet Memories mit niedriger Energie
+- `/energy/compress` — komprimiert low-energy Cluster
+- `/memories/{id}/energy/boost` — boostet einzelne Memory (z.B. nach Zugriff)
 
-### 5.4 Bedienoberflaechen
+### 5.7 Self-Healing
 
+- Orphaned Nodes: Knoten ohne gültigen Parent → re-parented oder archiviert
+- Broken Links: Pointer ins Nichts → cleaned up
+- Embedding Drift: Embedding passt nicht mehr zum Content → re-embeddable
+- `/self-healing/stats` — Status-Übersicht
+- `/memories/{id}/health` — Health-Check für einzelnen Knoten
+- `/memories/{id}/reindex` — Neu-Indizierung externer Knoten
 
-| UI           | Zweck                                                                 | Status         |
-| ------------ | --------------------------------------------------------------------- | -------------- |
-| `dashboard/` | React/Vite Operator-Dashboard fuer Overview, Search, Chat, Governance | Beta           |
-| `frontend/`  | minimales statisches Fallback aus dem Backend                         | eingeschraenkt |
-| Swagger UI   | API-Referenz und manuelle Tests                                       | Verfuegbar     |
+### 5.8 Auth
 
+| Modus | Beschreibung |
+|-------|-------------|
+| Static Admin Key | `KNOWWHERE_API_KEY` als Bearer-Token, volle Rechte |
+| Self-Service User | `/register`, `/login`, `/refresh` mit PostgreSQL |
+| Capability Endpoint | `GET /auth/me` liefert Token-Art + erlaubte Profile |
+
+### 5.9 Retrieval-Profile
+
+| Profil | Zugriff | Beschreibung |
+|--------|---------|-------------|
+| `user-facing` | Admin + User | Sichere, konsumierbare Ergebnisse, blendet Interne aus |
+| `agent-debug` | Nur Admin | Debug-Sicht mit Score-Einblicken |
+| `full-fidelity` | Nur Admin | Rohe, maximale Sicht ohne Filterung |
 
 ## 6. Datenmodell
 
-KnowWhere unterscheidet zwei Memory-Typen:
+```rust
+pub struct FractalNode {
+    pub id: Uuid,
+    pub memory_type: MemoryType,          // 5-Typen-System
+    pub source: MemorySource,              // conversation/document/import/manual/consolidation
+    pub vector: Vec<f32>,                  // Embedding (1024-dim snowflake-arctic-embed2)
+    pub content: Option<String>,           // Session: Volltext. External: None
+    pub original_pointer: Option<String>,  // External: URI/Pfad. Session: None
+    pub metadata: HashMap<String, Value>,  // role, derivation, trust_tier, ...
+    pub confidence: f64,                   // 0.0–1.0, typ-spezifischer Default
+    pub sensitivity: Sensitivity,          // normal/low/high/restricted
+    pub status: MemoryStatus,              // active/draft/archived/deleted/superseded/stale
+    pub importance: i32,                   // 1–10
+    pub conflict_state: ConflictState,     // none/pending/resolved
+    pub superseded_by: Option<Uuid>,
+    pub provenance: Value,
+    pub access_count: i32,
+    pub context_tier: ContextTier,         // raw(L0)/overview(L1)/summary(L2)
+    pub parent_tier_id: Option<Uuid>,
+    pub children_tier_ids: Vec<Uuid>,
+    pub summary_content: Option<String>,   // L0 one-sentence summary
+    pub overview_content: Option<String>,  // L1 paragraph overview
+    pub weight: f64,
+    pub multimodal: Option<MultimodalData>,// Image/Audio/Sensor
+    pub children: Vec<FractalNode>,
+    pub relations: Vec<Relation>,
+    pub created_at: DateTime<Utc>,
+    pub last_accessed: DateTime<Utc>,
+}
+```
 
-1. **Session-Nodes**
-  - `content: Option<String>` enthaelt den Volltext
-  - fuer Konversationen, Notizen, Entscheidungen, Zusammenfassungen
-2. **External-Nodes**
-  - `original_pointer: Option<String>` enthaelt URI, Pfad oder Referenz
-  - fuer Kameras, Sensoren, Dokumente, Dateisysteme und andere externe Systeme
+## 7. Tech-Stack
 
-Gemeinsame Felder:
+| Komponente | Technologie |
+|-----------|-------------|
+| Backend | Rust 1.85+, Axum 0.8, Tokio, Tower |
+| Embeddings | Ollama (snowflake-arctic-embed2, 1024-dim) |
+| Retrieval | USearch 2.23 + BM25 2.3.2 + RRF |
+| Summarization | Ollama llama3.2 (lokal, deterministisch) |
+| VLM Fallback | GPT-5-nano → GPT-4o-mini → Grok-4-fast |
+| Persistenz default | MemoryStore (JSON) |
+| Persistenz erweitert | PostgreSQL/pgvector |
+| Auth | bcrypt, Blake3, API Keys + JWT |
+| API-Doku | utoipa + Swagger UI |
+| Dashboard | React + Vite |
+| CI | GitHub Actions |
 
-- Embedding-Vektor
-- Metadaten
-- Gewichtung, Sensitivitaet, Status
-- Provenance und Relations
-- Zeitstempel
+## 8. Integrationen
 
-Die Vektordimension ist **modellabhaengig**, nicht fest. Standard lokal ist `snowflake-arctic-embed2` mit `1024` (multilingual: EN+DE/FR/ES/IT). Alternative Ollama-Modelle: `nomic-embed-text-v2-moe` mit `768`.
+- **OpenClaw Plugin:** 6 Hooks — before_prompt_build, message_received, gateway_start, before_reset, session_end, agent_end
+- **Python SDK:** `sdk/python`
+- **Frigate NVR:** Polling-Connector + Webhook (Phase 1)
 
-## 7. Retrieval-Ansatz
+## 9. Nicht-Ziele
 
-KnowWhere liefert heute produktiv:
+- Multi-Tenant-SaaS-Plattform
+- Automatische Migration zwischen Storage-Backends
+- Hot-Swap zwischen Embedding-Providern
+- Automatisches Hard-Delete von Memories
+- HomeAssistant/Google Drive Connectors (Phase 2)
 
-1. **Vector Search** fuer semantische Naehe
-2. **BM25** fuer Begriffs- und Keyword-Matches
-3. **Reciprocal Rank Fusion** zur Zusammenfuehrung
-4. **Profilbasierte Gewichtung** je nach Retrieval-Profil und Trust-Tier
-5. **Optionales Score-Debugging** fuer Operatoren und Agent-Debug
+## 10. Roadmap
 
-Dadurch ist das System nicht nur "semantisch aehnlich", sondern auch steuerbar und nachvollziehbar.
+### v1.0 (aktueller Fokus)
+- PostgreSQL-Backend stabil → ✅ 41/41 Integration-Tests
+- Docker Compose mit allen Features → in Arbeit
+- OpenClaw Plugin E2E im Docker → in Arbeit
+- Docs auf aktuellen Stand → in Arbeit
 
-## 8. Storage- und Betriebsmodi
+### v1.1
+- Cross-Encoder Reranking für bessere Retrieval-Qualität
+- Entity-Graph für semantische Verbindungen zwischen Knoten
+- Auto-Consolidation Scheduler (statt manuellem Trigger)
 
-### 8.1 Default-Modus
+### Phase 2
+- HomeAssistant Webhook
+- Google Drive Connector
+- Cross-Modal Embedding
 
-- `MemoryStore`
-- JSON-basierte Persistenz im Datenverzeichnis
-- gut fuer Entwicklung, lokale Tests und Single-Node-Szenarien
+## 11. Integrationsregeln
 
-### 8.2 PostgreSQL-Modus
-
-Aktiv, wenn:
-
-- mit `postgres-storage` gebaut wurde
-- ein funktionierendes `DATABASE_URL` vorhanden ist
-
-Zusatznutzen in diesem Modus:
-
-- Self-Service User-Auth
-- Retrieval-Analytik und Trajektorien
-- Energy- und Lifecycle-Operationen
-- Deduplication und Conflict Management
-- Self-healing, Namespaces, Skills
-
-## 9. Integrationen
-
-### 9.1 OpenClaw
-
-KnowWhere kann ueber das Plugin in OpenClaw eingebunden werden und den Memory-Loop uebernehmen:
-
-- Nachrichten speichern
-- historischen Kontext abrufen
-- Kontext vor Prompt-Build injizieren
-
-### 9.2 Python SDK
-
-Ein Python-SDK ist vorhanden und erlaubt die direkte Integration in eigene Agent- oder Tooling-Workflows.
-
-### 9.3 Weitere Host-Systeme
-
-Langfristig ist KnowWhere als zusaetzliche Memory-Schicht fuer weitere Agent-Systeme gedacht, aber die Discovery- und Import-Ergonomie ist noch nicht fertig produktisiert.
-
-## 10. Nicht-Ziele im aktuellen Stand
-
-Aktuell bewusst **nicht** Produktziel auf `main`:
-
-- vollstaendige Multi-Tenant-SaaS-Plattform
-- vollautomatische Migration zwischen allen Storages
-- flaechendeckende UI fuer jede Backend-Operation
-- Hot-Swap zwischen Embedding-Providern ohne Neustart
-- automatisches Hard-Delete von Memories
-
-## 11. Tech-Stack
-
-
-| Komponente           | Technologie                                                           | Status               |
-| -------------------- | --------------------------------------------------------------------- | -------------------- |
-| Backend              | Rust 1.85+, Axum 0.8, Tokio, Tower                                    | produktiv genutzt    |
-| Lokale Embeddings    | Ollama                                                                | Standardpfad         |
-| Cloud-Embeddings     | OpenAI, Grok/xAI                                                      | optional per Feature |
-| Retrieval            | USearch + BM25 + RRF                                                  | produktiv genutzt    |
-| Persistenz default   | JSON State                                                            | produktiv genutzt    |
-| Persistenz erweitert | PostgreSQL/pgvector                                                   | Beta                 |
-| Dashboard            | React + Vite                                                          | Beta                 |
-| API-Dokumentation    | utoipa + Swagger UI                                                   | produktiv genutzt    |
-| CI                   | GitHub Actions fuer Rust, Postgres, Feature Matrix, Dashboard, Docker | aktiv                |
-
-
-## 12. Roadmap
-
-### Kurzfristig
-
-- Dokumentation vollstaendig am echten `main`-Stand halten
-- Dashboard naeher an Backend-Routen bringen
-- PostgreSQL-Auth und Lifecycle-Funktionen weiter haerten
-- Import- und Migrationspfade klarer machen
-
-### Mittelfristig
-
-- bessere Discovery und strukturierter Host-Import
-- staerkere Operator- und Debug-Werkzeuge fuer Retrieval-Qualitaet
-- konsistentere Mehrnutzer-Geschichte
-
-### Langfristig
-
-- skalierbarere Storage- und Graph-Backends
-- reifere Integrationen fuer weitere Frameworks
-- schlankere Produktions- und Release-Story
-
-## 13. Integrationsregeln
-
-Wenn KnowWhere in ein bestehendes Agent-System eingebunden wird, gilt:
-
-1. keine bestehenden Memories loeschen oder ueberschreiben
-2. vorhandenes Wissen zuerst importieren
-3. Host-Konfiguration nur ergaenzen, nie ersetzen
+1. Keine bestehenden Memories löschen oder überschreiben
+2. Vorhandenes Wissen zuerst importieren
+3. Host-Konfiguration nur ergänzen, nie ersetzen
 4. Host-Memory-System parallel weiterlaufen lassen
-5. bei Ausfall von KnowWhere muss der Host degradiert, aber weiter funktionsfaehig sein
-
-## 14. Risiken und Gegenmassnahmen
-
-
-| Risiko                                         | Gegenmassnahme                                                                                |
-| ---------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| Falscher Provider oder falsche Vektordimension | `KNOWWHERE_EMBEDDING_PROVIDER`, `OLLAMA_MODEL`, `OLLAMA_EMBEDDING_DIMENSION` explizit setzen  |
-| Rechteverwirrung im Client                     | `GET /auth/me` als Quelle fuer Capabilities nutzen                                            |
-| Reverse-Proxy-Fehlkonfiguration                | `RATE_LIMIT_MODE=proxy` nur hinter echtem Proxy aktivieren                                    |
-| Zu grosse Erwartungen an das UI                | React-Dashboard klar als Beta und `frontend/` klar als Fallback dokumentieren                 |
-| Datenverlust im lokalen Default-Modus          | PostgreSQL-Modus oder persistentes Datenverzeichnis fuer produktionsnaehere Umgebungen nutzen |
+5. Bei Ausfall von KnowWhere: Host muss degradiert weiter funktionieren

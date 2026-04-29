@@ -1,53 +1,49 @@
 # KnowWhere Architecture
 
-> Stand: April 2026 — Repository `main`, Paketversion `0.1.0`
+> Stand: April 2026 — Repository `main`, Version `0.3.0`
 
 ## 1. High-level overview
 
-KnowWhere ist ein eigenstaendiger Memory-Service als Rust-Binary mit HTTP-API. Clients integrieren sich ueber REST und muessen nicht direkt an interne Bibliotheken gekoppelt werden.
+KnowWhere ist ein eigenständiger Memory-Service als Rust-Binary mit HTTP-API. Die zentrale Innovation ist die **Fractal Memory Architecture**: Informationen werden in einer 3-stufigen Hierarchie (L0 atomic → L1 overview → L2 summary) gespeichert und können über Fractal Zoom auf jeder Auflösungsebene durchsucht werden.
 
-Aktuell besteht die Architektur aus vier Hauptschichten:
+Die Architektur besteht aus fünf Hauptschichten:
 
-1. **Client-Schicht**
-  - Agenten, SDKs, OpenClaw-Plugin, React-Dashboard
-2. **API- und Auth-Schicht**
-  - Axum-Router
-  - Bearer-Token-Middleware
-  - Capability-Endpoint `GET /auth/me`
-3. **Memory- und Retrieval-Schicht**
-  - StorageBackend
-  - EmbeddingProvider
-  - Hybrid Retrieval mit Profilen
-4. **Operations-Schicht**
-  - Dream status
-  - Events
-  - Governance
-  - PostgreSQL-Lifecycle-Routen bei aktivem `postgres-storage`
+1. **Client-Schicht** — Agenten, SDKs, OpenClaw-Plugin, React-Dashboard
+2. **API- und Auth-Schicht** — Axum-Router, Bearer-Token-Middleware, Capability-Endpoint
+3. **Memory- und Retrieval-Schicht** — StorageBackend, EmbeddingProvider, Hybrid Retrieval mit Fractal Zoom
+4. **Compaction-Schicht** — LocalSummarizer (Ollama) + VLM-Fallback-Chain für L2→L1→L0
+5. **Operations-Schicht** — Dream Scheduler, Energy Decay, Deduplication, Self-Healing, Governance
 
 ## 2. Laufzeittopologie
 
 ```text
 Agent / SDK / Dashboard
-        |
-        v
+        │
+        ▼
 Axum Router
-  |- public routes: /health, /swagger-ui, /register, /login, /refresh
-  |- protected routes: /auth/me, /embed, /store_*, /retrieve_*, /chat/subconscious, ...
-        |
-        v
-Auth middleware -> AuthContext(token_kind, allowed_retrieval_profiles)
-        |
-        v
+  ├─ public routes: /health, /swagger-ui, /register, /login, /refresh
+  └─ protected routes: /auth/me, /store_session, /retrieve_fractal, ...
+        │
+        ▼
+Auth middleware → AuthContext(token_kind, allowed_retrieval_profiles)
+        │
+        ▼
 StorageBackend + EmbeddingProvider
-  |- MemoryStore (default, JSON-backed)
-  |- PostgresStore (optional, postgres-storage)
-  |- Local Ollama / OpenAI / Grok
-        |
-        v
+  ├─ MemoryStore (default, JSON-backed)
+  └─ PostgresStore (postgres-storage, pgvector)
+        │
+        ▼
+Fractal Memory Engine
+  ├─ FractalNode (5 types × 4 trust tiers × 3 context tiers)
+  ├─ USearch (vector) + BM25 (keyword) + RRF (fusion)
+  └─ Fractal Zoom (hierarchical retrieval with pruning)
+        │
+        ▼
 Operational workers
-  |- Dream-related status and schedulers
-  |- VLM worker (optional)
-  |- Frigate connector (optional)
+  ├─ ConsolidationScheduler (L2→L1→L0 via LocalSummarizer)
+  ├─ AuditScheduler (energy decay, dedup, conflicts)
+  ├─ VLM Worker (GPT-5-nano → GPT-4o-mini → Grok-4-fast)
+  └─ Frigate Connector (NVR polling)
 ```
 
 ## 3. Repository structure
@@ -56,276 +52,255 @@ Operational workers
 knowwhere/
 ├── Cargo.toml
 ├── src/
-│   ├── main.rs
+│   ├── main.rs                    # Server entry, router setup, all workers
+│   ├── runtime.rs                 # Store init, embedding provider selection
 │   ├── api/
-│   │   ├── auth.rs
-│   │   ├── docs.rs
-│   │   └── routes.rs
+│   │   ├── auth.rs                # Bearer token auth, user registration
+│   │   ├── docs.rs                # OpenAPI / utoipa schema
+│   │   ├── routes.rs              # All REST handlers (~3268 lines)
+│   │   ├── webhooks.rs            # DedupCache, webhook infrastructure
+│   │   └── subconscious_qa.rs     # Question type detection for /chat/subconscious
 │   ├── embedding/
-│   │   ├── mod.rs
-│   │   └── provider.rs
+│   │   ├── mod.rs                 # EmbeddingProvider trait + ProviderKind enum
+│   │   └── provider.rs            # LocalOllama, OpenAI, Grok, FixedEmbedding
 │   ├── memory/
-│   │   ├── fractal_node.rs
-│   │   ├── governance.rs
-│   │   ├── namespaces.rs
-│   │   ├── skills.rs
-│   │   ├── self_healing.rs
-│   │   └── dream/
+│   │   ├── mod.rs                 # MemoryStore, GovernanceCandidate
+│   │   ├── fractal_node.rs        # FractalNode struct, zoom_retrieve, trust_tier
+│   │   ├── types.rs               # MemoryType, MemorySource, ContextTier, etc.
+│   │   ├── governance.rs          # GovernancePolicy, sensitivity checks
+│   │   ├── namespaces.rs          # Namespace grouping
+│   │   ├── skills.rs              # Agent skill tracking
+│   │   ├── self_healing.rs        # Orphan detection, link repair
+│   │   ├── events.rs              # InMemoryEventStore
+│   │   └── dream/                 # Dream mode (scheduled micro-dreams)
 │   ├── storage/
-│   │   ├── backend.rs
-│   │   ├── in_memory.rs
-│   │   └── postgres_store.rs
+│   │   ├── backend.rs             # StorageBackend trait, RetrievalProfile, ScoreDebug
+│   │   ├── in_memory.rs           # MemoryStore implementation
+│   │   └── postgres_store.rs      # PostgresStore implementation
 │   ├── scheduler/
+│   │   ├── mod.rs                 # SchedulerConfig
+│   │   ├── consolidation.rs       # ConsolidationScheduler (periodic L2→L1→L0)
+│   │   └── audit.rs               # AuditScheduler (energy decay, dedup)
 │   ├── connectors/
-│   └── vlm/
-├── dashboard/              # React/Vite operator UI
-├── frontend/               # minimal static fallback served by the backend
-├── sdk/python/
+│   │   ├── mod.rs                 # store_external_event helper
+│   │   ├── frigate.rs             # FrigateConnector (NVR polling)
+│   │   └── drive.rs               # Google Drive (placeholder)
+│   ├── vlm/
+│   │   └── mod.rs                 # VlmWorker, 4-stage fallback chain
+│   ├── summarizer/
+│   │   └── mod.rs                 # LocalSummarizer (Ollama HTTP API)
+│   └── multimodal/
+│       └── mod.rs                 # MultimodalData (Image/Audio/Sensor)
+├── dashboard/                     # React/Vite operator UI
+├── frontend/                      # Minimal static fallback
+├── sdk/python/                    # Python SDK
+├── migrations/                    # SQL migrations (001–013)
 ├── docs/
-└── .github/workflows/ci.yml
+├── scripts/                       # Pre-commit hook, benchmark scripts
+└── .github/workflows/ci.yml      # CI pipeline
 ```
 
-Wichtige Klarstellung:
+## 4. Fractal Memory Architecture
 
-- `dashboard/` ist die aktive Entwicklungsoberflaeche
-- `frontend/` wird weiterhin vom Backend via `ServeDir::new("frontend")` als einfacher Fallback ausgeliefert
+### 4.1 FractalNode — das zentrale Datenmodell
 
-## 4. API-Aufbau
+```rust
+pub struct FractalNode {
+    // Identity
+    pub id: Uuid,
+    pub memory_type: MemoryType,         // Episodic | Semantic | Preference | Procedural | Meta
+    pub source: MemorySource,            // Conversation | Document | Import | Manual | Consolidation
+    pub status: MemoryStatus,            // Active | Draft | Archived | Deleted | Superseded | Stale
 
-### 4.1 Oeffentliche Routen
+    // Content (Pointer-First)
+    pub content: Option<String>,         // Session: Volltext. External: None
+    pub original_pointer: Option<String>,// External: URI/Pfad. Session: None
+    pub embedding: Vec<f32>,            // 1024-dim (snowflake-arctic-embed2)
 
-- `GET /health`
-- `GET /swagger-ui/*`
-- `POST /register`
-- `POST /login`
-- `POST /refresh`
+    // Governance
+    pub confidence: f64,                 // 0.0–1.0
+    pub sensitivity: Sensitivity,        // Normal | Low | High | Restricted
+    pub importance: i32,                 // 1–10
+    pub conflict_state: ConflictState,   // None | Pending | Resolved
+    pub superseded_by: Option<Uuid>,
+    pub provenance: Value,
 
-Die drei Auth-Mutationsrouten sind nur funktional, wenn der Prozess mit `postgres-storage` plus erreichbarem `DATABASE_URL` laeuft. Sonst liefern sie `503`.
+    // Fractal Hierarchy (L0/L1/L2)
+    pub context_tier: ContextTier,       // Raw(L0) | Overview(L1) | Summary(L2)
+    pub parent_tier_id: Option<Uuid>,
+    pub children_tier_ids: Vec<Uuid>,
+    pub summary_content: Option<String>, // L0: ein-Satz-Zusammenfassung
+    pub overview_content: Option<String>,// L1: Paragraph-Übersicht
 
-### 4.2 Geschuetzte Kernrouten
+    // Relations
+    pub children: Vec<FractalNode>,
+    pub relations: Vec<Relation>,
+    pub metadata: HashMap<String, Value>,
 
-- `GET /auth/me`
-- `POST /embed`
-- `POST /store_session`
-- `POST /store_external`
-- `GET /retrieve/{id}`
-- `POST /retrieve_fractal`
-- `POST /chat/subconscious`
-- `GET /nodes/recent`
-- `POST /nodes/reembed_all`
-- `GET /dream/status`
-- `GET /events`
-- `GET` / `POST /governance/policy`
+    // Stats
+    pub access_count: i32,
+    pub created_at: DateTime<Utc>,
+    pub last_accessed: DateTime<Utc>,
 
-### 4.3 Geschuetzte PostgreSQL-Routen
+    // Optional
+    pub multimodal: Option<MultimodalData>,
+    pub weight: f64,
+}
+```
 
-Nur bei aktivem `postgres-storage`:
+### 4.2 Fractal Zoom
 
-- Retrieval runs und trajectories
-- conflict management
-- energy operations
-- deduplication
-- self-healing
-- namespaces
-- skills
+```rust
+pub fn zoom_retrieve(&self, query_vector: &[f32], max_depth: usize, pruning_threshold: f32)
+    -> Vec<(f32, &FractalNode)>
+```
 
-## 5. Auth- und Capability-Modell
+- Berechnet cosine similarity auf aktueller Ebene
+- Wenn `sim >= pruning_threshold` (default 0.7): steigt rekursiv in Kinder ab
+- Wenn `sim < pruning_threshold`: Ast wird abgeschnitten (PRUNED)
+- Ergebnisse enthalten den gesamten Pfad von der Übersicht zum Detail
 
-Die Auth-Schicht baut fuer jeden autorisierten Request einen `AuthContext` auf:
+### 4.3 Trust Tier Auto-Detection
+
+```rust
+pub fn trust_tier(&self) -> &'static str {
+    // 1. Internal nodes (meta, assistant, system) → derived
+    // 2. Explicit metadata trust_tier → use it
+    // 3. Imported artifacts (MEMORY.md, SOUL.md) → primary
+    // 4. Documents, Manual entries → reference
+    // 5. User messages, conversations → primary
+    // 6. Fallback → reference
+}
+```
+
+### 4.4 5-Type System
+
+Jeder Memory-Typ hat:
+- **default_confidence** — Episodic: 0.8, Semantic: 0.85, Preference: 0.75, Procedural: 0.9, Meta: 0.5
+- **default_importance** — Episodic: 5, Semantic: 6, Preference: 7, Procedural: 8, Meta: 4
+- **suggested_refresh_days** — Episodic: 7, Semantic: 90, Preference: 30, Procedural: 180, Meta: 14
+- **consolidation_logic** — typspezifische Strategie
+- **can_evolve** / **can_contradict** — Edge-Typ-Berechtigungen
+
+## 5. API-Aufbau
+
+### 5.1 Öffentliche Routen
+
+- `GET /health` — Liveness + node count
+- `GET /swagger-ui/*` — OpenAPI / Swagger UI
+- `POST /register` — User-Registrierung (postgres-storage)
+- `POST /login` — Session-Token (postgres-storage)
+- `POST /refresh` — Token-Rotation (postgres-storage)
+
+### 5.2 Geschützte Kernrouten
+
+- `GET /auth/me` — Token-Capabilities
+- `POST /embed` — Text embedden
+- `POST /store_session` — Session speichern (auto-chunking)
+- `POST /store_external` — Externe Referenz speichern
+- `GET /retrieve/{id}` — Einzelnen Knoten abrufen
+- `POST /retrieve_fractal` — Hybrid Retrieval mit Fractal Zoom
+- `POST /chat/subconscious` — Retrieval-gestützte Antwort
+- `GET /nodes/recent` — Letzte Knoten
+- `POST /nodes/reembed_all` — Alle Knoten neu embedden
+- `POST /maintenance/repair_embeddings` — Embedding-Reparatur
+- `GET /dream/status` — Compaction-Status
+- `GET /vlm/status` — VLM-Worker-Status
+- `POST /vlm/summarize` — VLM-Summarization anstoßen
+- `GET /events` — Event-Stream
+- `GET` / `POST /governance/policy` — Governance-Policy
+- `POST /webhooks/frigate` — Frigate Webhook
+
+### 5.3 PostgreSQL-Routen (postgres-storage)
+
+- Retrieval-Analytik: `/retrieval/runs`, `/retrieval/runs/{id}`, `/retrieval/runs/{id}/trajectory`
+- Lifecycle: `/memories/{id}`, `/memories/{id}/compact`, `/memories/{id}/energy/boost`
+- Energy: `/energy/low`, `/energy/decay`, `/energy/compress`
+- Deduplication: `/deduplication/candidates`, `/deduplication/run`, `/deduplication/runs`
+- Conflicts: `/conflicts`, `/conflicts/{id}/resolve`
+- Self-Healing: `/memories/{id}/reindex`, `/memories/{id}/health`, `/self-healing/stats`
+- Namespaces: `/namespaces`
+
+## 6. Auth- und Capability-Modell
 
 ```rust
 pub struct AuthContext {
-    pub token_kind: AuthTokenKind,
+    pub token_kind: AuthTokenKind,           // admin | user
     pub user_id: Option<Uuid>,
     pub allowed_retrieval_profiles: Vec<RetrievalProfile>,
 }
 ```
 
-### 5.1 Token-Arten
+- **Admin-Token** (`KNOWWHERE_API_KEY`): full-fidelity, agent-debug, user-facing
+- **User-Token** (PostgreSQL-Auth): user-facing only
+- `GET /auth/me` ist die Single Source of Truth für Client-Capabilities
 
-- `admin`
-  - stammt aus `KNOWWHERE_API_KEY`
-  - darf `user-facing`, `agent-debug`, `full-fidelity`
-- `user`
-  - stammt aus PostgreSQL-Auth
-  - darf aktuell nur `user-facing`
+## 7. Storage-Backends
 
-### 5.2 Warum `GET /auth/me` architektonisch wichtig ist
+### MemoryStore (Default)
+- In-Memory mit JSON-Persistenz
+- USearch-Index für Vector Search
+- BM25-Index für Keyword Search
+- Gut für Entwicklung und Single-Node
 
-Das Dashboard und andere Clients raten nicht mehr, welche Profile erlaubt sind. Sie lesen den Ist-Zustand direkt vom Server und rendern Optionen entsprechend. Dadurch liegen Rechte und UI nicht auseinander.
+### PostgresStore (postgres-storage)
+- PostgreSQL + pgvector (1024-dim)
+- Alle Lifecycle-Features (Energy, Dedup, Conflicts, Self-Healing)
+- Retrieval-Trajektorien und Analytik
+- User-Auth mit API-Key-Management
 
-## 6. Datenmodell
-
-Die zentrale Datenstruktur ist `FractalNode`.
+## 8. Embedding Provider
 
 ```rust
-pub struct FractalNode {
-    pub id: Uuid,
-    pub node_type: NodeType,
-    pub vector: Vec<f32>,
-    pub content: Option<String>,
-    pub original_pointer: Option<String>,
-    pub metadata: HashMap<String, Value>,
-    pub children: Vec<FractalNode>,
-    pub relations: Vec<Relation>,
-    pub created_at: DateTime<Utc>,
-    pub last_accessed: DateTime<Utc>,
+pub enum ProviderKind {
+    LocalOllama,  // snowflake-arctic-embed2 (1024-dim), multilingual
+    OpenAI,       // text-embedding-3-small (1536-dim)
+    Grok,         // grok-embed (dimension variable)
 }
 ```
 
-### 6.1 Pointer-first Regel
+Auswahlreihenfolge:
+1. `KNOWWHERE_EMBEDDING_PROVIDER` wenn explizit gesetzt
+2. Grok wenn `GROK_API_KEY` + `grok-provider` Feature
+3. OpenAI wenn `OPENAI_API_KEY` + `openai-provider` Feature
+4. Local Ollama (Default)
 
-- Session-Nodes: `content` ist gefuellt
-- External-Nodes: `original_pointer` ist gefuellt
-- Externe Rohdaten gehoeren nicht in den Store
+## 9. L2→L1→L0 Compaction
 
-### 6.2 API-Retrieval-Form
+### LocalSummarizer (Primär)
+- Ollama HTTP API mit llama3.2 (3B, Q4_K_M)
+- Deterministisch: temperature=0, seed=42
+- Feature-Flag: `summarizer` (default enabled)
+- UpdateOperations: SetOverviewContent, SetSummaryContent
 
-Die API gibt keine rohen Vektoren in Retrieval-Antworten zurueck. Stattdessen werden `ScoredNode`-artige Antworten mit Score, Node-Daten und optionalem Score-Debug geliefert.
+### VLM Fallback Chain
+1. GPT-5-nano → 2. GPT-4o-mini → 3. Grok-4-fast → 4. Truncation (disabled)
 
-## 7. Retrieval-Pipeline
+### ConsolidationScheduler
+- Periodisch (konfigurierbar via DREAM_INTERVAL)
+- Findet unconsolidierte L0-Knoten
+- Gruppiert nach Parent
+- Enqueued Summarization-Jobs
 
-Der aktuelle Flow fuer `POST /retrieve_fractal` ist:
+## 10. Energy Decay (Ebbinghaus)
 
-1. Query-Text und/oder Query-Vektor entgegennehmen
-2. Embedding berechnen, falls nur Text gegeben ist
-3. Kandidaten ueber Vector Search holen
-4. Kandidaten ueber BM25 holen
-5. Kandidaten ggf. ueber Fractal Zoom vertiefen
-6. Rankings ueber RRF fusionieren
-7. Ergebnisse profilabhaengig gewichten und filtern
-8. Ergebnisse mit optionalem Debug zurueckgeben
+- Memories starten mit energy=50.0
+- Decay folgt Ebbinghaus-Vergessenskurve
+- AuditScheduler wendet periodisch Decay an
+- Low-Energy-Memories können komprimiert werden
+- Zugriffe boosten die Energie (spacing effect)
 
-### 7.1 Retrieval-Profile
+## 11. Self-Healing
 
-`RetrievalProfile` ist ein Architekturhebel, kein UI-Detail:
+```rust
+pub struct SelfHealingConfig {
+    pub check_orphaned_nodes: bool,
+    pub check_broken_links: bool,
+    pub check_embedding_drift: bool,
+    pub repair_interval: Duration,
+}
+```
 
-- `user-facing`
-  - filtert interne-only Inhalte
-  - gewichtet Trust-Tiers konservativer
-- `agent-debug`
-  - bleibt konsumierbar, zeigt aber mehr Debug-Signale
-- `full-fidelity`
-  - keine zusaetzliche Profilgewichtung
-  - fuer rohe Operator- und Debug-Sicht
-
-## 8. Embedding-Architektur
-
-### 8.1 Provider
-
-Aktuell verfuegbar:
-
-- `LocalOllamaProvider`
-- `OpenAIProvider`
-- `GrokProvider`
-
-### 8.2 Auswahlreihenfolge
-
-1. `KNOWWHERE_EMBEDDING_PROVIDER`, wenn gesetzt
-2. Grok bei `GROK_API_KEY` plus Feature
-3. OpenAI bei `OPENAI_API_KEY` plus Feature
-4. Lokales Ollama als Default
-
-### 8.3 Wichtige Env-Vars
-
-- `OLLAMA_URL`
-- `OLLAMA_MODEL`
-- `OLLAMA_EMBEDDING_DIMENSION`
-- `KNOWWHERE_EMBEDDING_PROVIDER`
-
-Das ist architektonisch wichtig, weil die Vektordimension nicht hart auf `768` festgelegt ist. Der Provider muss zum gewaehlten Modell passen.
-
-## 9. Storage-Backends
-
-### 9.1 `MemoryStore`
-
-Default-Backend:
-
-- in-memory Datenstruktur
-- JSON-Persistenz im Datenverzeichnis
-- geeignet fuer lokale Entwicklung und einfache Single-Node-Deployments
-
-### 9.2 `PostgresStore`
-
-Optionales erweitertes Backend:
-
-- aktiviert ueber `postgres-storage`
-- braucht ein funktionierendes `DATABASE_URL`
-- liefert erweiterte Features fuer Retrieval-Analytik, Lifecycle, Dedup, Konflikte und Auth
-
-Architektonisch wichtig:
-
-- Die API bleibt weitgehend gleich
-- Der Funktionsumfang der Routes aendert sich je nach aktivem Backend und Feature-Set
-
-## 10. Frontend-Architektur
-
-### 10.1 React-Dashboard in `dashboard/`
-
-Das aktuelle Dashboard ist eine Vite-App mit `/api`-Proxy zum Backend.
-
-Es bietet aktuell:
-
-- Overview
-- Memory stream
-- Search
-- Subconscious chat
-- Governance view
-
-Designentscheidung:
-
-- Capabilities werden ueber `/auth/me` geladen
-- Search und Chat rendern Retrieval-Profile nur, wenn der Token sie wirklich darf
-
-### 10.2 Minimales Fallback-Frontend in `frontend/`
-
-Das Backend serviert weiterhin `frontend/` als einfache statische Oberflaeche. Diese ist funktional begrenzt und kein vollwertiger Ersatz fuer das React-Dashboard.
-
-## 11. Operations und Nebenprozesse
-
-### 11.1 Dream und Scheduler
-
-KnowWhere besitzt Scheduler-/Dream-bezogene Komponenten fuer Wartung und organische Verbesserung der Memory-Struktur. Der aktuelle Operator-Zugriff erfolgt vor allem ueber Status-Endpunkte.
-
-### 11.2 VLM Worker
-
-Ein optionaler VLM-Worker kann Summarization-/Compression-bezogene Aufgaben uebernehmen, wenn passende Provider-Variablen gesetzt sind, z. B. `OLLAMA_VLM_MODEL`.
-
-### 11.3 Connectoren
-
-Beispiel: Frigate. Wenn `FRIGATE_URL` gesetzt ist, koennen Ereignisse als External-Nodes pointer-first gespeichert werden.
-
-## 12. CI und Verifikation
-
-Die Architektur wird in CI auf mehreren Ebenen abgesichert:
-
-- Rust fmt, clippy, check, unit tests
-- OpenAPI contract smoke tests
-- PostgreSQL-Integrationstests mit `pgvector`
-- Ollama-gestuetzte Testpfade
-- Feature-Matrix fuer Provider-/Storage-Kombinationen
-- Dashboard-Build
-- Docker-Build
-
-Das ist wichtig, weil die Architektur absichtlich feature-gated ist und Default- sowie PostgreSQL-Modus beide valide bleiben muessen.
-
-## 13. Integrationsregeln
-
-Wenn KnowWhere in ein bestehendes Host-System eingebunden wird:
-
-1. bestehende Memories zuerst importieren
-2. Host-Dateien nie loeschen oder ueberschreiben
-3. Host-Konfiguration nur ergaenzen
-4. Host-Memory-System parallel weiterlaufen lassen
-5. bei Ausfall von KnowWhere sauber degradieren
-
-## 14. Architekturgrenzen im aktuellen Stand
-
-Noch nicht fertig oder bewusst begrenzt:
-
-- kein vollstaendiges UI fuer alle erweiterten PostgreSQL-Routen
-- keine automatische Storage-Migration
-- keine Multi-Tenant-SaaS-Architektur
-- keine Runtime-Hot-Swaps fuer Embedding-Provider
-- keine uniforme Release-Versionierung ueber Marketing- und Paketversion hinaus
-
+- Orphaned Nodes: Knoten ohne gültigen Parent werden re-parented
+- Broken Links: Pointer zu gelöschten Knoten werden bereinigt
+- Embedding Drift: Veraltete Embeddings werden erkannt und repariert

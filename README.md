@@ -2,9 +2,9 @@
 
 # KnowWhere
 
-### Dein KI-Gedaechtnis, das Pointer statt Rohdaten speichert.
+### Lossless fractal memory for AI agents — every fact has an address.
 
-**Pointer-first fractal memory service for AI agents.**
+**Pointer-first. Fractal Zoom. 0% information loss.**
 
 [![CI](https://github.com/Jind0la/knowwhere/actions/workflows/ci.yml/badge.svg)](https://github.com/Jind0la/knowwhere/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -14,409 +14,201 @@
 
 ---
 
-KnowWhere is a long-term memory backend for AI agents. It stores session data as full text plus embeddings, but stores external sources as **pointers only**. Retrieval combines semantic vector search, BM25 keyword search, reciprocal rank fusion, and optional fractal zooming.
+## What KnowWhere is
+
+Most AI memory systems extract "facts" from conversations and discard the rest. KnowWhere doesn't. It stores every piece of information in a **fractal hierarchy** — atomic facts at the bottom (L0), summaries in the middle (L1), overviews at the top (L2). You can search at any resolution and zoom down to the original data. Nothing is ever lost.
+
+> Hindsight extracts facts. LangChain stores vectors. KnowWhere stores *knowledge* — with provenance, trust tiers, and a pointer back to every original source.
+
+### Why this matters
+
+When an agent asks "why did we decide X three months ago?", other memory systems return isolated facts. KnowWhere returns the *entire decision path* — from the original conversation rounds (L0) through the summary (L1) to the strategic overview (L2). Fractal Zoom makes this possible.
+
+---
 
 ## Start Here
 
 - **5-minute setup:** [docs/QUICKSTART.md](docs/QUICKSTART.md)
-- **Full first-run walkthrough:** [docs/WALKTHROUGH.md](docs/WALKTHROUGH.md)
-- **Beta scope, limitations, roadmap:** [docs/BETA-README.md](docs/BETA-README.md)
+- **Full walkthrough:** [docs/WALKTHROUGH.md](docs/WALKTHROUGH.md)
+- **Current limitations:** [docs/BETA-README.md](docs/BETA-README.md)
 - **Product scope:** [docs/PRD.md](docs/PRD.md)
-- **Technical architecture:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- **Architecture:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
-## Current main status
+---
 
-- Repository/package version on `main`: `0.1.0`
-- Core REST API is live: store, retrieve, chat, governance, dream status, events
-- Auth exposes token capabilities via `GET /auth/me`
-- Retrieval profiles are enforced server-side: `user-facing`, `agent-debug`, `full-fidelity`
-- Storage works in two modes: default `MemoryStore` with JSON persistence, optional `PostgresStore` behind `postgres-storage`
-- React operator dashboard lives in `dashboard/` and is built in CI
-- A minimal static fallback UI still exists in `frontend/`, but it is not the primary dashboard surface
+## Current status — v0.3.0 Beta
+
+| Category | Status |
+|----------|--------|
+| **Core API** | ✅ store_session, store_external, retrieve_fractal, chat/subconscious |
+| **Fractal Zoom** | ✅ zoom_retrieve() with hierarchical pruning across L0→L1→L2 |
+| **5-Type System** | ✅ Episodic, Semantic, Preference, Procedural, Meta — each with type-specific consolidation logic |
+| **Trust Tiers** | ✅ primary, reference, derived, volatile — auto-detected from metadata |
+| **L2→L1→L0 Compaction** | ✅ LocalSummarizer (Ollama llama3.2) with VLM fallback chain |
+| **Hybrid Retrieval** | ✅ USearch vector + BM25 keyword + RRF fusion |
+| **Energy Decay** | ✅ Ebbinghaus forgetting curve for memory lifecycle |
+| **Governance** | ✅ Retrieval profiles (user-facing / agent-debug / full-fidelity), sensitivity levels |
+| **Auth** | ✅ Static admin key + self-service user registration (PostgreSQL) |
+| **PostgreSQL** | ✅ Deduplication, conflicts, self-healing, namespaces, skills (postgres-storage) |
+| **Docker** | ✅ docker compose up — PostgreSQL + Ollama + KnowWhere in one command |
+| **Tests** | ✅ 70 unit + 41 integration = 111 tests, 0 failures |
+| **OpenClaw** | ✅ 6-hook plugin for session capture + context injection |
+
+---
+
+## Quick start (Docker Compose)
+
+One command:
+
+```bash
+git clone https://github.com/Jind0la/knowwhere.git
+cd knowwhere
+cp .env.example .env
+docker compose up -d --build
+```
+
+> On first start, Ollama auto-downloads `snowflake-arctic-embed2` (multilingual, 1024-dim) and `llama3.2` (summarization). Takes 5–10 min.
+
+Verify:
+
+```bash
+curl http://localhost:3737/health
+# → {"status":"ok","node_count":0}
+```
+
+First API call:
+
+```bash
+curl -X POST http://localhost:3737/store_session \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer *** \
+  -d '{"content": "USER: What is KnowWhere?\nASSISTANT: A fractal memory service."}'
+
+curl -X POST http://localhost:3737/retrieve_fractal \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer *** \
+  -d '{"query_text": "What is KnowWhere", "profile": "user-facing"}'
+```
+
+---
 
 ## How it works
 
 ```text
-User / Agent message -> store_session -> embedding + BM25 index
-Next query           -> retrieve_fractal -> hybrid retrieval -> ranked context
-Optional chat        -> chat/subconscious -> answer + cited sources
-External data        -> store_external -> pointer + metadata only
-```
-
-## Quick start (Docker Compose — recommended)
-
-The fastest way to run KnowWhere is with Docker Compose. It starts PostgreSQL, Ollama, and KnowWhere together with zero local dependencies.
-
-### 1. Clone and start
-
-```bash
-git clone https://github.com/Jind0la/knowwhere.git
-cd knowwhere
-
-# Copy environment template
-cp .env.example .env
-
-# Start everything (builds if needed)
-docker compose up -d --build
-```
-
-> **Note:** On first start, Ollama will automatically download the required models (`snowflake-arctic-embed2` and `llama3.2`). This can take 5–10 minutes depending on your connection. The `start_period` in the healthcheck is set to 60s to account for this.
-
-### 2. Verify health
-
-```bash
-# Wait for all services to be healthy (first start may take a minute)
-docker compose ps
-
-# Check KnowWhere
-curl http://localhost:3737/health
-# → {"status":"ok","node_count":0}
-
-# Check Ollama
-curl http://localhost:11434/api/tags
-# → {"models":[{"name":"snowflake-arctic-embed2"}, {"name":"llama3.2"}]}
-```
-
-### 3. First API call (store + retrieve)
-
-```bash
-# Get your API key from .env or use the default
-curl -X POST http://localhost:3737/store_session \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer kw_adm...2024" \
-  -d '{"content": "Hello from Docker!"}'
-
-# Retrieve it
-curl -X POST http://localhost:3737/retrieve_fractal \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer kw_adm...2024" \
-  -d '{"query_text": "Hello"}'
-```
-
-### 4. Run benchmarks (optional)
-
-```bash
-docker compose exec knowwhere /app/scripts/benchmark.sh
-```
-
-This runs the LongMemEval Canary benchmark against your local instance and reports Recall@5, MRR, and Abstention accuracy.
-
-### 5. View logs
-
-```bash
-docker compose logs -f knowwhere
-docker compose logs -f ollama
-docker compose logs -f kw-postgres
-```
-
-### 6. Stop
-
-```bash
-docker compose down
-# To also remove data volumes:
-docker compose down -v
+                    ┌─────────────────────┐
+                    │   Agent / SDK / UI   │
+                    └──────────┬──────────┘
+                               │
+              ┌────────────────┼────────────────┐
+              ▼                ▼                 ▼
+     store_session     store_external     retrieve_fractal
+              │                │                 │
+              ▼                ▼                 ▼
+     ┌────────────────────────────────────────────┐
+     │           Fractal Memory Store              │
+     │                                             │
+     │  L2: Overview ────► L1: Summary ────► L0: Raw │
+     │  (zoom out)          (mid-level)       (atomic) │
+     │                                             │
+     │  USearch(Vector) + BM25(Keyword) + RRF     │
+     │  Trust Tiers + Governance + Energy Decay    │
+     └────────────────────────────────────────────┘
+                               │
+              ┌────────────────┼────────────────┐
+              ▼                ▼                 ▼
+        PostgreSQL      Local Ollama      Cloud VLM
+       (persistence)   (embeddings +     (GPT-5-nano→
+                        summarization)   GPT-4o-mini→
+                                          Grok-4-fast)
 ```
 
 ---
-
-## Local development (Rust + Ollama)
-
-For development, debugging, or when you prefer not to use Docker:
-
-Requires [Rust 1.85+](https://rustup.rs) and [Ollama](https://ollama.ai).
-
-```bash
-git clone https://github.com/Jind0la/knowwhere.git
-cd knowwhere
-ollama pull nomic-embed-text-v2-moe
-KNOWWHERE_API_KEY=test cargo run
-```
-
-If you want a different local embedding model:
-
-```bash
-export OLLAMA_MODEL=snowflake-arctic-embed2
-export OLLAMA_EMBEDDING_DIMENSION=1024
-KNOWWHERE_API_KEY=test cargo run
-```
-
-Open [http://localhost:3737/swagger-ui/](http://localhost:3737/swagger-ui/) for the API docs.
-
----
-
-## Docker quick test (single container)
-
-Good for a fast single-container smoke test without PostgreSQL:
-
-```bash
-git clone https://github.com/Jind0la/knowwhere.git
-cd knowwhere
-docker build -t knowwhere-server:local .
-docker run -d --name knowwhere -p 3737:3737 \
-  -e KNOWWHERE_API_KEY=test \
-  -e OLLAMA_URL=http://host.docker.internal:11434 \
-  -e RUST_LOG=info \
-  knowwhere-server:local
-```
-
-### 3. Verify health
-
-```bash
-make health
-# or: curl http://localhost:3737/health
-```
-
-### 4. Run benchmark (manual, optional)
-
-```bash
-make benchmark
-# or: docker compose exec knowwhere /app/scripts/benchmark.sh
-```
-
-### 5. Stop
-
-```bash
-make down
-# or: docker compose down
-```
-
----
-
-### Makefile commands
-
-| Command | What it does |
-|---------|--------------|
-| `make up` | Start all services |
-| `make down` | Stop all services |
-| `make build` | Rebuild KnowWhere image |
-| `make logs` | Follow KnowWhere logs |
-| `make ps` | Show running services |
-| `make benchmark` | Run LongMemEval Canary inside container |
-| `make shell` | Open shell in KnowWhere container |
-| `make test` | Run `cargo test --lib` locally |
-| `make test-postgres` | Run integration tests (needs DATABASE_URL) |
-| `make clean` | Remove containers, volumes, build artifacts |
-
----
-
-### Local Rust server (advanced / development)
-
-For development, debugging, or when you prefer not to use Docker:
-
-Requires [Rust 1.85+](https://rustup.rs), [Ollama](https://ollama.ai), and optionally PostgreSQL on port 5433.
-
-```bash
-# 1. Start PostgreSQL + Ollama manually, or use the compose services:
-docker compose up -d ollama kw-postgres
-
-# 2. Set env vars
-export KNOWWHERE_API_KEY=test
-export DATABASE_URL=postgresql://postgres:kw@localhost:5433/kw
-export OLLAMA_URL=http://localhost:11434
-export OLLAMA_MODEL=snowflake-arctic-embed2
-
-# 3. Run
-cargo run --features postgres-storage
-```
-
-Open [http://localhost:3737/swagger-ui/](http://localhost:3737/swagger-ui/) for the API docs.
-
-### Dashboard
-
-The active operator UI lives in `dashboard/` and talks to the backend through Vite's `/api` proxy.
-
-```bash
-cd dashboard
-npm ci
-npm run dev
-```
-
-By default the dashboard proxies to `http://localhost:3737`. Override that for local testing if needed:
-
-```bash
-VITE_API_TARGET=http://localhost:3750 npm run dev
-```
-
-Open [http://localhost:5173](http://localhost:5173), paste a Bearer token into the UI, and the dashboard will load capabilities from `GET /auth/me`.
 
 ## Pointer-first data model
 
-- `store_session`: full text plus embedding for conversations, notes, decisions
-- `store_external`: pointer string plus embedding plus metadata, never raw external payloads
-- Retrieval responses intentionally omit raw vectors to keep payloads small
+KnowWhere distinguishes two fundamental memory types with full provenance:
 
-## Auth and retrieval profiles
+| Type | What it stores | Example |
+|------|---------------|---------|
+| **Session** | Full text + embedding + metadata | Chat rounds, decisions, notes |
+| **External** | Pointer + embedding + metadata only | File paths, URLs, sensor IDs |
 
-Protected routes require a Bearer token whenever `KNOWWHERE_API_KEY` is set. If no key is set, KnowWhere runs with auth disabled for local development only.
+Every node carries: memory type (5 types), source (5 sources), trust tier (auto-detected), confidence, sensitivity, importance, conflict state.
 
-`GET /auth/me` returns:
-
-- `token_kind`: `admin` or `user`
-- `allowed_retrieval_profiles`: the profiles the current token may request
-
-Current behavior:
-
-- **Static admin key** via `KNOWWHERE_API_KEY`: full access plus all retrieval profiles
-- **Self-service user tokens** via `POST /register`, `POST /login`, `POST /refresh`: available only when built with `postgres-storage` and started with `DATABASE_URL`
-- **Admin login through `/login` is intentionally disabled**. The admin key must be used directly as Bearer token
-
-Profile access today:
-
-- `admin` tokens: `user-facing`, `agent-debug`, `full-fidelity`
-- `user` tokens: `user-facing`
+---
 
 ## API overview
 
-### Public
+### Core (always available)
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| `GET` | `/health` | Liveness plus node count |
-| `GET` | `/swagger-ui/*` | OpenAPI / Swagger UI |
-| `POST` | `/register` | Create user plus initial API key (`postgres-storage` only) |
-| `POST` | `/login` | Mint session token (`postgres-storage` only) |
-| `POST` | `/refresh` | Rotate session token (`postgres-storage` only) |
-
-### Protected core memory routes
-
-| Method | Path | Purpose |
-|--------|------|---------|
-| `GET` | `/auth/me` | Token capabilities |
-| `POST` | `/embed` | Embedding helper |
-| `POST` | `/store_session` | Store full-text session memory |
-| `POST` | `/store_external` | Store external pointer memory |
-| `GET` | `/retrieve/{id}` | Fetch a single node |
-| `POST` | `/retrieve_fractal` | Hybrid retrieval |
-| `POST` | `/chat/subconscious` | Retrieval-backed chat response with sources |
+| `POST` | `/store_session` | Store full-text session memory with auto-chunking |
+| `POST` | `/store_external` | Store pointer-only external reference |
+| `POST` | `/retrieve_fractal` | Hybrid retrieval with fractal zoom + profile-based scoring |
+| `POST` | `/chat/subconscious` | Retrieval-backed response with cited sources |
+| `GET` | `/retrieve/{id}` | Fetch single node by ID |
 | `GET` | `/nodes/recent` | Recent nodes |
-| `POST` | `/nodes/reembed_all` | Re-embed all nodes with the active provider |
-| `GET` | `/dream/status` | Dream-mode status |
-| `GET` | `/events` | Event stream snapshot |
+| `GET` | `/dream/status` | Compaction scheduler status |
 | `GET` / `POST` | `/governance/policy` | Read / update governance policy |
 
-### Protected Postgres-only routes
+### PostgreSQL-only (postgres-storage feature)
 
-When `postgres-storage` is enabled and a working `DATABASE_URL` is present, KnowWhere also exposes:
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/retrieval/runs` | Retrieval analytics |
+| `POST` | `/energy/decay` | Apply Ebbinghaus forgetting curve |
+| `POST` | `/deduplication/run` | Find and merge duplicate memories |
+| `GET` | `/conflicts` | List conflicting memories |
+| `GET` | `/self-healing/stats` | Orphaned nodes, broken links, embedding drift |
+| `GET` | `/namespaces` | Namespace-organized memory views |
+| `POST` | `/memories/{id}/compact` | Trigger tiered compaction for a node |
 
-- retrieval analytics: `/retrieval/runs`, `/retrieval/runs/{id}`, `/retrieval/runs/{id}/trajectory`
-- lifecycle operations: `/memories/{id}`, `/memories/{id}/compact`, `/memories/{id}/energy/boost`
-- energy management: `/energy/low`, `/energy/decay`, `/energy/compress`
-- deduplication and conflicts: `/deduplication/*`, `/conflicts/*`
-- self-healing: `/memories/{id}/reindex`, `/memories/{id}/health`, `/self-healing/stats`
-- namespaces and skills: `/namespaces/*`, `/skills/*`
-
-## Embedding providers
-
-Selection order at runtime:
-
-1. `KNOWWHERE_EMBEDDING_PROVIDER` if explicitly set
-2. Grok when `GROK_API_KEY` is present and the `grok-provider` feature is enabled
-3. OpenAI when `OPENAI_API_KEY` is present and the `openai-provider` feature is enabled
-4. Local Ollama otherwise
-
-Local Ollama details:
-
-- default model in code: `nomic-embed-text-v2-moe`
-- override model with `OLLAMA_MODEL`
-- override dimension with `OLLAMA_EMBEDDING_DIMENSION`
-- override base URL with `OLLAMA_URL`
-
-## Storage modes
-
-### Default mode
-
-- Backend: `MemoryStore`
-- Persistence: JSON state under `KNOWWHERE_DATA_DIR`
-- Good for local development and single-node testing
-
-### PostgreSQL mode
-
-- Build with `--features postgres-storage`
-- Start with a working `DATABASE_URL`
-- Enables `PostgresStore`, auth-backed user tokens, analytics, deduplication, conflicts, energy management, self-healing, namespaces, and skills
+---
 
 ## Environment variables
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `KNOWWHERE_PORT` | `3737` | HTTP port |
-| `KNOWWHERE_API_KEY` | unset | Static admin Bearer token; if unset, auth is disabled |
-| `KNOWWHERE_DATA_DIR` | `./data` | JSON persistence directory |
-| `DATABASE_URL` | unset | Enables PostgreSQL-backed runtime when compiled with `postgres-storage` |
-| `KNOWWHERE_EMBEDDING_PROVIDER` | unset | Force `ollama`, `openai`, or `grok` selection |
-| `OLLAMA_URL` | `http://localhost:11434` | Local Ollama base URL |
-| `OLLAMA_MODEL` | `nomic-embed-text-v2-moe` | Local embedding model |
-| `OLLAMA_EMBEDDING_DIMENSION` | unset | Manual embedding dimension override |
-| `OLLAMA_VLM_MODEL` | `llama3.2` | Ollama VLM model for summarization worker |
-| `OPENAI_API_KEY` | unset | OpenAI embeddings |
-| `GROK_API_KEY` | unset | Grok/xAI embeddings |
-| `FRIGATE_URL` | unset | Enables Frigate connector |
-| `AUTH_SESSION_TTL_DAYS` | `30` | Session token lifetime in PostgreSQL auth mode |
-| `AUTH_STRICT_MIGRATIONS` | `false` | Fail startup on auth migration problems |
-| `RATE_LIMIT_MODE` | `off` | Set to `proxy` behind a reverse proxy |
-| `RATE_LIMIT` | unset | Legacy fallback that behaves like `RATE_LIMIT_MODE=proxy` |
+| `KNOWWHERE_API_KEY` | unset | Admin Bearer token (auth off if unset) |
+| `DATABASE_URL` | unset | PostgreSQL backend (postgres-storage feature) |
+| `OLLAMA_URL` | `http://localhost:11434` | Ollama API base URL |
+| `OLLAMA_MODEL` | `nomic-embed-text-v2-moe` | Embedding model (recommended: `snowflake-arctic-embed2`) |
+| `OLLAMA_SUMMARIZER_MODEL` | `llama3.2` | Summarization model for L2→L1→L0 |
+| `OPENAI_API_KEY` | unset | OpenAI embeddings or VLM fallback |
+| `GROK_API_KEY` | unset | Grok/xAI embeddings or VLM fallback |
+| `FRIGATE_URL` | unset | Frigate NVR connector |
 | `RUST_LOG` | `info` | Tracing verbosity |
 
-## Integration rules
-
-KnowWhere is additive, never destructive:
-
-1. Import existing memories first
-2. Keep original host files untouched
-3. Append to host configuration instead of replacing it
-4. Let the host memory system continue to run in parallel
-5. Degrade gracefully if KnowWhere is offline
+---
 
 ## SDK and integrations
 
-- Python SDK: `sdk/python`
-- OpenClaw plugin: `openclaw-plugin/`
-- Import guide: [docs/IMPORT_GUIDE.md](docs/IMPORT_GUIDE.md)
+- **Python SDK:** `sdk/python`
+- **OpenClaw Plugin:** 6 hooks — session capture, context injection, gateway import
+- **Swagger UI:** `http://localhost:3737/swagger-ui/`
 
-## CI
+---
 
-`/.github/workflows/ci.yml` currently validates:
-
-- `cargo fmt`, `cargo clippy`, `cargo check`, `cargo test --lib`
-- OpenAPI contract smoke tests
-- PostgreSQL integration tests with `pgvector` plus local Ollama
-- feature-matrix builds for `openai-provider`, `grok-provider`, and PostgreSQL combinations
-- `dashboard` production build
-- Docker image build
-
-## Build matrix
-
-| Feature flag | Effect |
-|--------------|--------|
-| default | `MemoryStore` plus local Ollama |
-| `postgres-storage` | PostgreSQL storage and the extended memory lifecycle routes |
-| `openai-provider` | OpenAI embeddings |
-| `grok-provider` | Grok/xAI embeddings |
-
-Examples:
+## Development
 
 ```bash
-cargo build
-cargo build --features postgres-storage
-cargo build --features openai-provider
-cargo build --features "postgres-storage,grok-provider"
+# Unit tests (always work)
+cargo test --lib                         # 70 tests
+
+# Integration tests (need Docker postgres + Ollama)
+DATABASE_URL="postgresql://postgres@localhost:5433/kw" \
+OLLAMA_URL=http://localhost:11434 \
+OLLAMA_MODEL=snowflake-arctic-embed2 \
+SQLX_OFFLINE=true \
+cargo test --features postgres-storage --test integration  # 41 tests
+
+# Local server
+cargo run --features postgres-storage
 ```
 
-## Contributing
-
-Contributions are welcome. Please open an issue or pull request on [GitHub](https://github.com/Jind0la/knowwhere).
-
-### Git Hook Setup
-
-This repo tracks a pre-commit hook in `scripts/pre-commit-hook.sh`. After cloning, activate it:
-
-```bash
-ln -sf scripts/pre-commit-hook.sh .git/hooks/pre-commit
-```
-
-The hook runs `cargo sqlx prepare` to keep the offline query cache up-to-date. PostgreSQL must be running on port 5433 (`docker start knowwhere-kw-postgres-1`) or you can skip the check with `git commit --no-verify`.
+---
 
 ## License
 
 [MIT](LICENSE) — 2026 KnowWhere contributors
-# test
