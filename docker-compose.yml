@@ -23,6 +23,8 @@ services:
       timeout: 5s
       retries: 20
       start_period: 60s
+    networks:
+      - knowwhere-net
     restart: unless-stopped
 
   kw-postgres:
@@ -39,6 +41,8 @@ services:
       retries: 10
     volumes:
       - postgres-data:/var/lib/postgresql/data
+    networks:
+      - knowwhere-net
     restart: unless-stopped
 
   knowwhere:
@@ -50,7 +54,7 @@ services:
       - "3737:3737"
     environment:
       - RUST_LOG=${RUST_LOG:-info}
-      - KNOWWHERE_API_KEY=${KNOWWHERE_API_KEY:-kw_$(openssl rand -hex 8)}
+      - KNOWWHERE_API_KEY=${KNOWWHERE_API_KEY:-kw_testkey_12345}
       - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-kw}@kw-postgres:5432/kw
       - OLLAMA_URL=http://ollama:11434
       - OLLAMA_MODEL=${OLLAMA_MODEL:-snowflake-arctic-embed2}
@@ -60,12 +64,24 @@ services:
       - knowwhere-data:/app/data
     depends_on:
       ollama:
-        condition: service_healthy
+        condition: service_started
       kw-postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3737/health >/dev/null 2>&1 || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - knowwhere-net
     restart: unless-stopped
 
 volumes:
   knowwhere-data:
   postgres-data:
   ollama-data:
+
+networks:
+  knowwhere-net:
+    driver: bridge

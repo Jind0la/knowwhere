@@ -26,13 +26,25 @@ CREATE TABLE IF NOT EXISTS memories (
     conflict_state  VARCHAR(20) DEFAULT 'none',
     weight          DOUBLE PRECISION DEFAULT 1.0,
     parent_tier_id  UUID,
+    parent_id       UUID,
+    depth           INTEGER DEFAULT 0,
+    deleted_at      TIMESTAMPTZ,
     summary_content TEXT,
     overview_content TEXT,
     tier            INTEGER DEFAULT 0,
-    children_tier_ids UUID[],
+    children_tier_ids UUID[] DEFAULT ARRAY[]::UUID[],
     embedding       vector(1024),
     content_hash    VARCHAR(64),
-    metadata        JSONB
+    metadata        JSONB,
+    -- Tiered context columns (from migration 003)
+    context_tier    VARCHAR(50) DEFAULT 'raw',
+    -- Energy decay columns (from migration 002)
+    energy          DOUBLE PRECISION DEFAULT 1.0,
+    last_energy_update TIMESTAMPTZ DEFAULT NOW(),
+    -- Embedding repair tracking (from migration 013)
+    embedding_repaired_at TIMESTAMP,
+    -- Original pointer for external sources
+    original_pointer VARCHAR(255)
 );
 
 -- Indexes for memories
@@ -44,6 +56,9 @@ CREATE INDEX IF NOT EXISTS idx_memories_parent ON memories(parent_tier_id);
 
 -- Full-text search index
 CREATE INDEX IF NOT EXISTS idx_memories_fts ON memories USING gin(to_tsvector('english', COALESCE(content, '')));
+
+-- pgvector extension (must be created before using vector type)
+CREATE EXTENSION IF NOT EXISTS vector;
 
 -- Events table (event sourcing)
 CREATE TABLE IF NOT EXISTS events (

@@ -1,14 +1,7 @@
-# Build args for features
-# Default: no features (in-memory only)
-# To enable PostgreSQL + pgvector:
+ARG FEATURES=postgres-storage,summarizer
+# To customize features at build time:
 #   docker build --build-arg FEATURES=postgres-storage -t knowwhere-server:postgres .
-#
-# IMPORTANT: When using postgres-storage feature, you must also run a PostgreSQL server
-# with the pgvector extension. Use the docker-compose.yml which provides pgvector/pgvector:pg16.
-# The knowwhere-server binary is a client — it connects to an external Postgres instance.
-ARG OLLAMA_API_URL=http://ollama:11434
-ARG OLLAMA_MODEL=snowflake-arctic-embed2
-ARG OLLAMA_VLM_MODEL=llama3.2
+#   docker compose build --build-arg FEATURES=postgres-storage,summarizer
 
 FROM rust:1.86 AS builder
 
@@ -24,7 +17,7 @@ COPY .sqlx .sqlx
 COPY src/ src/
 COPY frontend/ frontend/
 COPY benchmarks/ benchmarks/
-RUN cargo build --release --features postgres-storage
+RUN cargo build --release --features \"$FEATURES\"
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y ca-certificates && \
@@ -39,6 +32,7 @@ COPY --from=builder /app/target/release/longmemeval_qa_eval /usr/local/bin/
 COPY --from=builder /app/target/release/longmemeval_retrieval_eval /usr/local/bin/
 COPY --from=builder /app/frontend /app/frontend
 COPY --from=builder /app/benchmarks/hf/fixtures /app/benchmarks/hf/fixtures
+COPY migrations /app/migrations
 COPY scripts/benchmark.sh /app/scripts/benchmark.sh
 RUN chmod +x /app/scripts/benchmark.sh
 WORKDIR /app
