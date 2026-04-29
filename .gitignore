@@ -44,3 +44,4 @@ benchmarks/hf/fixtures/*.json
 
 # Docker
 docker-compose.override.yml
+benchmarks/data/
