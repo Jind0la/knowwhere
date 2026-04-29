@@ -222,32 +222,43 @@ async fn store_case_sessions(
     run_id: &str,
     case: &RawCase,
 ) -> Result<Vec<Uuid>> {
-    use futures::future::join_all;
-    
-    // Store all sessions in parallel — Ollama embedding calls overlap.
-    // Each future owns its payload so it outlives the async call.
-    let futures: Vec<_> = case.haystack_sessions.iter().enumerate().map(|(idx, sess)| {
+    // Build all session payloads
+    let sessions: Vec<Value> = case.haystack_sessions.iter().enumerate().map(|(idx, sess)| {
         let sid = session_id_at(case, idx);
         let session_date = session_date_at(case, idx);
         let content = session_text(sess);
-        let payload = store_payload(run_id, case, &sid, session_date.as_deref(), &content);
-        let client = client;
-        let cfg = cfg;
-        async move {
-            post_store_session(client, cfg, &payload).await
-        }
+        store_payload(run_id, case, &sid, session_date.as_deref(), &content)
     }).collect();
 
-    let results = join_all(futures).await;
-    let mut ids = Vec::with_capacity(case.haystack_sessions.len());
-    for result in results {
-        let data = result?;
-        let primary = data
-            .get("id")
+    // ONE HTTP call with batch endpoint
+    let batch_payload = json!({ "sessions": sessions });
+    let url = format!("{}/store_session_batch", cfg.base_url);
+    let res = client
+        .post(&url)
+        .header(AUTHORIZATION, bearer(&cfg.api_key))
+        .header(CONTENT_TYPE, "application/json")
+        .json(&batch_payload)
+        .send()
+        .await?;
+
+    let status = res.status();
+    if !status.is_success() {
+        let body = res.text().await.unwrap_or_default();
+        return Err(anyhow!("store_session_batch failed with {}: {}", status, body.chars().take(300).collect::<String>()));
+    }
+
+    let data: Value = res.json().await?;
+    let results = data.get("results")
+        .and_then(Value::as_array)
+        .ok_or_else(|| anyhow!("store_session_batch response missing results array"))?;
+
+    let mut ids = Vec::new();
+    for entry in results {
+        let primary = entry.get("id")
             .and_then(Value::as_str)
-            .ok_or_else(|| anyhow!("store_session response missing id"))?;
+            .ok_or_else(|| anyhow!("batch result missing id"))?;
         ids.push(Uuid::parse_str(primary)?);
-        if let Some(chunk_arr) = data.get("chunk_ids").and_then(Value::as_array) {
+        if let Some(chunk_arr) = entry.get("chunk_ids").and_then(Value::as_array) {
             for cid in chunk_arr {
                 if let Some(s) = cid.as_str() {
                     if s != primary {
@@ -258,6 +269,10 @@ async fn store_case_sessions(
                 }
             }
         }
+    }
+
+    if ids.is_empty() {
+        return Err(anyhow!("store_session_batch returned no ids"));
     }
     Ok(ids)
 }
