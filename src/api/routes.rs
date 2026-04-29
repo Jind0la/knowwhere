@@ -1581,6 +1581,50 @@ pub async fn delete_node(
     }
 }
 
+// -- Batch Delete Nodes --
+
+#[derive(Deserialize, ToSchema)]
+pub struct BatchDeleteRequest {
+    pub ids: Vec<String>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct BatchDeleteResponse {
+    pub deleted: usize,
+    pub not_found: usize,
+}
+
+#[utoipa::path(
+    post,
+    path = "/nodes/batch_delete",
+    tag = "memory",
+    request_body = BatchDeleteRequest,
+    responses(
+        (status = 200, description = "Nodes deleted", body = BatchDeleteResponse),
+        (status = 500, description = "Internal error")
+    )
+)]
+pub async fn batch_delete_nodes(
+    State(state): State<AppState>,
+    Json(req): Json<BatchDeleteRequest>,
+) -> Result<Json<BatchDeleteResponse>, (StatusCode, String)> {
+    let mut deleted = 0usize;
+    let mut not_found = 0usize;
+    for id_str in &req.ids {
+        match Uuid::parse_str(id_str) {
+            Ok(id) => match state.store.delete(&id).await {
+                Ok(true) => deleted += 1,
+                Ok(false) => not_found += 1,
+                Err(_) => not_found += 1,
+            },
+            Err(_) => not_found += 1,
+        }
+    }
+    tracing::info!(deleted, not_found, total = req.ids.len(), "batch delete complete");
+    Ok(Json(BatchDeleteResponse { deleted, not_found }))
+}
+
+
 // -- Purge Dummy Nodes --
 
 #[derive(Serialize, ToSchema)]

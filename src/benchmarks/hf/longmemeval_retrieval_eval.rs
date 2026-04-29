@@ -394,10 +394,18 @@ async fn evaluate_case(
     let run_id = format!("lme-eval-{idx}-{}", case.question_id);
     let stored_ids = store_case_sessions(client, cfg, &run_id, case).await?;
     let result = retrieve_case(client, cfg, case).await;
-    for id in stored_ids {
-        if let Err(err) = delete_node(client, cfg, id).await {
-            eprintln!("cleanup_failed id={id} error={err}");
-        }
+    // Batch delete all stored nodes in one HTTP call
+    if !stored_ids.is_empty() {
+        let ids: Vec<String> = stored_ids.iter().map(|id| id.to_string()).collect();
+        let del_payload = json!({"ids": ids});
+        let del_url = format!("{}/nodes/batch_delete", cfg.base_url);
+        let _ = client
+            .post(&del_url)
+            .header(AUTHORIZATION, bearer(&cfg.api_key))
+            .header(CONTENT_TYPE, "application/json")
+            .json(&del_payload)
+            .send()
+            .await;
     }
     let hit_ids = result?;
     Ok(to_case_result(case, hit_ids))
