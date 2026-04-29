@@ -17,7 +17,7 @@ COPY .sqlx .sqlx
 COPY src/ src/
 COPY frontend/ frontend/
 COPY benchmarks/ benchmarks/
-RUN cargo build --release --features \"$FEATURES\"
+RUN cargo build --release --features "$FEATURES"
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y ca-certificates && \
