@@ -110,29 +110,30 @@ fn session_text(session: &Value) -> String {
     lines.join("\n")
 }
 
-/// Stream cases from a JSON array file — never loads the entire dataset into memory.
-/// Uses serde_json::StreamDeserializer to yield one case at a time from a top-level array.
-fn stream_cases(path: &str, max_cases: usize) -> Result<Vec<RawCase>> {
-    use serde_json::Deserializer;
-    use std::fs::File;
-    use std::io::BufReader;
-
-    let file = File::open(path)
-        .map_err(|e| anyhow!("cannot open dataset {}: {}", path, e))?;
-    let reader = BufReader::new(file);
-    let stream = Deserializer::from_reader(reader).into_iter::<RawCase>();
-    
+fn parse_dataset(path: &str, max_cases: usize) -> Result<Vec<RawCase>> {
+    let raw = std::fs::read_to_string(path)?;
+    let mut cases: Vec<RawCase> = serde_json::from_str(&raw)?;
+    if cases.is_empty() {
+        return Err(anyhow!("dataset contains no cases"));
+    }
     let offset = std::env::var("KNOWWHERE_BENCH_CASE_OFFSET")
         .ok()
         .and_then(|s| s.parse::<usize>().ok())
         .unwrap_or(0);
-    
-    let mut cases = Vec::with_capacity(max_cases);
-    for (i, result) in stream.enumerate() {
-        if i < offset { continue; }
-        let case = result.map_err(|e| anyhow!("dataset parse error at case {}: {}", i, e))?;
-        cases.push(case);
-        if cases.len() >= max_cases { break; }
+    if offset >= cases.len() {
+        return Err(anyhow!(
+            "KNOWWHERE_BENCH_CASE_OFFSET {} out of range (dataset len {})",
+            offset,
+            cases.len()
+        ));
+    }
+    cases = cases
+        .into_iter()
+        .skip(offset)
+        .take(max_cases.max(1))
+        .collect();
+    if cases.is_empty() {
+        return Err(anyhow!("no cases after offset/limit"));
     }
     Ok(cases)
 }
@@ -418,7 +419,7 @@ async fn evaluate_case(
 pub async fn run(cfg: EvalConfig) -> Result<EvalReport> {
     let client = reqwest::Client::new();
     let mut results = Vec::new();
-    let cases = stream_cases(&cfg.dataset_path, cfg.max_cases)?;
+    let cases = parse_dataset(&cfg.dataset_path, cfg.max_cases)?;
     for (idx, case) in cases.iter().enumerate() {
         let result = evaluate_case(&client, &cfg, case, idx).await?;
         println!(
