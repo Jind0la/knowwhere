@@ -41,17 +41,19 @@ When an agent asks "why did we decide X three months ago?", other memory systems
 | Category | Status |
 |----------|--------|
 | **Core API** | ✅ store_session, store_external, retrieve_fractal, chat/subconscious |
+| **Batch API** | ✅ store_session_batch, batch_delete |
 | **Fractal Zoom** | ✅ zoom_retrieve() with hierarchical pruning across L0→L1→L2 |
-| **5-Type System** | ✅ Episodic, Semantic, Preference, Procedural, Meta — each with type-specific consolidation logic |
-| **Trust Tiers** | ✅ primary, reference, derived, volatile — auto-detected from metadata |
-| **L2→L1→L0 Compaction** | ✅ LocalSummarizer (Ollama llama3.2) with VLM fallback chain |
+| **5-Type System** | ✅ Episodic, Semantic, Preference, Procedural, Meta |
+| **Trust Tiers** | ✅ primary, reference, derived, volatile — auto-detected |
+| **L2→L1→L0 Compaction** | ✅ LocalSummarizer (Ollama llama3.2) + VLM fallback |
 | **Hybrid Retrieval** | ✅ USearch vector + BM25 keyword + RRF fusion |
-| **Energy Decay** | ✅ Ebbinghaus forgetting curve for memory lifecycle |
-| **Governance** | ✅ Retrieval profiles (user-facing / agent-debug / full-fidelity), sensitivity levels |
-| **Auth** | ✅ Static admin key + self-service user registration (PostgreSQL) |
-| **PostgreSQL** | ✅ Deduplication, conflicts, self-healing, namespaces, skills (postgres-storage) |
-| **Docker** | ✅ docker compose up — PostgreSQL + Ollama + KnowWhere in one command |
-| **Tests** | ✅ 70 unit + 41 integration = 111 tests, 0 failures |
+| **Energy Decay** | ✅ Ebbinghaus forgetting curve |
+| **Governance** | ✅ Retrieval profiles, sensitivity levels |
+| **Auth** | ✅ Static admin key + user registration (PostgreSQL) |
+| **PostgreSQL** | ✅ Dedup, conflicts, self-healing, namespaces, skills |
+| **Docker** | ✅ docker compose up — PostgreSQL + Ollama + KnowWhere |
+| **Tests** | ✅ 111 tests (70 unit + 41 integration), 0 failures |
+| **Benchmark** | ✅ 50-case LongMemEval: Top-1 96%, Recall@5 96%, MRR 0.96 |
 | **OpenClaw** | ✅ 6-hook plugin for session capture + context injection |
 
 ---
