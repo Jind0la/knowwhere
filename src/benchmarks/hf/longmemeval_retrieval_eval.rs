@@ -110,32 +110,27 @@ fn session_text(session: &Value) -> String {
     lines.join("\n")
 }
 
-fn parse_dataset(path: &str, max_cases: usize) -> Result<Vec<RawCase>> {
-    let raw = std::fs::read_to_string(path)?;
-    let mut cases: Vec<RawCase> = serde_json::from_str(&raw)?;
-    if cases.is_empty() {
-        return Err(anyhow!("dataset contains no cases"));
-    }
+/// Stream cases from a JSON array file — never loads the entire dataset into memory.
+/// This enables processing 500+ cases from 265MB+ files without OOM.
+fn stream_cases(path: &str, max_cases: usize) -> Result<impl Iterator<Item = Result<RawCase>>> {
+    use serde_json::Deserializer;
+    use std::fs::File;
+    use std::io::BufReader;
+
+    let file = File::open(path)
+        .map_err(|e| anyhow!("cannot open dataset {}: {}", path, e))?;
+    let reader = BufReader::new(file);
+    let stream = Deserializer::from_reader(reader).into_iter::<RawCase>();
+    
     let offset = std::env::var("KNOWWHERE_BENCH_CASE_OFFSET")
         .ok()
         .and_then(|s| s.parse::<usize>().ok())
         .unwrap_or(0);
-    if offset >= cases.len() {
-        return Err(anyhow!(
-            "KNOWWHERE_BENCH_CASE_OFFSET {} out of range (dataset len {})",
-            offset,
-            cases.len()
-        ));
-    }
-    cases = cases
-        .into_iter()
+    
+    Ok(stream
         .skip(offset)
         .take(max_cases.max(1))
-        .collect();
-    if cases.is_empty() {
-        return Err(anyhow!("no cases after offset/limit"));
-    }
-    Ok(cases)
+        .map(|r| r.map_err(|e| anyhow!("dataset parse error: {}", e))))
 }
 
 async fn post_json(
@@ -410,10 +405,10 @@ async fn evaluate_case(
 
 pub async fn run(cfg: EvalConfig) -> Result<EvalReport> {
     let client = reqwest::Client::new();
-    let cases = parse_dataset(&cfg.dataset_path, cfg.max_cases)?;
-    let mut results = Vec::with_capacity(cases.len());
-    for (idx, case) in cases.iter().enumerate() {
-        let result = evaluate_case(&client, &cfg, case, idx).await?;
+    let mut results = Vec::new();
+    for (idx, case) in stream_cases(&cfg.dataset_path, cfg.max_cases)?.enumerate() {
+        let case = case?;
+        let result = evaluate_case(&client, &cfg, &case, idx).await?;
         println!(
             "eval_case id={} rank={:?} abstention={}",
             result.question_id, result.rank, result.is_abstention
