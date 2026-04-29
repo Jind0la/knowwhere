@@ -3,6 +3,7 @@ use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::path::Path;
+use futures::future::join_all;
 use uuid::Uuid;
 
 use crate::shared_metrics::{EvalCounters, EvalMetrics};
@@ -174,19 +175,21 @@ pub async fn evaluate_live(cfg: &RunnerConfig, cases: &[LongMemEvalCase]) -> Res
         let run_id = format!("{run_root}-{}", case.question_id);
 
         // Store all sessions in parallel — Ollama embedding calls overlap.
-        // This cuts benchmark time from ~30 min (50 cases) to ~3 min.
+        // async move owns content/run_id so they outlive the future.
         let store_futures: Vec<_> = case.sessions.iter().map(|session| {
             let content = format!("[{run_id}] {}", session);
-            let client_ref = &client;
-            let cfg_ref = cfg;
-            let run_id_ref = &run_id;
-            store_session(client_ref, cfg_ref, run_id_ref, case, &content)
+            let run_id = run_id.clone();
+            let client = &client;
+            let cfg = cfg;
+            let case = case;
+            async move {
+                store_session(client, cfg, &run_id, case, &content).await
+            }
         }).collect();
 
-        let results = futures::future::join_all(store_futures).await;
-        for result in results {
-            result?;
-        }
+        join_all(store_futures).await
+            .into_iter()
+            .collect::<Result<Vec<_>>>()?;
         let hits = retrieve(&client, cfg, &run_id, case).await?;
         let owned = clone_hits(owned_hits(&run_id, &hits));
         println!(
