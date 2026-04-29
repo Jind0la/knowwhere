@@ -222,17 +222,26 @@ async fn store_case_sessions(
     run_id: &str,
     case: &RawCase,
 ) -> Result<Vec<Uuid>> {
-    let mut ids = Vec::with_capacity(case.haystack_sessions.len());
-    let delay_ms: u64 = std::env::var("KNOWWHERE_BENCH_STORE_DELAY_MS")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(50);
-    for (idx, sess) in case.haystack_sessions.iter().enumerate() {
+    use futures::future::join_all;
+    
+    // Store all sessions in parallel — Ollama embedding calls overlap.
+    // Each future owns its payload so it outlives the async call.
+    let futures: Vec<_> = case.haystack_sessions.iter().enumerate().map(|(idx, sess)| {
         let sid = session_id_at(case, idx);
         let session_date = session_date_at(case, idx);
         let content = session_text(sess);
         let payload = store_payload(run_id, case, &sid, session_date.as_deref(), &content);
-        let data = post_store_session(client, cfg, &payload).await?;
+        let client = client;
+        let cfg = cfg;
+        async move {
+            post_store_session(client, cfg, &payload).await
+        }
+    }).collect();
+
+    let results = join_all(futures).await;
+    let mut ids = Vec::with_capacity(case.haystack_sessions.len());
+    for result in results {
+        let data = result?;
         let primary = data
             .get("id")
             .and_then(Value::as_str)
@@ -248,9 +257,6 @@ async fn store_case_sessions(
                     }
                 }
             }
-        }
-        if delay_ms > 0 {
-            tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
         }
     }
     Ok(ids)
