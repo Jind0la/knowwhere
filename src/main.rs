@@ -220,6 +220,7 @@ async fn run() -> anyhow::Result<()> {
         .route("/auth/me", get(auth::me))
         .route("/embed", post(routes::embed_text))
         .route("/store_session", post(routes::store_session))
+        .route("/store_session_batch", post(routes::store_session_batch))
         .route("/store_external", post(routes::store_external))
         .route("/retrieve/{id}", get(routes::retrieve))
         .route("/retrieve_fractal", post(routes::retrieve_fractal))

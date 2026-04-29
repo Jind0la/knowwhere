@@ -776,6 +776,153 @@ pub async fn store_session(
     ))
 }
 
+// -- Store Session Batch (alle Sessions in EINEM Ollama-Embed-Call) --
+
+#[derive(Deserialize, ToSchema)]
+pub struct StoreSessionBatchRequest {
+    pub sessions: Vec<StoreSessionRequest>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct StoreSessionBatchResponse {
+    pub results: Vec<StoreNodeResponse>,
+    pub total_chunks: usize,
+    pub total_sessions: usize,
+}
+
+#[utoipa::path(
+    post,
+    path = "/store_session_batch",
+    tag = "memory",
+    request_body = StoreSessionBatchRequest,
+    responses(
+        (status = 201, description = "All session nodes created", body = StoreSessionBatchResponse),
+        (status = 500, description = "Internal error")
+    )
+)]
+pub async fn store_session_batch(
+    State(state): State<AppState>,
+    Json(req): Json<StoreSessionBatchRequest>,
+) -> Result<(StatusCode, Json<StoreSessionBatchResponse>), (StatusCode, String)> {
+    let sessions = req.sessions;
+    if sessions.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "sessions array is empty".into()));
+    }
+
+    // Phase 1: Chunk all sessions, collect (session_idx, chunk_text) pairs
+    struct ChunkWork {
+        session_idx: usize,
+        text: String,
+    }
+    let mut all_chunks: Vec<ChunkWork> = Vec::new();
+    let mut session_chunk_ranges: Vec<(usize, usize)> = Vec::with_capacity(sessions.len());
+
+    for (s_idx, session) in sessions.iter().enumerate() {
+        let cleaned = clean_for_embedding(&session.content);
+        if cleaned.len() < 4 {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                format!("session {} content too short after cleaning", s_idx),
+            ));
+        }
+        let chunks = chunk_into_rounds(&session.content, 80);
+        let start = all_chunks.len();
+        for chunk in &chunks {
+            let c = clean_for_embedding(chunk);
+            if c.len() >= 4 {
+                all_chunks.push(ChunkWork { session_idx: s_idx, text: c });
+            }
+        }
+        let end = all_chunks.len();
+        if end == start {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                format!("session {} produced no embeddable chunks", s_idx),
+            ));
+        }
+        session_chunk_ranges.push((start, end));
+    }
+
+    // Phase 2: ONE Ollama embed call for ALL chunks
+    let refs: Vec<&str> = all_chunks.iter().map(|c| c.text.as_str()).collect();
+    let vectors = embed_document_batch(&*state.embedding, &refs)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("batch embed failed: {e}"),
+            )
+        })?;
+
+    // Phase 3: Build nodes per session and insert
+    let mut all_responses: Vec<StoreNodeResponse> = Vec::with_capacity(sessions.len());
+
+    for (s_idx, session) in sessions.iter().enumerate() {
+        let (chunk_start, chunk_end) = session_chunk_ranges[s_idx];
+        let memory_type = MemoryType::parse(&session.memory_type).unwrap_or(MemoryType::Episodic);
+        let source = MemorySource::parse(&session.source).unwrap_or(MemorySource::Conversation);
+        let chunk_count = chunk_end - chunk_start;
+
+        let mut session_ids: Vec<Uuid> = Vec::with_capacity(chunk_count);
+        for chunk_idx in chunk_start..chunk_end {
+            let vector = vectors[chunk_idx].clone();
+            let mut metadata = session.metadata.clone();
+            metadata.insert("chunk_index".to_string(), Value::Number(serde_json::Number::from(chunk_idx - chunk_start)));
+            metadata.insert("session_chunk_count".to_string(), Value::Number(serde_json::Number::from(chunk_count)));
+            normalize_node_metadata(memory_type, source, &mut metadata);
+
+            let content = if chunk_idx == chunk_start {
+                session.content.clone()
+            } else {
+                all_chunks[chunk_idx].text.clone()
+            };
+
+            let mut node = FractalNode::new_typed(
+                Some(content),
+                None,
+                vector,
+                metadata,
+                memory_type,
+                source,
+            );
+            if let Some(imp) = session.importance {
+                node.importance = imp.clamp(1, 10);
+            }
+            if let Some(sens) = session.sensitivity {
+                node.sensitivity = sens;
+            }
+            let id = state
+                .store
+                .insert(node)
+                .await
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+            session_ids.push(id);
+        }
+
+        let primary_id = session_ids.first().copied().ok_or((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "no chunks stored for session".to_string(),
+        ))?;
+        tracing::info!(%primary_id, s_idx, ?memory_type, chunks = chunk_count, "session node stored (batch)");
+
+        all_responses.push(StoreNodeResponse {
+            id: primary_id,
+            message: format!("session node created ({} chunks)", chunk_count),
+            chunk_ids: Some(session_ids),
+        });
+    }
+
+    Ok((
+        StatusCode::CREATED,
+        Json(StoreSessionBatchResponse {
+            total_chunks: all_chunks.len(),
+            total_sessions: sessions.len(),
+            results: all_responses,
+        }),
+    ))
+}
+
+
 // -- Store External (Pointer-First: nie Rohdaten, nur Pointer) --
 
 #[derive(Deserialize, ToSchema)]
