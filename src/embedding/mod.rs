@@ -1,6 +1,8 @@
+pub mod audio;
 pub mod provider;
 pub mod sensor;
 
+pub use audio::AudioProvider;
 pub use provider::{
     embed_document, embed_document_batch, embed_query, embed_query_batch, EmbeddingProvider,
     LocalOllamaProvider,
