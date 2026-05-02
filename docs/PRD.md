@@ -45,12 +45,13 @@ Ein Nutzer oder Agent-Betreiber soll:
 | `store_session` | Session als vollwertige Memory mit auto-chunking speichern | ✅ |
 | `store_external` | Externe Referenz pointer-first speichern | ✅ |
 | `retrieve_fractal` | Hybrid Retrieval mit Fractal Zoom und Profilen | ✅ |
-| `POST /rerank` | Cross-Encoder Reranking (bge-reranker-v2-m3 via ONNX) | ✅ NEU |
+| `POST /rerank` | Cross-Encoder Reranking (bge-reranker-v2-m3 via ONNX, feature: reranker) | ✅ NEU |
 | `chat/subconscious` | Retrieval-gestützte Antwort mit Quellenangaben | ✅ |
 | `dream/status` | Compaction Scheduler Status mit Space-Amplification Trigger | ✅ |
 | `governance/policy` | Governance Policy lesen/setzen | ✅ |
-| Google Drive Connector | Changes API Polling, OAuth2 Service Account | ✅ NEU |
+| Google Drive Connector | Changes API Polling, OAuth2 Service Account (feature: google-drive) | ✅ NEU |
 | HomeAssistant Webhook | POST /webhooks/homeassistant, Dedup + Secret | ✅ NEU |
+| Cross-Modal Embedding | EmbeddingRouter: CLIP/Whisper/Sensor → 768-dim vector space | ✅ NEU |
 
 ### 5.2 5-Type Memory System
 
@@ -132,7 +133,7 @@ pub struct FractalNode {
     pub id: Uuid,
     pub memory_type: MemoryType,          // 5-Typen-System
     pub source: MemorySource,              // conversation/document/import/manual/consolidation
-    pub vector: Vec<f32>,                  // Embedding (1024-dim snowflake-arctic-embed2)
+    pub embedding: Vec<f32>,                  // Embedding (1024-dim snowflake-arctic-embed2)
     pub content: Option<String>,           // Session: Volltext. External: None
     pub original_pointer: Option<String>,  // External: URI/Pfad. Session: None
     pub metadata: HashMap<String, Value>,  // role, derivation, trust_tier, ...
@@ -186,7 +187,7 @@ pub struct FractalNode {
 - Automatische Migration zwischen Storage-Backends
 - Hot-Swap zwischen Embedding-Providern
 - Automatisches Hard-Delete von Memories
-- Cross-Modal Embedding (Phase 2, Research done)
+- Cross-Modal Embedding (Phase 2) → ✅ Erreicht in v0.4.0
 
 ## 10. Roadmap
 
@@ -208,7 +209,7 @@ pub struct FractalNode {
 ### Phase 2
 - ~~HomeAssistant Webhook~~ ✅ Done v0.4.0
 - ~~Google Drive Connector~~ ✅ Done v0.4.0
-- Cross-Modal Embedding
+- ~~Cross-Modal Embedding~~ ✅ Done v0.4.0
 
 ## 11. Integrationsregeln
 

@@ -64,7 +64,7 @@ curl -X POST http://localhost:3737/store_session \
   -d '{"temperature": 22.5, "humidity": 60}'
 
 # Retrieve by text query (cross-modal)
-curl -X POST http://localhost:3737/retrieve \
+curl -X POST http://localhost:3737/retrieve_fractal \
   -d '{"query": "sunset photo", "limit": 5}'
 ```
 

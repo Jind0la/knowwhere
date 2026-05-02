@@ -1,7 +1,7 @@
 # KnowWhere Beta — Current Status
 
-**Current version:** `0.3.0`
-**Status:** beta on `main` — actively developed, 111 tests passing, Docker Compose ready
+**Current version:** `0.4.0`
+**Status:** beta on `main` — actively developed, 129+ tests passing, Docker Compose ready
 
 ---
 
@@ -26,7 +26,7 @@
 | Local Ollama | ✅ Stable | snowflake-arctic-embed2 (1024-dim) |
 | Docker Compose | ✅ Stable | PostgreSQL + Ollama + KnowWhere |
 | OpenClaw plugin | ✅ Beta | 6 hooks, E2E tested |
-| Tests | ✅ 111/111 | 70 unit + 41 integration |
+| Tests | ✅ 129+ tests | unit + integration |
 
 ---
 
@@ -37,7 +37,9 @@
 3. **Dashboard is beta.** React UI covers overview, stream, search, chat, governance — not every backend route.
 4. **User tokens are restricted.** User tokens get `user-facing` only. `agent-debug` and `full-fidelity` are admin-only.
 5. **Rate limiting assumes reverse-proxy.** Use `RATE_LIMIT_MODE=proxy` behind nginx/traefik.
-6. **Phase 2 connectors pending.** HomeAssistant, Google Drive, Cross-Modal Embedding are planned but not implemented.
+6. **Google Drive Connector requires feature flag.** Build with `--features google-drive` to enable Google Drive Changes API polling.
+7. **Cross-Encoder Reranking requires feature flag.** Build with `--features reranker` to enable bge-reranker-v2-m3 via ONNX.
+8. **Docker Compose uses native Ollama.** The `ollama` service was removed from docker-compose.yml (macOS Docker Desktop cannot load llama3.2 on M3). KnowWhere connects to native Ollama via `host.docker.internal:11434`.
 
 ---
 

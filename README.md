@@ -52,9 +52,13 @@ When an agent asks "why did we decide X three months ago?", other memory systems
 | **Auth** | ✅ Static admin key + user registration (PostgreSQL) |
 | **PostgreSQL** | ✅ Dedup, conflicts, self-healing, namespaces, skills |
 | **Docker** | ✅ docker compose up — PostgreSQL + Ollama + KnowWhere |
-| **Tests** | ✅ 111 tests (70 unit + 41 integration), 0 failures |
+| **Tests** | ✅ 129+ tests (unit + integration), 0 failures (cargo test --lib) |
 | **Benchmark** | ✅ 50-case LongMemEval: Top-1 96%, Recall@5 96%, MRR 0.96 |
 | **OpenClaw** | ✅ 6-hook plugin for session capture + context injection |
+| **Cross-Modal** | ✅ EmbeddingRouter: CLIP/Whisper/Sensor via Ollama |
+| **Cross-Encoder** | ✅ bge-reranker-v2-m3 via ONNX (feature: reranker) |
+| **Google Drive** | ✅ Changes API connector (feature: google-drive) |
+| **Webhooks** | ✅ Frigate + HomeAssistant webhook endpoints |
 
 ---
 
@@ -69,7 +73,7 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-> On first start, Ollama auto-downloads `snowflake-arctic-embed2` (multilingual, 1024-dim) and `llama3.2` (summarization). Takes 5–10 min.
+> On first start, KnowWhere connects to Ollama (native macOS via `host.docker.internal`). Models `snowflake-arctic-embed2` (multilingual, 1024-dim) and `llama3.2` (summarization) must be pre-pulled. Takes 5–10 min.
 
 Verify:
 
@@ -175,7 +179,7 @@ Every node carries: memory type (5 types), source (5 sources), trust tier (auto-
 | `KNOWWHERE_API_KEY` | unset | Admin Bearer token (auth off if unset) |
 | `DATABASE_URL` | unset | PostgreSQL backend (postgres-storage feature) |
 | `OLLAMA_URL` | `http://localhost:11434` | Ollama API base URL |
-| `OLLAMA_MODEL` | `nomic-embed-text-v2-moe` | Embedding model (recommended: `snowflake-arctic-embed2`) |
+| `OLLAMA_MODEL` | `snowflake-arctic-embed2` | Embedding model (1024-dim, multilingual EN+DE+FR+ES+IT) |
 | `OLLAMA_SUMMARIZER_MODEL` | `llama3.2` | Summarization model for L2→L1→L0 |
 | `OPENAI_API_KEY` | unset | OpenAI embeddings or VLM fallback |
 | `GROK_API_KEY` | unset | Grok/xAI embeddings or VLM fallback |

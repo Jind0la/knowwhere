@@ -1,6 +1,6 @@
 # KnowWhere Architecture
 
-> Stand: April 2026 — Repository `main`, Version `0.3.0`
+> Stand: Mai 2026 — Repository `main`, Version `0.4.0`
 
 ## 1. High-level overview
 
@@ -62,7 +62,11 @@ knowwhere/
 │   │   └── subconscious_qa.rs     # Question type detection for /chat/subconscious
 │   ├── embedding/
 │   │   ├── mod.rs                 # EmbeddingProvider trait + ProviderKind enum
-│   │   └── provider.rs            # LocalOllama, OpenAI, Grok, FixedEmbedding
+│   │   ├── provider.rs            # LocalOllama, OpenAI, Grok, FixedEmbedding
+│   │   ├── clip.rs                # CLIP image embedder (Ollama)
+│   │   ├── audio.rs               # Whisper audio transcription + embedding
+│   │   ├── sensor.rs              # JSON sensor data → text → embedding
+│   │   └── router.rs              # EmbeddingRouter: content-type dispatcher
 │   ├── memory/
 │   │   ├── mod.rs                 # MemoryStore, GovernanceCandidate
 │   │   ├── fractal_node.rs        # FractalNode struct, zoom_retrieve, trust_tier
@@ -84,13 +88,13 @@ knowwhere/
 │   ├── connectors/
 │   │   ├── mod.rs                 # store_external_event helper
 │   │   ├── frigate.rs             # FrigateConnector (NVR polling)
-│   │   └── drive.rs               # Google Drive (placeholder)
+│   │   └── drive.rs               # Google Drive Changes API connector (feature: google-drive)
 │   ├── vlm/
-│   │   └── mod.rs                 # VlmWorker, 4-stage fallback chain
+│   │   └── mod.rs                 # VlmWorker, 4-stage VLM fallback chain
 │   ├── summarizer/
-│   │   └── mod.rs                 # LocalSummarizer (Ollama HTTP API)
-│   └── multimodal/
-│       └── mod.rs                 # MultimodalData (Image/Audio/Sensor)
+│   │   └── mod.rs                 # LocalSummarizer (Ollama HTTP API, PRIMARY compaction)
+│   ├── multimodal/
+│   │   └── mod.rs                 # MultimodalData (Image/Audio/Sensor)
 ├── dashboard/                     # React/Vite operator UI
 ├── frontend/                      # Minimal static fallback
 ├── sdk/python/                    # Python SDK
@@ -273,7 +277,7 @@ Auswahlreihenfolge:
 - Feature-Flag: `summarizer` (default enabled)
 - UpdateOperations: SetOverviewContent, SetSummaryContent
 
-### VLM Fallback Chain
+### VLM Fallback Chain (OPTIONAL, requires API keys)
 1. GPT-5-nano → 2. GPT-4o-mini → 3. Grok-4-fast → 4. Truncation (disabled)
 
 ### ConsolidationScheduler

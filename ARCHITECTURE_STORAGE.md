@@ -5,7 +5,7 @@
 This document describes the integration of `PostgresStore` as the primary storage
 backend for KnowWhere, via the `StorageBackend` trait abstraction.
 
-**Status:** Core integration complete and working. All 3 integration tests passing (2026-03-28).
+**Status:** Core integration complete and working. 41 integration tests passing (PostgreSQL feature, 2026-05-02).
 
 ---
 

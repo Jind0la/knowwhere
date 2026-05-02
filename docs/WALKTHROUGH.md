@@ -21,7 +21,7 @@
 ### Empfohlene lokale Vorbereitung
 
 ```bash
-ollama pull nomic-embed-text-v2-moe
+ollama pull snowflake-arctic-embed2
 ```
 
 Alternative fuer 1024-dim Modelle:
@@ -184,7 +184,7 @@ Erwartete Form:
 }
 ```
 
-Wenn du `snowflake-arctic-embed2` nutzt, ist die Dimension typischerweise `1024`.
+Wenn du `snowflake-arctic-embed2` nutzt, ist die Dimension `1024`. Fuer `nomic-embed-text-v2-moe` ist sie `768`.
 
 ---
 

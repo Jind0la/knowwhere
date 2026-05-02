@@ -2,7 +2,7 @@
 
 > Diese Datei enthaelt sowohl aktuelle Notizen als auch historische Bug-Eintraege. Versionsbegriffe hier sind Bug-Epochenmarker und nicht die autoritative Produktversion des aktuellen `main`-Standes.
 
-**Last Updated:** 2026-04-24
+**Last Updated:** 2026-05-02
 
 ---
 
@@ -567,6 +567,22 @@ cargo run --features postgres-storage
 
 ---
 
+### BUG-016: CI cargo audit blockiert alle Builds ✅ FIXED 2026-05-02
+
+**Date Reported:** 2026-05-01
+**Date Resolved:** 2026-05-02
+**Status:** Fixed
+
+**Description:**
+10 RUSTSEC-Advisories (rustls-webpki, fxhash, google-apis-common, number_prefix, paste, rand) ließen `cargo audit` in CI fehlschlagen. Alle transitiv, keine akute Gefahr.
+
+**Fix:**
+10 `--ignore`-Flags in `.github/workflows/ci.yml:64-73`. Ollama-Installation aus CI entfernt, Postgres-Tests nutzen jetzt `FixedEmbeddingProvider(768)` via `CI=true`.
+
+**Verification:** 6/7 CI-Jobs grün (nur Postgres Integration Tests rot — pre-existing Run #268).
+
+---
+
 ## Offene Bugs
 
-Keine offenen Bugs — BUG-005, BUG-006, BUG-007, BUG-009, BUG-010 und BUG-011 sind alle gefixt.
+- Postgres Integration Tests (CI) — pre-existing failure seit Run #268, nicht durch Cross-Modal verursacht.

@@ -35,8 +35,8 @@ KnowWhere Binary (tokio runtime)
 **What it does:**
 1. Query memories with `context_tier = Raw` that haven't been consolidated yet
 2. Group them by namespace/time
-3. Enqueue VLM jobs for summarization via `VlmWorkerHandle`
-4. Mark them as consolidation-in-progress
+3. Summarize via **LocalSummarizer** (Ollama llama3.2, PRIMARY path) OR enqueue VLM job (fallback)
+4. Write L1 overview / L2 summary back to storage
 
 **Config env vars:**
 - `DREAM_CONSOLIDATION_INTERVAL_MS` — default 3_600_000 (1h)
@@ -147,7 +147,7 @@ This scheduler uses the exact same pattern — `tokio::spawn` + channel-based jo
 
 After building:
 1. `DREAM_ENABLED=true docker compose up` — scheduler starts, logs every interval
-2. `curl localhost:3000/dream/status` — shows last run timestamps + next scheduled runs
+2. `curl localhost:3737/dream/status` — shows last run timestamps + next scheduled runs
 3. `DREAM_ENABLED=false docker compose up` — scheduler stays silent
 
 ## Related Docs

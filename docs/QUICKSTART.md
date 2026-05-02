@@ -23,8 +23,8 @@ Best for development and debugging.
 ```bash
 git clone https://github.com/Jind0la/knowwhere.git
 cd knowwhere
-ollama pull nomic-embed-text-v2-moe
-KNOWWHERE_API_KEY=my-secret-key cargo run
+    ollama pull snowflake-arctic-embed2
+    KNOWWHERE_API_KEY=*** cargo run
 ```
 
 If you want a different Ollama embedding model:

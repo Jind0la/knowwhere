@@ -1,4 +1,19 @@
-# VLM Fallback Plan
+# VLM Fallback Plan — RESOLVED (LocalSummarizer implemented)
+
+> **Status: IMPLEMENTED.** The LocalSummarizer (Ollama llama3.2) now serves as the PRIMARY compaction path.
+> No API key required. VLM fallback chain is OPTIONAL, only for cloud deployments.
+> See: `src/summarizer/mod.rs`, `src/vlm/mod.rs`, `docs/ARCHITECTURE.md` §9.
+
+## Resolution
+
+The problem described below — "VLM worker requires API key, compaction broken without internet" — was solved by:
+
+1. **LocalSummarizer** (`src/summarizer/mod.rs`) — Ollama llama3.2 via HTTP API, deterministic (temperature=0, seed=42)
+2. Feature flag `summarizer` (default enabled) — allows building without Ollama if desired
+3. VLM chain (GPT-5-nano → GPT-4o-mini → Grok-4-fast) remains as OPTIONAL fallback
+4. GPT-5-nano `max_output_tokens` bug fixed (must be omitted, not set to any value)
+
+## Original analysis (kept for historical reference)
 
 ## Recommendation
 
