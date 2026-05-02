@@ -40,6 +40,10 @@ impl EmbeddingProvider for FixedEmbeddingProvider {
 /// Always uses LocalOllama — tests are designed and validated against Ollama embeddings.
 /// Cloud providers (OpenAI/Grok) require --features flags to compile.
 fn embedding_provider() -> Arc<dyn EmbeddingProvider> {
+    if std::env::var("CI").is_ok() {
+        tracing::info!("CI detected — using fixed embedding provider (768-dim)");
+        return fixed_embedding_provider(768);
+    }
     Arc::new(LocalOllamaProvider::new())
 }
 

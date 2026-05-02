@@ -94,26 +94,6 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-pg
           restore-keys: ${{ runner.os }}-cargo-
 
-      - name: Install & Start Ollama
-        run: |
-          # Retry install — ollama.com can be flaky in CI
-          for i in 1 2 3; do
-            curl -fsSL --connect-timeout 15 --max-time 120 https://ollama.com/install.sh | sh && break
-            echo "Attempt $i failed, retrying in 10s..."
-            sleep 10
-          done
-          which ollama || { echo "Ollama install failed after 3 attempts"; exit 1; }
-          ollama serve &
-          # Pull model with timeout
-          timeout 180 ollama pull nomic-embed-text-v2-moe || echo "Model pull timed out — some tests may be skipped"
-
-      - name: Wait for Ollama
-        run: |
-          for i in $(seq 1 30); do
-            curl -s http://localhost:11434/api/tags > /dev/null && break
-            sleep 2
-          done
-
       - name: Start PostgreSQL with pgvector
         run: |
           docker rm -f kw-pg 2>/dev/null || true
