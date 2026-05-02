@@ -418,7 +418,7 @@ impl MemoryStore {
         }
     }
 
-    fn ensure_index(&self, dimension: usize) -> Result<()> {
+    fn ensure_index(&self, dimension: usize, extra: usize) -> Result<()> {
         let mut guard = self
             .usearch_index
             .lock()
@@ -443,7 +443,7 @@ impl MemoryStore {
 
         if need_rebuild {
             let index = SendableIndex::new(&index_options(dimension))?;
-            index.reserve(1024)?;
+            index.reserve((1024 + extra).max(1024))?;
             *guard = Some(index);
             *dim_guard = Some(dimension);
             tracing::info!(dimension, "usearch index initialized");
@@ -496,7 +496,7 @@ impl MemoryStore {
         let id = node.id;
 
         if !node.vector.is_empty() {
-            self.ensure_index(node.vector.len())?;
+            self.ensure_index(node.vector.len(), 1)?;
             let key = self.next_key.fetch_add(1, AtomicOrdering::Relaxed);
 
             let indexed = {
@@ -547,6 +547,15 @@ impl MemoryStore {
 
     pub async fn insert_many(&self, nodes: Vec<FractalNode>) -> Result<Vec<Uuid>> {
         use futures::future::try_join_all;
+
+        // Pre-allocate USearch capacity for the entire batch so concurrent
+        // inserts below don't trigger "reserve capacity ahead of insertions"
+        // warnings (one per growth event).
+        if let Some(dim) = nodes.iter().find(|n| !n.vector.is_empty()).map(|n| n.vector.len())
+        {
+            self.ensure_index(dim, nodes.len())?;
+        }
+
         let ids: Vec<_> = nodes.into_iter().map(|n| self.insert(n)).collect();
         try_join_all(ids).await
     }
@@ -613,7 +622,7 @@ impl MemoryStore {
         if new_vector.is_empty() {
             return Ok(false);
         }
-        self.ensure_index(new_vector.len())?;
+        self.ensure_index(new_vector.len(), 1)?;
 
         let mut nodes = self.nodes.write().await;
         let node = match nodes.get_mut(id) {

@@ -26,12 +26,19 @@ pub struct RunnerConfig {
 }
 
 pub fn load_cases(path: &str, max_cases: usize) -> Result<Vec<LongMemEvalCase>> {
-    let file = std::fs::read_to_string(Path::new(path))?;
-    let mut cases: Vec<LongMemEvalCase> = serde_json::from_str(&file)?;
+    let file = std::fs::File::open(Path::new(path))?;
+    let reader = std::io::BufReader::with_capacity(64 * 1024, file);
+    let stream = serde_json::Deserializer::from_reader(reader)
+        .into_iter::<LongMemEvalCase>();
+    let mut cases = Vec::with_capacity(max_cases.min(500));
+    for result in stream {
+        let case = result?;
+        cases.push(case);
+        if cases.len() >= max_cases { break; }
+    }
     if cases.is_empty() {
         return Err(anyhow!("no LongMemEval canary cases found"));
     }
-    cases.truncate(max_cases.max(1));
     Ok(cases)
 }
 

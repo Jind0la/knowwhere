@@ -34,6 +34,8 @@ pub struct CaseResult {
     pub retrieved_session_ids: Vec<String>,
     pub answer_session_ids: Vec<String>,
     pub is_abstention: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -111,29 +113,27 @@ fn session_text(session: &Value) -> String {
 }
 
 fn parse_dataset(path: &str, max_cases: usize) -> Result<Vec<RawCase>> {
-    let raw = std::fs::read_to_string(path)?;
-    let mut cases: Vec<RawCase> = serde_json::from_str(&raw)?;
-    if cases.is_empty() {
-        return Err(anyhow!("dataset contains no cases"));
-    }
+    let file = std::fs::File::open(path)
+        .map_err(|e| anyhow!("cannot open dataset {}: {e}", path))?;
+    let reader = std::io::BufReader::with_capacity(256 * 1024, file); // 256KB buffer
+    let stream = serde_json::Deserializer::from_reader(reader)
+        .into_iter::<RawCase>();
+
     let offset = std::env::var("KNOWWHERE_BENCH_CASE_OFFSET")
         .ok()
         .and_then(|s| s.parse::<usize>().ok())
         .unwrap_or(0);
-    if offset >= cases.len() {
-        return Err(anyhow!(
-            "KNOWWHERE_BENCH_CASE_OFFSET {} out of range (dataset len {})",
-            offset,
-            cases.len()
-        ));
+
+    let mut cases = Vec::with_capacity(max_cases.min(500));
+    for (i, result) in stream.enumerate() {
+        let case = result.map_err(|e| anyhow!("JSON parse error at case {i}: {e}"))?;
+        if i < offset { continue; }
+        cases.push(case);
+        if cases.len() >= max_cases { break; }
     }
-    cases = cases
-        .into_iter()
-        .skip(offset)
-        .take(max_cases.max(1))
-        .collect();
+
     if cases.is_empty() {
-        return Err(anyhow!("no cases after offset/limit"));
+        return Err(anyhow!("no cases after offset={offset} / max_cases={max_cases}"));
     }
     Ok(cases)
 }
@@ -328,6 +328,7 @@ fn to_case_result(case: &RawCase, raw_hit_ids: Vec<String>) -> CaseResult {
         retrieved_session_ids: deduped,
         answer_session_ids: answers,
         is_abstention: is_abstention(case),
+        error: None,
     }
 }
 
@@ -420,13 +421,44 @@ pub async fn run(cfg: EvalConfig) -> Result<EvalReport> {
     let client = reqwest::Client::new();
     let mut results = Vec::new();
     let cases = parse_dataset(&cfg.dataset_path, cfg.max_cases)?;
+    let total = cases.len();
     for (idx, case) in cases.iter().enumerate() {
-        let result = evaluate_case(&client, &cfg, case, idx).await?;
-        println!(
-            "eval_case id={} rank={:?} abstention={}",
-            result.question_id, result.rank, result.is_abstention
-        );
-        results.push(result);
+        match evaluate_case(&client, &cfg, case, idx).await {
+            Ok(result) => {
+                println!(
+                    "eval_case id={} rank={:?} abstention={}",
+                    result.question_id, result.rank, result.is_abstention
+                );
+                results.push(result);
+            }
+            Err(e) => {
+                eprintln!("FAIL case={} idx={}: {e}", case.question_id, idx);
+                results.push(CaseResult {
+                    question_id: case.question_id.clone(),
+                    rank: None,
+                    retrieved_session_ids: vec![],
+                    answer_session_ids: parse_ids(&case.answer_session_ids),
+                    is_abstention: is_abstention(case),
+                    error: Some(e.to_string()),
+                });
+            }
+        }
+        // Incremental report every 10 cases or on last case
+        if (idx + 1) % 10 == 0 || idx == total - 1 {
+            let report = EvalReport {
+                summary: summary(&results, cfg.top_k),
+                cases: results.clone(),
+            };
+            write_report(&cfg.report_path, &report)?;
+            println!(
+                "   → interim report written ({}/{}) top1={:.4} recall@5={:.4} mrr={:.4}",
+                idx + 1,
+                total,
+                report.summary.top1,
+                report.summary.recall_at_5,
+                report.summary.mrr
+            );
+        }
     }
     let report = EvalReport {
         summary: summary(&results, cfg.top_k),
