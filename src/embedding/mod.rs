@@ -1,8 +1,10 @@
 pub mod audio;
+pub mod clip;
 pub mod provider;
 pub mod sensor;
 
 pub use audio::AudioProvider;
+pub use clip::ClipProvider;
 pub use provider::{
     embed_document, embed_document_batch, embed_query, embed_query_batch, EmbeddingProvider,
     LocalOllamaProvider,
@@ -19,6 +21,7 @@ use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy)]
 pub enum ProviderKind {
+    Clip,
     LocalOllama,
     #[cfg(feature = "openai-provider")]
     OpenAI,
@@ -29,6 +32,7 @@ pub enum ProviderKind {
 impl std::fmt::Display for ProviderKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            ProviderKind::Clip => write!(f, "clip"),
             ProviderKind::LocalOllama => write!(f, "local_ollama"),
             #[cfg(feature = "openai-provider")]
             ProviderKind::OpenAI => write!(f, "openai"),
@@ -43,6 +47,7 @@ impl ProviderKind {
     /// any available provider (given the current feature flags).
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
+            "clip" => Some(ProviderKind::Clip),
             "local_ollama" | "ollama" => Some(ProviderKind::LocalOllama),
             #[cfg(feature = "openai-provider")]
             "openai" => Some(ProviderKind::OpenAI),
@@ -58,6 +63,9 @@ pub fn create_provider(
     #[allow(unused)] api_key: Option<String>,
 ) -> Arc<dyn EmbeddingProvider> {
     match kind {
+        ProviderKind::Clip => panic!(
+            "ClipProvider is not an EmbeddingProvider — use clip::ClipProvider directly for image embeddings"
+        ),
         ProviderKind::LocalOllama => Arc::new(provider::LocalOllamaProvider::new()),
 
         #[cfg(feature = "openai-provider")]
