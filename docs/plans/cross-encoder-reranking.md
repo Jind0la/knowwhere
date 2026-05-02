@@ -1,8 +1,9 @@
 # Cross-Encoder Reranking for KnowWhere
 
-**Status:** Design Phase | **Date:** 2026-05-01 | **Author:** researcher
+**Status:** ✅ IMPLEMENTED (feature: `reranker`) | **Date:** 2026-05-01 → 2026-05-02 | **Author:** researcher
+**Implementation:** `src/retrieval/cross_encoder.rs` (491 lines) — ONNX Runtime via `ort`, model: `bge-reranker-v2-m3`, feature-gated behind `reranker`. Build with `cargo build --features reranker`.
 
-## TL;DR
+## TL;DR (Original Plan)
 
 Add a Cross-Encoder reranking stage after the existing Bi-Encoder + BM25 + RRF fusion pipeline. Use ONNX Runtime (`ort` crate) for inference with `ms-marco-MiniLM-L-6-v2` (80MB, Apache-2.0) as the default model, upgradeable to `BAAI/bge-reranker-v2-m3` (1GB, MIT) for multilingual quality. Expected latency: 50-200ms for top-20 reranking. Expected quality gain: +5-10% nDCG@10.
 

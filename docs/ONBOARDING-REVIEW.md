@@ -2,8 +2,8 @@
 
 **Review Date:** 2026-04-04
 **Reviewer:** Research Engineer — KnowWhere Investigation & Features
-**Last Update:** 2026-04-04 (Session 6 fixes applied)
-**Status:** Beta-ready baseline reached; follow-up hardening remains (rate-limit policy, retention/GC policy, docs consistency)
+**Last Update:** 2026-04-04 (Session 6 fixes applied); 2026-05-02 (Hermes cross-check)
+**Status:** Beta-ready baseline reached. Phase 2 connectors, Cross-Modal, Cross-Encoder all now implemented (v0.4.0). Remaining: rate-limit policy, retention/GC policy.
 
 ---
 
