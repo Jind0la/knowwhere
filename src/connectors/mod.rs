@@ -1,3 +1,4 @@
+#[cfg(feature = "google-drive")]
 pub mod drive;
 pub mod frigate;
 

@@ -23,6 +23,11 @@ uuid = { version = "1", features = ["v4", "serde"] }
 rand = "0.8"
 anyhow = "1"
 chrono = { version = "0.4", features = ["serde"] }
+google-drive3 = { version = "7", features = ["yup-oauth2-service-account"], optional = true }
+yup-oauth2 = { version = "12", optional = true }
+hyper = { version = "1", optional = true }
+hyper-rustls = { version = "0.27", optional = true }
+hyper-util = { version = "0.1", optional = true }
 usearch = "2.23"
 async-trait = "0.1"
 sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "uuid", "chrono", "json", "macros"] }
@@ -35,6 +40,11 @@ utoipa = { version = "5", features = ["axum_extras", "chrono", "uuid"] }
 utoipa-swagger-ui = { version = "9", features = ["axum"] }
 bm25 = "2.3.2"
 futures = "0.3"
+
+# Cross-encoder reranking (feature-gated)
+ort = { version = ">=2.0.0-rc.12, <3", optional = true }
+tokenizers = { version = "0.21", optional = true }
+ndarray = { version = "0.17", optional = true }
 
 # Local summarization for tiered compaction
 # Uses Ollama HTTP API (no extra dependencies — reqwest already included)
@@ -55,6 +65,15 @@ grok-provider = []
 # Requires Ollama installed: https://ollama.com
 # Default model: llama3.2 (3B parameters, fast on CPU)
 summarizer = []
+
+# Enable cross-encoder reranking (ONNX Runtime via ort)
+# Requires bge-reranker-v2-m3 ONNX model + tokenizer
+# Adds ~2.5 GB RAM at runtime
+reranker = ["dep:ort", "dep:tokenizers", "dep:ndarray"]
+
+# Enable Google Drive connector
+# Adds ~20 transitive dependencies (hyper, yup-oauth2, google-drive3)
+google-drive = ["dep:google-drive3", "dep:yup-oauth2", "dep:hyper", "dep:hyper-rustls", "dep:hyper-util"]
 
 [[bin]]
 name = "longmemeval_canary"
