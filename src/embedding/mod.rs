@@ -1,9 +1,12 @@
 pub mod provider;
+pub mod sensor;
 
 pub use provider::{
     embed_document, embed_document_batch, embed_query, embed_query_batch, EmbeddingProvider,
     LocalOllamaProvider,
 };
+
+pub use sensor::{embed_sensor, sensor_to_text};
 
 use std::sync::Arc;
 
