@@ -1,6 +1,6 @@
 # KnowWhere — Product Requirements Document
 
-> Stand: April 2026 — Repository `main`, Version `0.3.0`
+> Stand: Mai 2026 — Repository `main`, Version `0.4.0`
 
 ## 1. Produktname und One-Sentence Pitch
 
@@ -45,9 +45,12 @@ Ein Nutzer oder Agent-Betreiber soll:
 | `store_session` | Session als vollwertige Memory mit auto-chunking speichern | ✅ |
 | `store_external` | Externe Referenz pointer-first speichern | ✅ |
 | `retrieve_fractal` | Hybrid Retrieval mit Fractal Zoom und Profilen | ✅ |
+| `POST /rerank` | Cross-Encoder Reranking (bge-reranker-v2-m3 via ONNX) | ✅ NEU |
 | `chat/subconscious` | Retrieval-gestützte Antwort mit Quellenangaben | ✅ |
-| `dream/status` | Compaction Scheduler Status | ✅ |
+| `dream/status` | Compaction Scheduler Status mit Space-Amplification Trigger | ✅ |
 | `governance/policy` | Governance Policy lesen/setzen | ✅ |
+| Google Drive Connector | Changes API Polling, OAuth2 Service Account | ✅ NEU |
+| HomeAssistant Webhook | POST /webhooks/homeassistant, Dedup + Secret | ✅ NEU |
 
 ### 5.2 5-Type Memory System
 
@@ -183,24 +186,28 @@ pub struct FractalNode {
 - Automatische Migration zwischen Storage-Backends
 - Hot-Swap zwischen Embedding-Providern
 - Automatisches Hard-Delete von Memories
-- HomeAssistant/Google Drive Connectors (Phase 2)
+- Cross-Modal Embedding (Phase 2, Research done)
 
 ## 10. Roadmap
 
-### v1.0 (aktueller Fokus)
+### v1.0 (aktueller Fokus) — ✅ Erreicht in v0.4.0
 - PostgreSQL-Backend stabil → ✅ 41/41 Integration-Tests
-- Docker Compose mit allen Features → in Arbeit
-- OpenClaw Plugin E2E im Docker → in Arbeit
-- Docs auf aktuellen Stand → in Arbeit
+- Docker Compose mit allen Features → ✅ (Ollama via host.docker.internal)
+- OpenClaw Plugin E2E im Docker → ✅ verifiziert
+- ConsolidationScheduler mit Space-Amplification Trigger → ✅ (statt stumpfem 60-Min-Timer)
+- Cross-Encoder Reranking → ✅ (bge-reranker-v2-m3 via ONNX Runtime, POST /rerank)
+- Streaming JSON Parser für 500-Case Benchmark → ✅ (RAM: 1-2GB → 10-50MB)
+- Google Drive Connector → ✅ (Changes API, OAuth2, hinter google-drive Feature-Flag)
+- HomeAssistant Webhook → ✅ (DedupCache + Secret-Validierung)
+- Docs auf aktuellem Stand → ✅
 
 ### v1.1
-- Cross-Encoder Reranking für bessere Retrieval-Qualität
 - Entity-Graph für semantische Verbindungen zwischen Knoten
-- Auto-Consolidation Scheduler (statt manuellem Trigger)
+- Auto-Consolidation Scheduler (vollständig autonom, kein manueller Trigger nötig)
 
 ### Phase 2
-- HomeAssistant Webhook
-- Google Drive Connector
+- ~~HomeAssistant Webhook~~ ✅ Done v0.4.0
+- ~~Google Drive Connector~~ ✅ Done v0.4.0
 - Cross-Modal Embedding
 
 ## 11. Integrationsregeln
