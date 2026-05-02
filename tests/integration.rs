@@ -64,6 +64,8 @@ fn test_state_with_embedding(embedding: Arc<dyn EmbeddingProvider>) -> routes::A
         consolidation: None,
         frigate_dedup: DedupCache::new(),
         frigate_webhook_secret: std::env::var("FRIGATE_WEBHOOK_SECRET").ok(),
+        homeassistant_dedup: DedupCache::new(),
+        homeassistant_webhook_secret: std::env::var("HASS_WEBHOOK_SECRET").ok(),
     }
 }
 

@@ -202,8 +202,12 @@ async fn run() -> anyhow::Result<()> {
         trajectory_pool,
         vlm_worker,
         consolidation: consolidation_scheduler,
+        #[cfg(feature = "reranker")]
+        reranker: knowwhere_server::retrieval::cross_encoder::load_reranker(),
         frigate_dedup: DedupCache::new(),
         frigate_webhook_secret: std::env::var("FRIGATE_WEBHOOK_SECRET").ok(),
+        homeassistant_dedup: DedupCache::new(),
+        homeassistant_webhook_secret: std::env::var("HASS_WEBHOOK_SECRET").ok(),
     };
 
     let api_key = ApiKey(std::env::var("KNOWWHERE_API_KEY").ok());
@@ -224,6 +228,7 @@ async fn run() -> anyhow::Result<()> {
         .route("/store_external", post(routes::store_external))
         .route("/retrieve/{id}", get(routes::retrieve))
         .route("/retrieve_fractal", post(routes::retrieve_fractal))
+        .route("/rerank", post(routes::rerank))
         .route("/chat/subconscious", post(routes::subconscious_chat))
         .route("/nodes/recent", get(routes::recent_nodes))
         .route("/nodes/purge_dummy", post(routes::purge_dummy))
@@ -241,7 +246,8 @@ async fn run() -> anyhow::Result<()> {
         .route("/governance/policy", get(routes::get_governance_policy))
         .route("/governance/policy", post(routes::update_governance_policy))
         // -- Webhook routes --
-        .route("/webhooks/frigate", post(routes::webhook_frigate));
+        .route("/webhooks/frigate", post(routes::webhook_frigate))
+        .route("/webhooks/homeassistant", post(routes::webhook_homeassistant));
 
     #[cfg(feature = "postgres-storage")]
     let protected = protected

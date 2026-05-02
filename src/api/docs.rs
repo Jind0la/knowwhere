@@ -40,6 +40,7 @@ mod conditional_schemas {
             routes::get_governance_policy,
             routes::update_governance_policy,
             routes::webhook_frigate,
+            routes::webhook_homeassistant,
         ),
         components(schemas(
             routes::HealthResponse,
@@ -70,6 +71,7 @@ mod conditional_schemas {
             routes::UpdatePolicyRequest,
             routes::UpdatePolicyResponse,
             routes::FrigateWebhookEvent,
+            routes::HomeAssistantWebhookPayload,
         ))
     )]
     pub struct ApiDoc {}
@@ -102,6 +104,7 @@ mod conditional_schemas {
             routes::get_governance_policy,
             routes::update_governance_policy,
             routes::webhook_frigate,
+            routes::webhook_homeassistant,
             routes::list_retrieval_runs,
             routes::get_retrieval_run,
             routes::get_retrieval_trajectory,
@@ -164,6 +167,7 @@ mod conditional_schemas {
             routes::UpdatePolicyRequest,
             routes::UpdatePolicyResponse,
             routes::FrigateWebhookEvent,
+            routes::HomeAssistantWebhookPayload,
         ))
     )]
     pub struct ApiDoc {}
