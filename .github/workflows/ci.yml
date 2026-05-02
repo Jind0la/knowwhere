@@ -128,11 +128,14 @@ jobs:
         run: cargo test --test openapi_contract --features postgres-storage
 
       - name: cargo check (postgres-storage)
+        env:
+          SQLX_OFFLINE: "true"
         run: cargo check --all-targets --features postgres-storage
 
       - name: cargo clippy (postgres-storage)
         env:
           RUSTFLAGS: "--cap-lints=warn"
+          SQLX_OFFLINE: "true"
         run: cargo clippy --all-targets --features postgres-storage
 
   feature-matrix:
@@ -170,11 +173,14 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-
 
       - name: cargo check (matrix)
+        env:
+          SQLX_OFFLINE: "true"
         run: cargo check --all-targets --no-default-features --features "${{ matrix.features }}"
 
       - name: cargo clippy (matrix)
         env:
           RUSTFLAGS: "--cap-lints=warn"
+          SQLX_OFFLINE: "true"
         run: cargo clippy --all-targets --no-default-features --features "${{ matrix.features }}"
 
   dashboard-build:
