@@ -3,8 +3,9 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use axum::body::Bytes;
 use axum::extract::{Extension, Path, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -14,6 +15,7 @@ use uuid::Uuid;
 
 use crate::api::auth::AuthContext;
 use crate::api::webhooks::{check_webhook_secret, DedupCache};
+use crate::embedding::router::EmbeddingRouter;
 use crate::embedding::{embed_document, embed_document_batch, embed_query, EmbeddingProvider};
 use crate::memory::dream::DreamStatus;
 #[cfg(feature = "postgres-storage")]
@@ -267,6 +269,8 @@ pub struct AppState {
     pub dream_store: Arc<dyn StorageBackend>,
     pub dream: DreamMode,
     pub embedding: Arc<dyn EmbeddingProvider>,
+    /// Cross-modal embedding router for content-type based dispatch.
+    pub router: Option<Arc<EmbeddingRouter>>,
     /// Active governance policy for Stage 2 retrieval validation.
     pub governance_policy: Arc<RwLock<GovernancePolicy>>,
     /// In-memory event store for Layer 0 (appended to on each mutation).
@@ -597,17 +601,40 @@ pub struct StoreNodeResponse {
     post,
     path = "/store_session",
     tag = "memory",
-    request_body = StoreSessionRequest,
+    request_body(content = StoreSessionRequest, description = "JSON body for text; binary body with image/* or audio/* Content-Type for cross-modal embedding via EmbeddingRouter"),
     responses(
         (status = 201, description = "Session node created", body = StoreNodeResponse),
+        (status = 400, description = "Bad request", body = String),
         (status = 500, description = "Internal error", body = String)
     )
 )]
 pub async fn store_session(
     State(state): State<AppState>,
-    Json(req): Json<StoreSessionRequest>,
+    headers: HeaderMap,
+    body: Bytes,
 ) -> Result<(StatusCode, Json<StoreNodeResponse>), (StatusCode, String)> {
-    // Validate content before embedding to avoid opaque upstream errors
+    let content_type = headers
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/json");
+
+    // Binary payloads: route through EmbeddingRouter for cross-modal embedding
+    if content_type.starts_with("image/") || content_type.starts_with("audio/") {
+        return store_session_binary(&state, content_type, &body).await;
+    }
+
+    // JSON payloads (existing flow): parse and embed as text
+    let req: StoreSessionRequest = serde_json::from_slice(&body)
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("invalid JSON: {e}")))?;
+    store_session_json(state, req).await
+}
+
+/// Existing JSON-based store_session logic, extracted so binary and JSON paths
+/// can share the same route while preserving backward compatibility.
+async fn store_session_json(
+    state: AppState,
+    req: StoreSessionRequest,
+) -> Result<(StatusCode, Json<StoreNodeResponse>), (StatusCode, String)> {
     let cleaned = clean_for_embedding(&req.content);
     if cleaned.len() < 4 {
         return Err((
@@ -779,6 +806,77 @@ pub async fn store_session(
             id: primary_id,
             message: format!("session node created ({chunk_count} chunks)"),
             chunk_ids: Some(all_ids),
+        }),
+    ))
+}
+
+/// Store a binary payload (image or audio) using the cross-modal EmbeddingRouter.
+async fn store_session_binary(
+    state: &AppState,
+    content_type: &str,
+    body: &[u8],
+) -> Result<(StatusCode, Json<StoreNodeResponse>), (StatusCode, String)> {
+    let router = state.router.as_ref().ok_or((
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "cross-modal embedding router not configured".to_string(),
+    ))?;
+
+    let vector = router
+        .route(content_type, body)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("cross-modal embed failed: {e}"),
+            )
+        })?;
+
+    let kind = if content_type.starts_with("image/") {
+        "image"
+    } else {
+        "audio"
+    };
+
+    let mut metadata = HashMap::new();
+    metadata.insert(
+        "content_type".to_string(),
+        Value::String(content_type.to_string()),
+    );
+    metadata.insert(
+        "payload_size".to_string(),
+        Value::Number(serde_json::Number::from(body.len())),
+    );
+    metadata.insert(
+        "embedding_source".to_string(),
+        Value::String("cross-modal-router".to_string()),
+    );
+    normalize_node_metadata(MemoryType::Episodic, MemorySource::Conversation, &mut metadata);
+
+    let content = format!("[{}/{}] {} bytes binary payload", kind, content_type, body.len());
+    let mut node = FractalNode::new_typed(
+        Some(content),
+        None,
+        vector,
+        metadata,
+        MemoryType::Episodic,
+        MemorySource::Conversation,
+    );
+    node.importance = 5; // default for binary payloads
+
+    let id = state
+        .store
+        .insert(node)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    tracing::info!(%id, %content_type, payload_bytes = body.len(), "binary session node stored");
+
+    Ok((
+        StatusCode::CREATED,
+        Json(StoreNodeResponse {
+            id,
+            message: format!("{} payload node created", kind),
+            chunk_ids: None,
         }),
     ))
 }

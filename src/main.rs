@@ -20,6 +20,8 @@ use utoipa_swagger_ui::SwaggerUi;
 use knowwhere_server::api::{auth, auth::ApiKey, docs::ApiDoc, routes, webhooks::DedupCache};
 use knowwhere_server::connectors::frigate::FrigateConnector;
 use knowwhere_server::connectors::store_external_event;
+use knowwhere_server::embedding::router::EmbeddingRouter;
+use knowwhere_server::embedding::{AudioProvider, ClipProvider};
 use knowwhere_server::memory::events::InMemoryEventStore;
 use knowwhere_server::memory::{DreamMode, GovernancePolicy};
 use knowwhere_server::scheduler::{AuditScheduler, ConsolidationScheduler, SchedulerConfig};
@@ -114,6 +116,14 @@ async fn run() -> anyhow::Result<()> {
     // NOTE: repair_legacy_embeddings disabled — use POST /maintenance/repair_embeddings instead
     // runtime::repair_legacy_embeddings(&store, &embedding).await?;
 
+    // Build cross-modal embedding router for content-type based dispatch.
+    let router = Arc::new(EmbeddingRouter::new(
+        embedding.clone(),
+        Arc::new(ClipProvider::new()),
+        Arc::new(AudioProvider::new()),
+    ));
+    tracing::info!("cross-modal embedding router ready (text → Ollama, image → CLIP, audio → Whisper)");
+
     tokio::spawn(dream.clone().micro_dream_loop());
     tracing::info!("dream mode started (micro-dream every 1h)");
 
@@ -196,6 +206,7 @@ async fn run() -> anyhow::Result<()> {
         dream_store: store.clone(),
         dream,
         embedding,
+        router: Some(router),
         governance_policy: Arc::new(RwLock::new(GovernancePolicy::default_policy())),
         events: InMemoryEventStore::new(),
         #[cfg(feature = "postgres-storage")]

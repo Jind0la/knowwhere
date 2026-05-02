@@ -56,6 +56,7 @@ fn test_state_with_embedding(embedding: Arc<dyn EmbeddingProvider>) -> routes::A
         dream_store,
         dream,
         embedding,
+        router: None,
         governance_policy: Arc::new(RwLock::new(GovernancePolicy::default_policy())),
         events: InMemoryEventStore::new(),
         #[cfg(feature = "postgres-storage")]
