@@ -1,6 +1,7 @@
 pub mod audio;
 pub mod clip;
 pub mod provider;
+pub mod router;
 pub mod sensor;
 
 pub use audio::AudioProvider;
@@ -9,7 +10,7 @@ pub use provider::{
     embed_document, embed_document_batch, embed_query, embed_query_batch, EmbeddingProvider,
     LocalOllamaProvider,
 };
-
+pub use router::EmbeddingRouter;
 pub use sensor::{embed_sensor, sensor_to_text};
 
 use std::sync::Arc;
