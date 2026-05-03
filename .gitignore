@@ -45,3 +45,6 @@ benchmarks/hf/fixtures/*.json
 # Docker
 docker-compose.override.yml
 benchmarks/data/
+.env.native
+start-native.sh
+native_data/
