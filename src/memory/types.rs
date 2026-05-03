@@ -73,6 +73,22 @@ pub enum MemoryType {
     /// Meta memories are used to track the system's own uncertainty
     /// and self-knowledge. They require special handling in audits.
     Meta,
+
+    /// An architectural or design decision with provenance.
+    ///
+    /// Examples:
+    /// - "DECISION: migrate from Docker to native macOS + OpenAI embeddings
+    ///    — because Docker was unstable and 5.5s→0.2s latency gain"
+    /// - "DECISION: Space-amplification ratio trigger over time-based
+    ///    — because data sits unconsolidated up to 60 min otherwise"
+    ///
+    /// Consolidation: **Immutable and traceable**.
+    /// Decision memories capture what was chosen, why, and which
+    /// alternatives were rejected. They form the spine of the
+    /// project's architectural history. New decisions can supersede
+    /// old ones via `superseded_by` edges, creating a directed
+    /// acyclic decision graph.
+    Decision,
 }
 
 impl MemoryType {
@@ -84,6 +100,7 @@ impl MemoryType {
             MemoryType::Preference => "Preference",
             MemoryType::Procedural => "Procedural",
             MemoryType::Meta => "Meta",
+            MemoryType::Decision => "Decision",
         }
     }
 
@@ -95,6 +112,7 @@ impl MemoryType {
             MemoryType::Preference => "Personal preferences or choices",
             MemoryType::Procedural => "Rules, workflows, or how-to knowledge",
             MemoryType::Meta => "Meta-cognitive knowledge about the system itself",
+            MemoryType::Decision => "Architectural or design decisions with provenance",
         }
     }
 
@@ -106,6 +124,7 @@ impl MemoryType {
             MemoryType::Preference => "version_sensitive",
             MemoryType::Procedural => "governance_critical",
             MemoryType::Meta => "audit_critical",
+            MemoryType::Decision => "immutable_and_traceable",
         }
     }
 
@@ -117,6 +136,7 @@ impl MemoryType {
             MemoryType::Preference => 7,
             MemoryType::Procedural => 8, // Procedural memories are high-stakes
             MemoryType::Meta => 4,
+            MemoryType::Decision => 9, // Decisions are the spine of architecture
         }
     }
 
@@ -128,6 +148,7 @@ impl MemoryType {
             MemoryType::Preference => 0.75, // Preferences can be less certain
             MemoryType::Procedural => 0.9,  // Procedural should be well-verified
             MemoryType::Meta => 0.5,        // Meta-knowledge starts with low confidence
+            MemoryType::Decision => 0.85,   // Extracted by LLM, high confidence if explicit
         }
     }
 
@@ -139,6 +160,7 @@ impl MemoryType {
             MemoryType::Preference => Some(30),  // Preferences can change
             MemoryType::Procedural => Some(180), // Procedures are very stable
             MemoryType::Meta => Some(14),        // Meta-knowledge needs frequent audit
+            MemoryType::Decision => None,        // Decisions are immutable — never stale
         }
     }
 
@@ -147,6 +169,7 @@ impl MemoryType {
         matches!(
             self,
             MemoryType::Semantic | MemoryType::Preference | MemoryType::Procedural
+                | MemoryType::Decision
         )
     }
 
@@ -190,6 +213,7 @@ impl std::fmt::Display for MemoryType {
                 MemoryType::Preference => "preference",
                 MemoryType::Procedural => "procedural",
                 MemoryType::Meta => "meta",
+                MemoryType::Decision => "decision",
             }
         )
     }

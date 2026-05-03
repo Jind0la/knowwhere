@@ -13,6 +13,20 @@
 //! grouping them into batches and processing via TieredCompactionWorker.
 
 use std::sync::atomic::{AtomicU64, Ordering};
+
+/// Detect if consolidated content describes a decision (for auto-typing as MemoryType::Decision).
+///
+/// Matches content that starts with or contains explicit decision markers:
+/// - "DECISION:" / "Decision:" (English)
+/// - "Entscheidung" / "entschieden" (German)
+/// - "decided" followed by action description
+fn is_decision_content(content: &str) -> bool {
+    let lower = content.to_lowercase();
+    lower.contains("decision:")
+        || lower.contains("decided")
+        || lower.contains("entscheidung")
+        || lower.contains("entschieden")
+}
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
@@ -285,13 +299,18 @@ impl ConsolidationScheduler {
         // Step 1: Create L1 (Overview) node with embedding
         let l1_content = summary.text.clone();
         let l1_embedding = self.embed_text(&l1_content).await?;
+        let l1_type = if is_decision_content(&l1_content) {
+            MemoryType::Decision
+        } else {
+            MemoryType::Semantic
+        };
         
         let mut l1_node = FractalNode::new_typed(
             Some(l1_content),
             None,
             l1_embedding,
             node.metadata.clone(),
-            MemoryType::Semantic,
+            l1_type,
             MemorySource::Consolidation,
         );
         l1_node.context_tier = ContextTier::Overview;
@@ -321,13 +340,19 @@ impl ConsolidationScheduler {
         
         let l0_content = l0_summary.text.clone();
         let l0_embedding = self.embed_text(&l0_content).await?;
+        // Inherit type from L1: if L1 is a Decision, L0 is too
+        let l0_type = if l1_type == MemoryType::Decision || is_decision_content(&l0_content) {
+            MemoryType::Decision
+        } else {
+            MemoryType::Semantic
+        };
         
         let mut l0_node = FractalNode::new_typed(
             Some(l0_content),
             None,
             l0_embedding,
             node.metadata.clone(),
-            MemoryType::Semantic,
+            l0_type,
             MemorySource::Consolidation,
         );
         l0_node.context_tier = ContextTier::Summary;
@@ -523,6 +548,18 @@ mod trigger_tests {
     use super::*;
     use crate::memory::{FractalNode, MemorySource, MemoryType};
     use crate::storage::MemoryStore;
+
+    #[test]
+    fn test_is_decision_content() {
+        assert!(is_decision_content("DECISION: migrate embeddings 1536→1024"));
+        assert!(is_decision_content("Decision: use sqlx COALESCE for mode-agnostic queries"));
+        assert!(is_decision_content("We decided to move from Docker to native macOS"));
+        assert!(is_decision_content("Die Entscheidung fiel auf OpenAI statt Ollama"));
+        assert!(is_decision_content("Es wurde entschieden, den Prompt umzuschreiben"));
+        // Not a decision
+        assert!(!is_decision_content("The sky is blue"));
+        assert!(!is_decision_content("KnowWhere has 1000 nodes"));
+    }
     use std::collections::HashMap;
     use std::sync::Arc;
 

@@ -142,6 +142,7 @@ impl PostgresStore {
             MemoryType::Preference => "preference",
             MemoryType::Procedural => "procedural",
             MemoryType::Meta => "meta",
+            MemoryType::Decision => "decision",
         };
 
         sqlx::query(r#"

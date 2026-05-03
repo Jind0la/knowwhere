@@ -163,6 +163,10 @@ impl StorageBackend for MemoryStore {
         let mut weighted: Vec<_> = results
             .into_iter()
             .filter(|(_, node)| query.profile.allows(node))
+            .filter(|(_, node)| {
+                // memory_type_filter: keep only nodes matching the requested type
+                query.memory_type_filter.map_or(true, |mt| node.memory_type == mt)
+            })
             .map(|(score, node)| query.profile.score_node(score, node))
             .collect();
         weighted.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(Ordering::Equal));

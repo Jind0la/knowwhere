@@ -105,9 +105,15 @@ impl LocalSummarizer {
     /// Uses deterministic generation (temperature=0, seed=42).
     /// Target: ~20-50 tokens, single sentence.
     pub async fn summarize(&self, text: &str) -> Result<String> {
+        // Prompt optimized for Decision-Retrieval:
+        // Forces the LLM to name decisions explicitly so embedding
+        // similarity search finds queries like "why did we kill Docker?"
         let prompt = format!(
-            "Summarize the following text in exactly ONE sentence (max 20 words). \
-             Preserve key facts, entities, and decisions. No preamble.\n\n{}",
+            "Summarize in ONE sentence (≤20 words). \
+             If any decisions were made, state the decision AND the reason. \
+             Otherwise state the single most important fact. \
+             Include the word 'decision' or 'decided' if a choice was made. \
+             No preamble.\n\n{}",
             text
         );
         
@@ -169,10 +175,17 @@ impl LocalSummarizer {
         max_length: usize,
         _min_length: usize,
     ) -> Result<String> {
+        // Prompt optimized for Decision-Retrieval:
+        // Structured output: decisions first → embedding similarity
+        // naturally boosts decision queries like "what did we decide about X?"
         let prompt = format!(
-            "Summarize the following text in 2-3 sentences (max {} words). \
-             Preserve key facts, entities, and decisions. No preamble.\n\n{}",
-            max_length / 2, // rough word estimate
+            "Summarize in 2-3 sentences (max {} words). \
+             Sentence 1: key decisions made and WHY. \
+             Sentence 2: important facts. \
+             Sentence 3: entities and timestamps. \
+             If no decisions exist, just summarize key facts. \
+             No preamble.\n\n{}",
+            max_length / 2,
             text
         );
         

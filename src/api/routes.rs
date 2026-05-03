@@ -1580,13 +1580,26 @@ pub async fn retrieve_fractal(
     let max_tier = req.max_tier.as_ref().and_then(|s| ContextTier::parse(s));
 
     // Stage 1: Hybrid retrieval via StorageBackend trait
-    let query = HybridQuery {
+    let mut query = HybridQuery {
         query_text: req.query_text.clone(),
         query_vector: Some(query_vector),
         top_k: req.top_k,
         max_depth: req.max_depth,
         profile: req.retrieval_profile,
+        memory_type_filter: None,
     };
+    // Parse memory_type_filter from string
+    if let Some(ref mt_str) = req.memory_type_filter {
+        match mt_str.to_lowercase().as_str() {
+            "decision" => query.memory_type_filter = Some(MemoryType::Decision),
+            "semantic" => query.memory_type_filter = Some(MemoryType::Semantic),
+            "episodic" => query.memory_type_filter = Some(MemoryType::Episodic),
+            "preference" => query.memory_type_filter = Some(MemoryType::Preference),
+            "procedural" => query.memory_type_filter = Some(MemoryType::Procedural),
+            "meta" => query.memory_type_filter = Some(MemoryType::Meta),
+            _ => {} // Unknown type → no filter
+        }
+    }
     let results = state.store.hybrid_retrieve(&query).await.map_err(|e| {
         tracing::error!("hybrid_retrieve failed: {}", e);
         (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
@@ -3397,6 +3410,7 @@ pub async fn namespace_search(
         top_k: q.top_k,
         max_depth: 3,
         profile: RetrievalProfile::UserFacing,
+        memory_type_filter: None,
     };
     let all_results = state.store.hybrid_retrieve(&query).await.map_err(|e| {
         (

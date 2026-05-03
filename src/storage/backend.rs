@@ -111,6 +111,8 @@ pub struct HybridQuery {
     pub max_depth: usize,
     /// Retrieval profile: safe for users, agent debugging, or raw full fidelity.
     pub profile: RetrievalProfile,
+    /// Optional filter by memory type (e.g. "decision" for architectural decisions only).
+    pub memory_type_filter: Option<crate::memory::types::MemoryType>,
 }
 
 impl HybridQuery {
@@ -122,6 +124,7 @@ impl HybridQuery {
             top_k,
             max_depth: 0,
             profile: RetrievalProfile::FullFidelity,
+            memory_type_filter: None,
         }
     }
 
@@ -133,6 +136,7 @@ impl HybridQuery {
             top_k,
             max_depth,
             profile: RetrievalProfile::FullFidelity,
+            memory_type_filter: None,
         }
     }
 
@@ -149,6 +153,7 @@ impl HybridQuery {
             top_k,
             max_depth,
             profile: RetrievalProfile::FullFidelity,
+            memory_type_filter: None,
         }
     }
 
@@ -169,6 +174,12 @@ impl HybridQuery {
 
     pub fn full_fidelity(mut self) -> Self {
         self.profile = RetrievalProfile::FullFidelity;
+        self
+    }
+
+    /// Attach a memory type filter (e.g. Decision) to this query.
+    pub fn with_memory_type(mut self, mt: crate::memory::types::MemoryType) -> Self {
+        self.memory_type_filter = Some(mt);
         self
     }
 }

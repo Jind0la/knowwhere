@@ -131,15 +131,28 @@ impl SummaryContext {
     pub fn system_directive(&self) -> &'static str {
         match self {
             SummaryContext::Summary => {
-                "Compress memory for later retrieval. Output one sentence (≤20 words) capturing the single most retrievable fact. Preserve: key facts, entities, decisions, timestamps. No preamble. No filler."
+                "Compress memory for later retrieval. Output one sentence (≤20 words). \
+                 If any decisions were made, describe the decision and its REASON as the main fact. \
+                 Include the word 'decided' or 'decision'. \
+                 Otherwise capture the most important fact. \
+                 Preserve: timestamps, entities. No preamble. No filler."
             }
             SummaryContext::Overview => {
-                "Compress memory for later retrieval. Preserve: key facts, named entities, decisions, timestamps. Output: 2–3 dense sentences. No preamble. No filler. No commentary."
+                "Compress memory for later retrieval. Output EXACTLY 2-3 sentences. \
+                 Sentence 1: What decision was made and WHY. \
+                 Sentence 2: Key supporting facts. \
+                 Sentence 3: Entities and timestamps. \
+                 If no decisions exist, summarize key facts instead. \
+                 Use the word 'decided' or 'decision' if a choice was made. \
+                 No preamble. No filler."
             }
             SummaryContext::Detailed => {
-                "You are a detailed summarizer. Write a thorough but concise summary (300–600 words) \
-                that preserves all important facts, decisions, and relationships from the input. \
-                Structure with light paragraph breaks. No preamble, no commentary."
+                "You are a detailed summarizer. Write a concise summary (200-400 words). \
+                 FIRST PARAGRAPH: List ALL decisions made, each with their REASON. \
+                 SECOND PARAGRAPH: Key facts and context. \
+                 THIRD PARAGRAPH: Entities, timestamps, relationships. \
+                 Use the word 'DECISION:' to prefix each choice. \
+                 No preamble, no commentary."
             }
         }
     }
@@ -148,13 +161,13 @@ impl SummaryContext {
     pub fn prompt_template(&self) -> &'static str {
         match self {
             SummaryContext::Summary => {
-                "Core fact:\n\n{content}"
+                "Extract the key decision or fact:\n\n{content}"
             }
             SummaryContext::Overview => {
-                "Compress for retrieval:\n\n{content}"
+                "Extract decisions (what + why) and key facts:\n\n{content}"
             }
             SummaryContext::Detailed => {
-                "Create a detailed summary of the following, preserving all key facts and decisions:\n\n{content}"
+                "List ALL decisions made (each with reason), then key facts:\n\n{content}"
             }
         }
     }
