@@ -390,6 +390,14 @@ pub struct StoreSessionRequest {
     /// Optional sensitivity (default: normal).
     #[serde(default)]
     pub sensitivity: Option<Sensitivity>,
+    /// Links turns together across a multi-turn session. Crash-safe: each turn
+    /// is stored independently so a session crash only loses the current turn.
+    #[serde(default)]
+    pub session_id: Option<String>,
+    /// 0-based turn index within the session. Allows reconstruction of turn order
+    /// and detection of missing turns after a crash.
+    #[serde(default)]
+    pub turn_index: Option<usize>,
 }
 
 fn default_memory_type_str() -> String {
@@ -690,6 +698,13 @@ async fn store_session_json(
                 })?,
         };
         let mut metadata = req.metadata;
+        // Link turns within a session for crash-safe per-turn storage
+        if let Some(ref sid) = req.session_id {
+            metadata.insert("session_id".to_string(), Value::String(sid.clone()));
+        }
+        if let Some(ti) = req.turn_index {
+            metadata.insert("turn_index".to_string(), Value::Number(ti.into()));
+        }
         normalize_node_metadata(memory_type, source, &mut metadata);
         let mut node = FractalNode::new_typed(
             Some(req.content),
@@ -752,6 +767,13 @@ async fn store_session_json(
     for ((idx, _), vector) in cleaned.iter().zip(vectors) {
         let idx = *idx;
         let mut metadata = req.metadata.clone();
+        // Link turns within a session for crash-safe per-turn storage
+        if let Some(ref sid) = req.session_id {
+            metadata.insert("session_id".to_string(), Value::String(sid.clone()));
+        }
+        if let Some(ti) = req.turn_index {
+            metadata.insert("turn_index".to_string(), Value::Number(ti.into()));
+        }
         metadata.insert(
             "chunk_index".to_string(),
             Value::Number(serde_json::Number::from(idx)),
