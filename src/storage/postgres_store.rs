@@ -148,9 +148,9 @@ impl PostgresStore {
             INSERT INTO memories (
                 id, memory_type, content, embedding, entities, tags,
                 provenance, source, source_id, importance, confidence,
-                sensitivity, status, access_count, created_at, updated_at
+                sensitivity, metadata, status, access_count, created_at, updated_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'active', 0, NOW(), NOW())
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'active', 0, NOW(), NOW())
             "#)
         .bind(id)
         .bind(memory_type_str)
@@ -164,6 +164,7 @@ impl PostgresStore {
         .bind(importance)
         .bind(confidence)
         .bind(sensitivity)
+        .bind(metadata)
         .execute(&self.pool)
         .await?;
 
@@ -1130,18 +1131,16 @@ impl StorageBackend for PostgresStore {
 
         // If no text query, return pure vector results
         if query.query_text.is_none() {
-            let mut scored_nodes: Vec<_> = rows
-                .into_iter()
-                .filter_map(|row| {
-                    let row_vector = row.embedding.clone().unwrap_or_default();
-                    let node = memory_with_score_to_fractal_node(row)?;
-                    if !query.profile.allows(&node) {
-                        return None;
+            let mut scored_nodes: Vec<ScoredNode> = Vec::new();
+            for row in rows {
+                if let Some(node) = self.get(&row.id).await? {
+                    if query.profile.allows(&node) {
+                        let row_vector = row.embedding.clone().unwrap_or_default();
+                        let sim = crate::memory::fractal_node::cosine_similarity(&row_vector, vector);
+                        scored_nodes.push(query.profile.score_node(sim, node));
                     }
-                    let sim = crate::memory::fractal_node::cosine_similarity(&row_vector, vector);
-                    Some(query.profile.score_node(sim, node))
-                })
-                .collect();
+                }
+            }
             scored_nodes.sort_by(|a, b| {
                 b.score
                     .partial_cmp(&a.score)
