@@ -32,6 +32,8 @@ services:
       - OLLAMA_MODEL=${OLLAMA_MODEL:-snowflake-arctic-embed2}
       - OLLAMA_VLM_MODEL=${OLLAMA_VLM_MODEL:-llama3.2}
       - KNOWWHERE_DATA_DIR=/app/data
+      - DREAM_CONSOLIDATION_INTERVAL_MS=${DREAM_CONSOLIDATION_INTERVAL_MS:-3600000}
+      - DREAM_CONSOLIDATION_BATCH_SIZE=${DREAM_CONSOLIDATION_BATCH_SIZE:-10}
       # Dataset path for custom datasets (optional, mount a local dir)
       - KNOWWHERE_LONGMEMEVAL_DATASET=/app/benchmarks/hf/fixtures/longmemeval_oracle.json
     volumes:

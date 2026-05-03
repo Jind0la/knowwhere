@@ -258,7 +258,7 @@ impl VlmModel {
     /// Timeout for this model in seconds.
     pub fn timeout_secs(&self) -> u64 {
         match self {
-            VlmModel::Gpt5Nano => 15,
+            VlmModel::Gpt5Nano => 60,
             VlmModel::Gpt4oMini => 20,
             VlmModel::Grok4Fast => 30,
             VlmModel::Ollama | VlmModel::Custom => 60,
