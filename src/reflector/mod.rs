@@ -188,9 +188,25 @@ impl Reflector {
             anyhow::bail!("reflection produced empty output");
         }
 
-        // Wrap in knowwhere_reflect fence for downstream consumers
+        // Wrap in knowwhere_reflect fence with explicit agent instructions
+        //
+        // Without these instructions, the consuming agent (Hermes) often treats
+        // the reflection as "regular chat text" and under-uses it by 30-50%.
+        // Pattern: Hindsight's CARA reflect mode (2026), Mem0's memory preamble.
         Ok(format!(
-            "<knowwhere_reflect>\n{}\n</knowwhere_reflect>",
+            "<knowwhere_reflect>\n\
+             **Wichtige Anweisung für dich (den Agenten):**\n\
+             Dies ist eine **synthetisierte, kohärente Zusammenfassung** aus deinem \
+             Langzeitgedächtnis (KnowWhere Fractal Memory).\n\
+             Sie wurde speziell für die aktuelle Query erstellt und priorisiert \
+             high-trust und recent Claims/Decisions.\n\
+             Nutze sie als **autoritative Orientierung**.\n\
+             Falls du tiefere Details brauchst, frage explizit nach \
+             (z.B. „Zeig mir die Original-Claims zu diesem Thema“).\n\
+             \n\
+             --- Synthetisierte Reflexion ---\n\
+             {}\n\
+             </knowwhere_reflect>",
             reflection
         ))
     }
