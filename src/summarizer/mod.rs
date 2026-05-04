@@ -175,16 +175,29 @@ impl LocalSummarizer {
         max_length: usize,
         _min_length: usize,
     ) -> Result<String> {
-        // Prompt optimized for Decision-Retrieval:
-        // Structured output: decisions first → embedding similarity
-        // naturally boosts decision queries like "what did we decide about X?"
+        // Prompt optimized for Decision-Retrieval + Structured Claim Extraction:
+        // L1 produces BOTH narrative summary AND machine-readable claims block.
+        // Claims become separate Decision nodes for precise "why?" retrieval.
         let prompt = format!(
             "Summarize in 2-3 sentences (max {} words). \
              Sentence 1: key decisions made and WHY. \
              Sentence 2: important facts. \
              Sentence 3: entities and timestamps. \
              If no decisions exist, just summarize key facts. \
-             No preamble.\n\n{}",
+             No preamble.\n\
+             \n\
+             After your summary, add a claims block for each decision:\n\
+             ---CLAIMS---\n\
+             - claim: <what was decided>\n\
+               reason: <why this decision was made>\n\
+             - claim: <next decision, if any>\n\
+               reason: <why>\n\
+             ---END---\n\
+             \n\
+             ONLY include claims for explicit decisions. \
+             If no decisions were made, omit the entire CLAIMS block.\n\
+             Keep each claim and reason on a single line.\n\
+             \n{}",
             max_length / 2,
             text
         );

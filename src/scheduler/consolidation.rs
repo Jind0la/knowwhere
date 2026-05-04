@@ -27,6 +27,75 @@ fn is_decision_content(content: &str) -> bool {
         || lower.contains("entscheidung")
         || lower.contains("entschieden")
 }
+
+/// Parse structured claims from consolidation output.
+///
+/// Extracts (claim, reason) pairs from a `---CLAIMS---` / `---END---` block.
+/// Robust: handles missing block, malformed claims, empty claims.
+/// Never panics — returns empty Vec on any parse failure.
+fn parse_claims_block(text: &str) -> Vec<(String, String)> {
+    // Find the CLAIMS block boundaries
+    let start_marker = "---CLAIMS---";
+    let end_marker = "---END---";
+
+    let start_idx = match text.find(start_marker) {
+        Some(i) => i + start_marker.len(),
+        None => return Vec::new(),
+    };
+    let end_idx = match text[start_idx..].find(end_marker) {
+        Some(i) => start_idx + i,
+        None => {
+            // Missing end marker: try to parse whatever follows
+            text.len()
+        }
+    };
+
+    let block = text[start_idx..end_idx].trim();
+    if block.is_empty() {
+        return Vec::new();
+    }
+
+    let mut claims = Vec::new();
+    let mut current_claim: Option<&str> = None;
+
+    for line in block.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        // Detect new claim entry: "- claim:" or "- claim "
+        if let Some(rest) = trimmed.strip_prefix("- claim:") {
+            // Flush previous claim if exists
+            if let Some(claim_text) = current_claim.take() {
+                claims.push((claim_text.to_string(), String::new()));
+            }
+            current_claim = Some(rest.trim());
+        } else if let Some(rest) = trimmed.strip_prefix("- claim ") {
+            if let Some(claim_text) = current_claim.take() {
+                claims.push((claim_text.to_string(), String::new()));
+            }
+            current_claim = Some(rest.trim());
+        }
+        // Detect reason: "  reason:" or "reason:"
+        else if let Some(reason) = trimmed.strip_prefix("reason:") {
+            if let Some(claim_text) = current_claim.take() {
+                claims.push((claim_text.to_string(), reason.trim().to_string()));
+                current_claim = None;
+            }
+            // reason without preceding claim — ignore
+        }
+        // alternatives / consequences: not stored as separate nodes, ignored by parser
+        // but still part of the block that gets skipped
+    }
+
+    // Flush any trailing claim without reason
+    if let Some(claim_text) = current_claim {
+        claims.push((claim_text.to_string(), String::new()));
+    }
+
+    claims
+}
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
@@ -331,7 +400,62 @@ impl ConsolidationScheduler {
         self.store
             .update(&l1_id, UpdateOperation::AddChildTierId(node_id))
             .await?;
-        
+
+        // Step 4a: Extract structured claims from summary text
+        // Each claim becomes a separate Decision node for precise "why?" retrieval
+        let claims = parse_claims_block(&summary.text);
+        let mut claim_node_ids = Vec::new();
+        for (claim_text, reason) in &claims {
+            // Build claim content optimized for embedding similarity:
+            // "claim: {what}  reason: {why}" — both fields in one string
+            // lets vector search match on either "was wurde entschieden"
+            // or "warum wurde es entschieden"
+            let claim_content = if reason.is_empty() {
+                format!("claim: {}", claim_text)
+            } else {
+                format!("claim: {}  reason: {}", claim_text, reason)
+            };
+
+            let claim_embedding = match self.embed_text(&claim_content).await {
+                Ok(emb) => emb,
+                Err(e) => {
+                    tracing::warn!("claim embedding failed, skipping: {}", e);
+                    continue;
+                }
+            };
+
+            let mut claim_node = FractalNode::new_typed(
+                Some(claim_content),
+                None,
+                claim_embedding,
+                node.metadata.clone(),
+                MemoryType::Decision,
+                MemorySource::Consolidation,
+            );
+            claim_node.context_tier = ContextTier::Overview;
+            claim_node.parent_tier_id = Some(l1_id); // claim → L1
+            claim_node.importance = node.importance;
+            claim_node.confidence = node.confidence * 0.92; // Slightly lower: derived from derived
+
+            match self.store.insert(claim_node).await {
+                Ok(id) => {
+                    claim_node_ids.push(id);
+                }
+                Err(e) => {
+                    tracing::warn!("failed to store claim node: {}", e);
+                }
+            }
+        }
+
+        if !claim_node_ids.is_empty() {
+            tracing::info!(
+                l1_id = %l1_id,
+                claim_count = claim_node_ids.len(),
+                claims = ?claims.iter().map(|(c, _)| c.as_str()).collect::<Vec<_>>(),
+                "Extracted structured claims from consolidation"
+            );
+        }
+
         // Step 5: Generate L0 (Summary) from L1 content
         let l0_summary = self
             .local_summarizer
@@ -663,5 +787,59 @@ mod trigger_tests {
         // Verify last_run is None on a fresh scheduler
         let last = sched.last_run().await;
         assert!(last.is_none(), "fresh scheduler should have last_run=None");
+    }
+
+    // --- parse_claims_block tests ---
+
+    #[test]
+    fn test_parse_claims_block_basic() {
+        let text = "Some summary text.\n---CLAIMS---\n- claim: Docker entfernt\n  reason: LinuxKit Overhead\n- claim: rust-bert entfernt\n  reason: nicht mehr nötig\n---END---\nMore text.";
+        let claims = super::parse_claims_block(text);
+        assert_eq!(claims.len(), 2);
+        assert_eq!(claims[0].0, "Docker entfernt");
+        assert_eq!(claims[0].1, "LinuxKit Overhead");
+        assert_eq!(claims[1].0, "rust-bert entfernt");
+        assert_eq!(claims[1].1, "nicht mehr nötig");
+    }
+
+    #[test]
+    fn test_parse_claims_block_no_block() {
+        let text = "Just a normal summary. No claims here.";
+        let claims = super::parse_claims_block(text);
+        assert!(claims.is_empty());
+    }
+
+    #[test]
+    fn test_parse_claims_block_no_claims() {
+        let text = "Summary.\n---CLAIMS---\n---END---\nMore text.";
+        let claims = super::parse_claims_block(text);
+        assert!(claims.is_empty());
+    }
+
+    #[test]
+    fn test_parse_claims_block_claim_without_reason() {
+        let text = "---CLAIMS---\n- claim: Etwas wurde entschieden\n---END---";
+        let claims = super::parse_claims_block(text);
+        assert_eq!(claims.len(), 1);
+        assert_eq!(claims[0].0, "Etwas wurde entschieden");
+        assert_eq!(claims[0].1, "");
+    }
+
+    #[test]
+    fn test_parse_claims_block_missing_end_marker() {
+        let text = "---CLAIMS---\n- claim: X gemacht\n  reason: weil Y\nNo end marker.";
+        let claims = super::parse_claims_block(text);
+        assert_eq!(claims.len(), 1);
+        assert_eq!(claims[0].0, "X gemacht");
+        assert_eq!(claims[0].1, "weil Y");
+    }
+
+    #[test]
+    fn test_parse_claims_block_reason_without_claim_ignored() {
+        let text = "---CLAIMS---\n  reason: orphan reason\n- claim: valid claim\n  reason: valid reason\n---END---";
+        let claims = super::parse_claims_block(text);
+        assert_eq!(claims.len(), 1);
+        assert_eq!(claims[0].0, "valid claim");
+        assert_eq!(claims[0].1, "valid reason");
     }
 }
