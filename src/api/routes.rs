@@ -726,6 +726,10 @@ async fn store_session_json(
             .await
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
         tracing::info!(%id, ?memory_type, "session node stored");
+        // Event-driven consolidation: check if there's enough work to justify a run
+        if let Some(ref sched) = state.consolidation {
+            sched.trigger_if_needed().await;
+        }
         return Ok((
             StatusCode::CREATED,
             Json(StoreNodeResponse {
@@ -821,6 +825,10 @@ async fn store_session_json(
         "no chunks stored".to_string(),
     ))?;
     tracing::info!(%primary_id, ?memory_type, chunks = chunk_count, "session node stored (batch-embedded)");
+    // Event-driven consolidation
+    if let Some(ref sched) = state.consolidation {
+        sched.trigger_if_needed().await;
+    }
 
     Ok((
         StatusCode::CREATED,
@@ -892,6 +900,10 @@ async fn store_session_binary(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     tracing::info!(%id, %content_type, payload_bytes = body.len(), "binary session node stored");
+    // Event-driven consolidation
+    if let Some(ref sched) = state.consolidation {
+        sched.trigger_if_needed().await;
+    }
 
     Ok((
         StatusCode::CREATED,
@@ -1039,6 +1051,11 @@ pub async fn store_session_batch(
         });
     }
 
+    // Event-driven consolidation after batch store
+    if let Some(ref sched) = state.consolidation {
+        sched.trigger_if_needed().await;
+    }
+
     Ok((
         StatusCode::CREATED,
         Json(StoreSessionBatchResponse {
@@ -1158,6 +1175,10 @@ pub async fn store_external(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     tracing::info!(%id, ?memory_type, "external pointer node stored");
+    // Event-driven consolidation
+    if let Some(ref sched) = state.consolidation {
+        sched.trigger_if_needed().await;
+    }
 
     Ok((
         StatusCode::CREATED,

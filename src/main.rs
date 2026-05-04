@@ -181,7 +181,7 @@ async fn run() -> anyhow::Result<()> {
             embedding.clone(),
             scheduler_config.clone(),
         );
-        let (scheduler, _) = consolidation.spawn();
+        let (scheduler, _) = consolidation.start_safety_net();
         consolidation_scheduler = Some(scheduler);
 
         // AuditScheduler: periodically applies energy decay, deduplication, conflict detection

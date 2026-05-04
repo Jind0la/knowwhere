@@ -12,7 +12,7 @@
 //! Consolidation targets memories that are old enough and unprocessed,
 //! grouping them into batches and processing via TieredCompactionWorker.
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 /// Detect if consolidated content describes a decision (for auto-typing as MemoryType::Decision).
 ///
@@ -140,6 +140,10 @@ pub struct ConsolidationScheduler {
     last_enqueued: Arc<RwLock<usize>>,
     /// How many consolidation cycles have been completed.
     cycle_count: Arc<AtomicU64>,
+    /// Guards against concurrent consolidation runs.
+    /// Set to true while a run is in progress; subsequent
+    /// trigger_if_needed() calls return immediately.
+    is_running: AtomicBool,
 }
 
 impl ConsolidationScheduler {
@@ -170,12 +174,39 @@ impl ConsolidationScheduler {
             last_run: Arc::new(RwLock::new(None)),
             last_enqueued: Arc::new(RwLock::new(0)),
             cycle_count: Arc::new(AtomicU64::new(0)),
+            is_running: AtomicBool::new(false),
         }
     }
 
     /// Returns the number of completed consolidation cycles.
     pub fn cycle_count(&self) -> u64 {
         self.cycle_count.load(Ordering::Relaxed)
+    }
+
+    /// Event-driven trigger: called after every write to check if
+    /// consolidation should run. Uses `should_compact()` as gate and
+    /// `is_running` to prevent concurrent runs.
+    ///
+    /// This is designed to be called from `store_session`, `store_external`,
+    /// and `store_session_batch` — after new data arrives, check if there's
+    /// enough work to justify a consolidation run.
+    pub async fn trigger_if_needed(self: &Arc<Self>) {
+        // Guard: only one consolidation at a time
+        if self.is_running.swap(true, Ordering::AcqRel) {
+            return;
+        }
+
+        if !self.should_compact().await {
+            self.is_running.store(false, Ordering::Release);
+            return;
+        }
+
+        let sched = self.clone();
+        tokio::spawn(async move {
+            sched.run().await;
+            sched.cycle_count.fetch_add(1, Ordering::Relaxed);
+            sched.is_running.store(false, Ordering::Release);
+        });
     }
 
     /// Count pending consolidation candidates without processing them.
@@ -300,38 +331,25 @@ impl ConsolidationScheduler {
         (enqueued, failed, elapsed)
     }
 
-    /// Start the scheduler in the background. Returns the JoinHandle.
+    /// Start a safety-net background timer.
     ///
-    /// Runs on the tokio runtime using `tokio::spawn`.
-    /// Calls `VlmWorkerHandle::enqueue()` for each batch of consolidation candidates.
-    /// Returns an `Arc` to the scheduler so the API can query its state.
-    pub fn spawn(self) -> (Arc<Self>, tokio::task::JoinHandle<()>) {
+    /// Fires `trigger_if_needed()` once per hour as a fallback for
+    /// edge cases where write-driven triggers don't fire (e.g.,
+    /// read-only usage, imports without session writes).
+    ///
+    /// The primary trigger is event-driven via `trigger_if_needed()`
+    /// called from store_session/store_external/store_session_batch.
+    pub fn start_safety_net(self) -> (Arc<Self>, tokio::task::JoinHandle<()>) {
         let scheduler = Arc::new(self);
-        let scheduler_for_task = scheduler.clone();
-        let interval_ms = scheduler.config.consolidation_interval_ms;
 
+        let sched = scheduler.clone();
         let handle = tokio::spawn(async move {
-            let dur = Duration::from_millis(interval_ms);
-            let mut ticker = interval(dur);
-
-            tracing::info!(
-                interval_ms,
-                batch_size = scheduler_for_task.config.consolidation_batch_size,
-                "ConsolidationScheduler started"
-            );
-
-            // Run immediately on startup, then every interval
-            scheduler_for_task.run().await;
-            scheduler_for_task
-                .cycle_count
-                .fetch_add(1, Ordering::Relaxed);
+            // Run once at startup
+            sched.trigger_if_needed().await;
 
             loop {
-                ticker.tick().await;
-                scheduler_for_task.run().await;
-                scheduler_for_task
-                    .cycle_count
-                    .fetch_add(1, Ordering::Relaxed);
+                tokio::time::sleep(Duration::from_secs(3600)).await;
+                sched.trigger_if_needed().await;
             }
         });
 
@@ -346,37 +364,9 @@ impl ConsolidationScheduler {
     /// 2. **FALLBACK**: VLM (cloud) — if user configured API key
     /// 3. **NEVER**: Truncation — information loss unacceptable
     ///
-    /// # Trigger Strategy
-    ///
-    /// Uses space-amplification ratio (RocksDB-inspired):
-    /// - If ratio met → run immediately
-    /// - If ratio not met → check timer safety-net (60 min since last run)
-    /// - Timer expired → force run regardless of ratio
-    ///
-    /// Each candidate is processed individually for quality control.
+    /// Called from `trigger_if_needed()` which handles gating
+    /// (should_compact, is_running guard). Do not call directly.
     async fn run(&self) {
-        // --- Space-amplification guard ---
-        if !self.should_compact().await {
-            // Timer safety-net: force run if last successful run > 60 min ago
-            let force_run = match *self.last_run.read().await {
-                Some(last) => last.elapsed().as_secs() >= 3600,
-                None => true, // First ever run — force it
-            };
-
-            if !force_run {
-                tracing::debug!(
-                    "ConsolidationScheduler: skipping — space-amplification ratio not met, \
-                     timer not expired"
-                );
-                return;
-            }
-
-            tracing::info!(
-                "ConsolidationScheduler: forcing run — timer safety-net (60+ min since last run)"
-            );
-        }
-        // --- end guard ---
-
         let start = Instant::now();
         let batch_size = self.config.consolidation_batch_size;
 
