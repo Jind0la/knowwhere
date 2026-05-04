@@ -180,24 +180,25 @@ impl LocalSummarizer {
         // Claims become separate Decision nodes for precise "why?" retrieval.
         let prompt = format!(
             "Summarize in 2-3 sentences (max {} words). \
-             Sentence 1: key decisions made and WHY. \
+             Sentence 1: key decisions made and WHY — be specific, name trade-offs. \
              Sentence 2: important facts. \
              Sentence 3: entities and timestamps. \
-             If no decisions exist, just summarize key facts. \
              No preamble.\n\
              \n\
-             After your summary, add a claims block for each decision:\n\
+             After your summary, add a claims block:\n\
              ---CLAIMS---\n\
-             - claim: <what was decided>\n\
-               reason: <why this decision was made>\n\
-             - claim: <next decision, if any>\n\
+             - claim: <what was decided or key takeaway>\n\
+               reason: <why — rationale, constraint, or evidence>\n\
+             - claim: <next claim, if any>\n\
                reason: <why>\n\
              ---END---\n\
              \n\
-             ONLY include claims for explicit decisions. \
-             If no decisions were made, omit the entire CLAIMS block.\n\
-             Keep each claim and reason on a single line.\n\
-             \n{}",
+             IMPORTANT: Extract at least ONE claim. \
+             A claim can be: a decision, a realization, a key finding, \
+             or a stated preference. If truly nothing is decided, \
+             extract the single most important factual assertion as a claim. \
+             NEVER say 'No decision made' — always extract something. \
+             Keep each claim and reason on a single line.\n\n{}",
             max_length / 2,
             text
         );
