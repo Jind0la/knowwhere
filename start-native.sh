@@ -12,7 +12,7 @@ if [ -f "$ENV_FILE" ]; then
 fi
 
 export OLLAMA_URL="http://127.0.0.1:11434"
-export KNOWWHERE_EMBEDDING_PROVIDER="openai"
+export KNOWWHERE_EMBEDDING_PROVIDER="ollama"
 export KNOWWHERE_DATA_DIR="./native_data"
 export KNOWWHERE_API_KEY="kw_testkey_12345"
 

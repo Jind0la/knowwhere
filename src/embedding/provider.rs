@@ -287,7 +287,8 @@ impl LocalOllamaProvider {
             .post(format!("{}/api/embed", self.base_url))
             .json(&serde_json::json!({
                 "model": self.model,
-                "input": texts
+                "input": texts,
+                "keep_alive": -1
             }))
             .send()
             .await
@@ -332,7 +333,8 @@ impl EmbeddingProvider for LocalOllamaProvider {
             .post(format!("{}/api/embed", self.base_url))
             .json(&serde_json::json!({
                 "model": self.model,
-                "input": text
+                "input": text,
+                "keep_alive": -1
             }))
             .send()
             .await
