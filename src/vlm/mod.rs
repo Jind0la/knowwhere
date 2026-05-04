@@ -139,32 +139,29 @@ impl SummaryContext {
                  \n\
                  After your sentence, add a claims block for each decision:\n\
                  ---CLAIMS---\n\
-                 - claim: <what was decided>\n\
-                   reason: <why this decision was made>\n\
+                 - claim: <what was decided or key takeaway>\n\
+                   reason: <why — rationale, constraint, or evidence>\n\
                  ---END---\n\
                  \n\
-                 Only include claims for explicit decisions. \
-                 If no decisions were made, omit the entire CLAIMS block."
+                 IMPORTANT: Extract at least ONE claim. NEVER say 'No decision made'."
             }
             SummaryContext::Overview => {
                 "Compress memory for later retrieval. Output EXACTLY 2-3 sentences. \
                  Sentence 1: What decision was made and WHY. \
                  Sentence 2: Key supporting facts. \
                  Sentence 3: Entities and timestamps. \
-                 If no decisions exist, summarize key facts instead. \
                  Use the word 'decided' or 'decision' if a choice was made. \
                  No preamble. No filler.\n\
                  \n\
                  After your summary, add a claims block for each decision:\n\
                  ---CLAIMS---\n\
-                 - claim: <what was decided>\n\
-                   reason: <why this decision was made>\n\
-                 - claim: <next decision, if any>\n\
+                 - claim: <what was decided or key takeaway>\n\
+                   reason: <why — rationale, constraint, or evidence>\n\
+                 - claim: <next claim, if any>\n\
                    reason: <why>\n\
                  ---END---\n\
                  \n\
-                 Only include claims for explicit decisions. \
-                 If no decisions were made, omit the entire CLAIMS block."
+                 IMPORTANT: Extract at least ONE claim. NEVER say 'No decision made'."
             }
             SummaryContext::Detailed => {
                 "You are a detailed summarizer. Write a concise summary (200-400 words). \
@@ -176,16 +173,15 @@ impl SummaryContext {
                  \n\
                  After your summary, add a claims block for each decision:\n\
                  ---CLAIMS---\n\
-                 - claim: <what was decided>\n\
-                   reason: <why this decision was made>\n\
+                 - claim: <what was decided or key takeaway>\n\
+                   reason: <why — rationale, constraint, or evidence>\n\
                    alternatives: [option A, option B, ...]\n\
                    consequences: [outcome 1, outcome 2, ...]\n\
-                 - claim: <next decision, if any>\n\
+                 - claim: <next claim, if any>\n\
                    reason: <why>\n\
                  ---END---\n\
                  \n\
-                 Only include claims for explicit decisions. \
-                 If no decisions were made, omit the entire CLAIMS block."
+                 IMPORTANT: Extract at least ONE claim. NEVER say 'No decision made'."
             }
         }
     }
