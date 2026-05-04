@@ -451,6 +451,14 @@ impl MemoryStore {
             *guard = Some(index);
             *dim_guard = Some(dimension);
             tracing::info!(dimension, "usearch index initialized");
+        } else if let Some(ref index) = *guard {
+            // Re-reserve when existing index capacity is insufficient.
+            // Without this, every insert after the initial 1024 slots triggers
+            // "Reserve capacity ahead of insertions!" warnings from USearch.
+            let needed = index.0.size().saturating_add(extra);
+            if needed > index.0.capacity() {
+                index.reserve(needed)?;
+            }
         }
         Ok(())
     }

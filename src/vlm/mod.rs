@@ -929,7 +929,11 @@ mod worker {
                 .enumerate()
                 .map(|(i, (_, c))| {
                     if c.len() > 4000 {
-                        format!("[Item {}]: {}...", i + 1, &c[..4000])
+                        // Char-boundary-safe truncation: &c[..4000] panics
+                        // when byte 4000 falls inside a multi-byte UTF-8 char
+                        // (e.g. box-drawing '│' or emoji).
+                        let end = c.floor_char_boundary(4000);
+                        format!("[Item {}]: {}...", i + 1, &c[..end])
                     } else {
                         format!("[Item {}]: {}", i + 1, c)
                     }

@@ -36,23 +36,26 @@ When an agent asks "why did we decide X three months ago?", other memory systems
 
 ---
 
-## Current status — v0.3.0 Beta
+## Current status — v0.4.0
 
 | Category | Status |
 |----------|--------|
 | **Core API** | ✅ store_session, store_external, retrieve_fractal, chat/subconscious |
 | **Batch API** | ✅ store_session_batch, batch_delete |
 | **Fractal Zoom** | ✅ zoom_retrieve() with hierarchical pruning across L0→L1→L2 |
-| **5-Type System** | ✅ Episodic, Semantic, Preference, Procedural, Meta |
+| **6-Type System** | ✅ Episodic, Semantic, Preference, Procedural, Meta, Decision |
 | **Trust Tiers** | ✅ primary, reference, derived, volatile — auto-detected |
-| **L2→L1→L0 Compaction** | ✅ LocalSummarizer (Ollama llama3.2) + VLM fallback |
+| **L2→L1→L0 Compaction** | ✅ LocalSummarizer (Ollama llama3.2) + VLM fallback, event-driven |
+| **Claims Extraction** | ✅ Structured claim parsing from summaries → Decision nodes |
+| **Reflect Mode** | ✅ Query-time memory synthesis via Ollama |
+| **Event Consolidation** | ✅ Write-driven trigger + POST /consolidation/force |
 | **Hybrid Retrieval** | ✅ USearch vector + BM25 keyword + RRF fusion |
 | **Energy Decay** | ✅ Ebbinghaus forgetting curve |
 | **Governance** | ✅ Retrieval profiles, sensitivity levels |
 | **Auth** | ✅ Static admin key + user registration (PostgreSQL) |
 | **PostgreSQL** | ✅ Dedup, conflicts, self-healing, namespaces, skills |
 | **Docker** | ✅ docker compose up — PostgreSQL + Ollama + KnowWhere |
-| **Tests** | ✅ 129+ tests (unit + integration), 0 failures (cargo test --lib) |
+| **Tests** | ✅ 136 tests (0 failed, 9 ignored) |
 | **Benchmark** | ✅ 50-case LongMemEval: Top-1 96%, Recall@5 96%, MRR 0.96 |
 | **OpenClaw** | ✅ 6-hook plugin for session capture + context injection |
 | **Cross-Modal** | ✅ EmbeddingRouter: CLIP/Whisper/Sensor via Ollama |
@@ -155,6 +158,7 @@ Every node carries: memory type (5 types), source (5 sources), trust tier (auto-
 | `POST` | `/chat/subconscious` | Retrieval-backed response with cited sources |
 | `GET` | `/retrieve/{id}` | Fetch single node by ID |
 | `GET` | `/nodes/recent` | Recent nodes |
+| `POST` | `/consolidation/force` | Trigger full re-consolidation (admin) |
 | `GET` | `/dream/status` | Compaction scheduler status |
 | `GET` / `POST` | `/governance/policy` | Read / update governance policy |
 
@@ -200,7 +204,7 @@ Every node carries: memory type (5 types), source (5 sources), trust tier (auto-
 
 ```bash
 # Unit tests (always work)
-cargo test --lib                         # 70 tests
+cargo test --lib                         # 136 tests
 
 # Integration tests (need Docker postgres + Ollama)
 DATABASE_URL="postgresql://postgres@localhost:5433/kw" \

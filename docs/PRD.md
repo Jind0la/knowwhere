@@ -23,7 +23,7 @@ Heutige KI-Memory-Systeme haben drei fundamentale Schwächen:
 1. **Lossless.** Keine Information wird durch Extraktion oder Consolidation verloren. Originaldaten bleiben immer über Fractal Zoom erreichbar.
 2. **Pointer-first.** Externe Quellen werden als Pointer plus Metadaten gespeichert, nie als Rohdaten-Kopien.
 3. **Fractal Hierarchy.** L0 (atomic) → L1 (summary) → L2 (overview). Suche auf jeder Ebene, zoome in Details.
-4. **Typed Memory.** 5 Typen mit typspezifischer Consolidation-Logik: Episodic, Semantic, Preference, Procedural, Meta.
+4. **Typed Memory.** 6 Typen mit typspezifischer Consolidation-Logik: Episodic, Semantic, Preference, Procedural, Decision, Meta.
 5. **Trust-aware.** Jeder Knoten hat einen auto-detektierten Trust Tier (primary/reference/derived/volatile) der das Retrieval-Ranking beeinflusst.
 6. **Additiv, niemals destruktiv.** Host-Systeme werden ergänzt, nicht ersetzt.
 
@@ -36,7 +36,7 @@ Ein Nutzer oder Agent-Betreiber soll:
 - Den gesamten Entscheidungspfad nachvollziehen — nicht nur das Endergebnis
 - Wissen mit voller Provenance speichern und abrufen
 
-## 5. Aktueller Produktumfang (v0.3.0)
+## 5. Aktueller Produktumfang (v0.4.0)
 
 ### 5.1 Kernfunktionalität
 
@@ -45,15 +45,20 @@ Ein Nutzer oder Agent-Betreiber soll:
 | `store_session` | Session als vollwertige Memory mit auto-chunking speichern | ✅ |
 | `store_external` | Externe Referenz pointer-first speichern | ✅ |
 | `retrieve_fractal` | Hybrid Retrieval mit Fractal Zoom und Profilen | ✅ |
-| `POST /rerank` | Cross-Encoder Reranking (bge-reranker-v2-m3 via ONNX, feature: reranker) | ✅ NEU |
+| `POST /rerank` | Cross-Encoder Reranking (bge-reranker-v2-m3 via ONNX, feature: reranker) | ✅ |
 | `chat/subconscious` | Retrieval-gestützte Antwort mit Quellenangaben | ✅ |
 | `dream/status` | Compaction Scheduler Status mit Space-Amplification Trigger | ✅ |
 | `governance/policy` | Governance Policy lesen/setzen | ✅ |
-| Google Drive Connector | Changes API Polling, OAuth2 Service Account (feature: google-drive) | ✅ NEU |
-| HomeAssistant Webhook | POST /webhooks/homeassistant, Dedup + Secret | ✅ NEU |
-| Cross-Modal Embedding | EmbeddingRouter: CLIP/Whisper/Sensor → 768-dim vector space | ✅ NEU |
+| Google Drive Connector | Changes API Polling, OAuth2 Service Account (feature: google-drive) | ✅ |
+| HomeAssistant Webhook | POST /webhooks/homeassistant, Dedup + Secret | ✅ |
+| Cross-Modal Embedding | EmbeddingRouter: CLIP/Whisper/Sensor → 768-dim vector space | ✅ |
+| Reflect Mode | Query-Time Memory Synthesis via Ollama | ✅ |
+| Claims Extraction | Structured claim parsing: Summary→Claims→Decision Nodes | ✅ |
+| Event-Driven Consolidation | Write-triggered compaction (ersetzt Timer-Polling) | ✅ |
+| POST /consolidation/force | Admin-triggered full re-consolidation | ✅ |
+| Transient Error Resilience | DNS/Ollama failures don't mark nodes as processed | ✅ |
 
-### 5.2 5-Type Memory System
+### 5.2 6-Type Memory System
 
 | Typ | Beschreibung | Consolidation-Logik | Halbwertszeit |
 |-----|-------------|--------------------|--------------|
@@ -61,6 +66,7 @@ Ein Nutzer oder Agent-Betreiber soll:
 | **Semantic** | Stabilisiertes Wissen, Fakten | Konflikt- und Supersession-fähig | 90 Tage |
 | **Preference** | Persönliche Präferenzen | Version-sensitive, alte Versionen archiviert | 30 Tage |
 | **Procedural** | Regeln, Workflows, How-to | Governance-kritisch, Änderungen nur mit Override | 180 Tage |
+| **Decision** | Architektur-/Design-Entscheidungen | Immutable & Traceable | Unendlich / Immutable |
 | **Meta** | Metakognitives Wissen über das System | Audit-kritisch | 14 Tage |
 
 ### 5.3 Trust Tiers
@@ -79,8 +85,8 @@ Tiers werden automatisch aus Metadaten (role, derivation, source) erkannt.
 | Ebene | Inhalt | Generierung |
 |-------|--------|-------------|
 | **L0 (Raw)** | Originaltext der Session-Runde | Direkt gespeichert |
-| **L1 (Overview)** | Paragraph-Zusammenfassung mehrerer L0s | LocalSummarizer (Ollama llama3.2, temp=0) |
-| **L2 (Summary)** | Ein-Satz-Zusammenfassung mehrerer L1s | LocalSummarizer + VLM-Fallback-Chain |
+| **L1 (Summary)** | Paragraph-Zusammenfassung mehrerer L0s | LocalSummarizer (Ollama llama3.2, temp=0) |
+| **L2 (Overview)** | Ein-Satz-Zusammenfassung mehrerer L1s | LocalSummarizer + VLM-Fallback-Chain |
 
 Compaction ist deterministisch (temperature=0, seed=42) und läuft über den ConsolidationScheduler.
 
@@ -131,9 +137,9 @@ Memories verlieren mit der Zeit an Energie. Der Decay folgt der Ebbinghaus-Verge
 ```rust
 pub struct FractalNode {
     pub id: Uuid,
-    pub memory_type: MemoryType,          // 5-Typen-System
+    pub memory_type: MemoryType,          // 6-Typen-System
     pub source: MemorySource,              // conversation/document/import/manual/consolidation
-    pub embedding: Vec<f32>,                  // Embedding (1024-dim snowflake-arctic-embed2)
+    pub embedding: Vec<f32>,                  // Embedding (768-dim nomic-embed-text-v2-moe)
     pub content: Option<String>,           // Session: Volltext. External: None
     pub original_pointer: Option<String>,  // External: URI/Pfad. Session: None
     pub metadata: HashMap<String, Value>,  // role, derivation, trust_tier, ...
@@ -164,7 +170,7 @@ pub struct FractalNode {
 | Komponente | Technologie |
 |-----------|-------------|
 | Backend | Rust 1.85+, Axum 0.8, Tokio, Tower |
-| Embeddings | Ollama (snowflake-arctic-embed2, 1024-dim) |
+| Embeddings | Ollama (nomic-embed-text-v2-moe, 768-dim, MoE, multilingual) |
 | Retrieval | USearch 2.23 + BM25 2.3.2 + RRF |
 | Summarization | Ollama llama3.2 (lokal, deterministisch) |
 | VLM Fallback | GPT-5-nano → GPT-4o-mini → Grok-4-fast |
@@ -187,11 +193,10 @@ pub struct FractalNode {
 - Automatische Migration zwischen Storage-Backends
 - Hot-Swap zwischen Embedding-Providern
 - Automatisches Hard-Delete von Memories
-- Cross-Modal Embedding (Phase 2) → ✅ Erreicht in v0.4.0
 
 ## 10. Roadmap
 
-### v1.0 (aktueller Fokus) — ✅ Erreicht in v0.4.0
+### v1.0 (abgeschlossen in v0.4.0)
 - PostgreSQL-Backend stabil → ✅ 41/41 Integration-Tests
 - Docker Compose mit allen Features → ✅ (Ollama via host.docker.internal)
 - OpenClaw Plugin E2E im Docker → ✅ verifiziert
@@ -206,7 +211,7 @@ pub struct FractalNode {
 - Entity-Graph für semantische Verbindungen zwischen Knoten
 - Auto-Consolidation Scheduler (vollständig autonom, kein manueller Trigger nötig)
 
-### Phase 2
+### Phase 2 (abgeschlossen in v0.4.0)
 - ~~HomeAssistant Webhook~~ ✅ Done v0.4.0
 - ~~Google Drive Connector~~ ✅ Done v0.4.0
 - ~~Cross-Modal Embedding~~ ✅ Done v0.4.0
