@@ -73,7 +73,7 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-> On first start, KnowWhere connects to Ollama (native macOS via `host.docker.internal`). Models `snowflake-arctic-embed2` (multilingual, 1024-dim) and `llama3.2` (summarization) must be pre-pulled. Takes 5–10 min.
+> On first start, KnowWhere connects to Ollama (native macOS). Models `nomic-embed-text-v2-moe` (multilingual, 768-dim, MoE) and `llama3.2` (summarization) must be pre-pulled. Embedding latency: ~0.23s warm.
 
 Verify:
 
@@ -179,9 +179,9 @@ Every node carries: memory type (5 types), source (5 sources), trust tier (auto-
 | `KNOWWHERE_API_KEY` | unset | Admin Bearer token (auth off if unset) |
 | `DATABASE_URL` | unset | PostgreSQL backend (postgres-storage feature) |
 | `OLLAMA_URL` | `http://localhost:11434` | Ollama API base URL |
-| `OLLAMA_MODEL` | `snowflake-arctic-embed2` | Embedding model (1024-dim, multilingual EN+DE+FR+ES+IT) |
+| `OLLAMA_MODEL` | `nomic-embed-text-v2-moe` | Embedding model (768-dim, MoE, multilingual) |
 | `OLLAMA_SUMMARIZER_MODEL` | `llama3.2` | Summarization model for L2→L1→L0 |
-| `OPENAI_API_KEY` | unset | OpenAI embeddings or VLM fallback |
+| `KNOWWHERE_EMBEDDING_PROVIDER` | `ollama` | Embedding backend: ollama (default), openai, grok |
 | `GROK_API_KEY` | unset | Grok/xAI embeddings or VLM fallback |
 | `FRIGATE_URL` | unset | Frigate NVR connector |
 | `RUST_LOG` | `info` | Tracing verbosity |
@@ -205,7 +205,7 @@ cargo test --lib                         # 70 tests
 # Integration tests (need Docker postgres + Ollama)
 DATABASE_URL="postgresql://postgres@localhost:5433/kw" \
 OLLAMA_URL=http://localhost:11434 \
-OLLAMA_MODEL=snowflake-arctic-embed2 \
+OLLAMA_MODEL=nomic-embed-text-v2-moe \
 SQLX_OFFLINE=true \
 cargo test --features postgres-storage --test integration  # 41 tests
 

@@ -257,7 +257,7 @@ pub struct AuthContext {
 
 ```rust
 pub enum ProviderKind {
-    LocalOllama,  // snowflake-arctic-embed2 (1024-dim), multilingual
+    LocalOllama,  // nomic-embed-text-v2-moe (768-dim), MoE, multilingual
     OpenAI,       // text-embedding-3-small (1536-dim)
     Grok,         // grok-embed (dimension variable)
 }
@@ -266,8 +266,7 @@ pub enum ProviderKind {
 Auswahlreihenfolge:
 1. `KNOWWHERE_EMBEDDING_PROVIDER` wenn explizit gesetzt
 2. Grok wenn `GROK_API_KEY` + `grok-provider` Feature
-3. OpenAI wenn `OPENAI_API_KEY` + `openai-provider` Feature
-4. Local Ollama (Default)
+3. LocalOllama (default) — kein API-Key nötig
 
 ## 9. L2→L1→L0 Compaction
 
