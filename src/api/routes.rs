@@ -1823,6 +1823,50 @@ pub async fn retrieve_fractal(
         } else {
             tracing::debug!("reflector not available (Ollama not reachable)");
         }
+    } else if !scored.is_empty() {
+        // reflect=false: prepend agent guidance for raw results so Hermes
+        // knows how to interpret trust tiers, decision claims, and provenance
+        let memory_instruction = format!(
+            "<knowwhere_memory>\n\
+             **Wichtige Anweisung für dich (den Agenten):**\n\
+             Nutze die folgenden hierarchischen Erinnerungen aus deinem \
+             Langzeitgedächtnis (KnowWhere).\n\
+             - Höhere Trust-Tiers (primary > reference > derived) sind verlässlicher.\n\
+             - Decision-Nodes enthalten explizit claim + reason — priorisiere \
+               diese bei „Warum?\"-Fragen.\n\
+             - Nodes vom Typ „reflect\" sind synthetisierte Zusammenfassungen.\n\
+             - Ignoriere Erinnerungen, die nicht direkt zur aktuellen Query passen.\n\
+             - Beziehe dich bei Bedarf auf die Quellen (Pointer), wenn du Details brauchst.\n\
+             \n\
+             --- Erinnerungen ---\n\
+             {} nodes retrieved\n\
+             </knowwhere_memory>",
+            scored.len()
+        );
+        let instruction_node = ScoredNode {
+            id: uuid::Uuid::new_v4(),
+            score: 1.0,
+            memory_type: MemoryType::Meta,
+            source: Some(MemorySource::Consolidation),
+            content: Some(memory_instruction),
+            original_pointer: None,
+            metadata: {
+                let mut m = HashMap::new();
+                m.insert("derivation".to_string(), serde_json::Value::String("instruction".to_string()));
+                m
+            },
+            created_at: chrono::Utc::now(),
+            retrieval_profile: RetrievalProfile::UserFacing,
+            trust_tier: "primary".to_string(),
+            score_debug: None,
+            confidence: Some(1.0),
+            sensitivity: Some(Sensitivity::Normal),
+            governance_passed: Some(true),
+            governance_issues: vec![],
+        };
+        let mut with_instruction = vec![instruction_node];
+        with_instruction.extend(scored);
+        return Ok(Json(with_instruction));
     }
 
     Ok(Json(scored))
