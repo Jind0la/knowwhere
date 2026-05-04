@@ -178,6 +178,114 @@ impl ConsolidationScheduler {
         self.cycle_count.load(Ordering::Relaxed)
     }
 
+    /// Count pending consolidation candidates without processing them.
+    ///
+    /// Returns (candidate_count, total_nodes). Useful for dashboards and
+    /// pre-flight checks before calling `force_run()`.
+    pub async fn pending_count(&self) -> (usize, usize) {
+        let all_nodes = match self.store.list_all().await {
+            Ok(n) => n,
+            Err(_) => return (0, 0),
+        };
+        let total = all_nodes.len();
+        let candidates = all_nodes
+            .iter()
+            .filter(|n| {
+                n.context_tier == ContextTier::Raw
+                    && n.parent_tier_id.is_none()
+                    && n.status == MemoryStatus::Active
+                    && n.importance >= 3
+                    && n.content.as_ref().map(|c| c.len() > 500).unwrap_or(false)
+            })
+            .count();
+        (candidates, total)
+    }
+
+    /// Force-run consolidation immediately — bypasses space-amplification ratio
+    /// and timer safety-net. Processes ALL pending candidates (no cap).
+    ///
+    /// Intended for admin-triggered full re-consolidation (e.g. after deploying
+    /// a new claims parser). Runs synchronously — the caller should spawn it
+    /// in a background task if non-blocking behaviour is desired.
+    ///
+    /// Returns (enqueued, failed, elapsed_ms).
+    pub async fn force_run(&self) -> (usize, usize, u64) {
+        let start = Instant::now();
+
+        let all_nodes = match self.store.list_all().await {
+            Ok(nodes) => nodes,
+            Err(e) => {
+                tracing::error!(error = %e, "force_run: list_all failed");
+                return (0, 0, 0);
+            }
+        };
+
+        // Collect ALL eligible candidates (no vlm_max_jobs_per_cycle cap)
+        let mut candidates: Vec<(Uuid, DateTime<Utc>)> = Vec::new();
+        for node in all_nodes {
+            if node.parent_tier_id.is_some() { continue; }
+            if node.context_tier != ContextTier::Raw { continue; }
+            if node.status != MemoryStatus::Active { continue; }
+            if node.importance < 3 { continue; }
+            let content_len = node.content.as_ref().map(|c| c.len()).unwrap_or(0);
+            if content_len <= 500 { continue; }
+            candidates.push((node.id, node.created_at));
+        }
+        candidates.sort_by(|a, b| a.1.cmp(&b.1));
+
+        if candidates.is_empty() {
+            tracing::debug!("force_run: no candidates found");
+            return (0, 0, 0);
+        }
+
+        tracing::info!(
+            count = candidates.len(),
+            local_available = self.local_summarizer.is_available(),
+            vlm_available = self.vlm_worker.is_some(),
+            "force_run: starting full consolidation"
+        );
+
+        let mut enqueued = 0;
+        let mut failed = 0;
+
+        for (node_id, _created_at) in &candidates {
+            if self.local_summarizer.is_available() {
+                match self.process_local_compaction(*node_id).await {
+                    Ok(()) => {
+                        enqueued += 1;
+                        continue;
+                    }
+                    Err(e) => {
+                        tracing::warn!(node_id = %node_id, error = %e, "force_run: local compaction failed, trying VLM fallback");
+                    }
+                }
+            }
+
+            if let Some(ref handle) = self.vlm_worker {
+                let job = VlmJob::new(vec![*node_id], SummaryContext::Overview);
+                match handle.enqueue(job).await {
+                    Ok(()) => { enqueued += 1; }
+                    Err(e) => {
+                        tracing::error!(node_id = %node_id, error = %e, "force_run: VLM enqueue failed");
+                        failed += 1;
+                    }
+                }
+            } else {
+                tracing::error!(node_id = %node_id, "force_run: no summarizer available");
+                failed += 1;
+            }
+
+            let _ = self.store.update(node_id, UpdateOperation::SetParentTierId(*node_id)).await;
+        }
+
+        *self.last_enqueued.write().await = enqueued;
+        *self.last_run.write().await = Some(Instant::now());
+
+        let elapsed = start.elapsed().as_millis() as u64;
+        tracing::info!(enqueued, failed, elapsed_ms = elapsed, "force_run: complete");
+        (enqueued, failed, elapsed)
+    }
+
     /// Start the scheduler in the background. Returns the JoinHandle.
     ///
     /// Runs on the tokio runtime using `tokio::spawn`.

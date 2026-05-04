@@ -2358,6 +2358,85 @@ pub async fn dream_status(State(state): State<AppState>) -> Json<DreamStatus> {
     Json(status)
 }
 
+// -- Consolidation Force --
+
+/// Response for POST /consolidation/force.
+#[derive(Serialize, ToSchema)]
+pub struct ForceConsolidationResponse {
+    pub accepted: bool,
+    pub candidates_found: usize,
+    pub total_nodes: usize,
+    pub message: String,
+}
+
+/// POST /consolidation/force — trigger full re-consolidation of all pending nodes.
+///
+/// Bypasses the space-amplification ratio and timer safety-net. Processes ALL
+/// eligible candidates (no cap). The consolidation runs in a background task;
+/// this endpoint returns immediately with 202 Accepted.
+///
+/// Use GET /dream/status to monitor progress via `cycle_count`.
+#[utoipa::path(
+    post,
+    path = "/consolidation/force",
+    tag = "system",
+    responses(
+        (status = 202, description = "Consolidation started in background", body = ForceConsolidationResponse),
+        (status = 200, description = "No pending candidates", body = ForceConsolidationResponse),
+        (status = 503, description = "Consolidation scheduler not available", body = String)
+    )
+)]
+pub async fn force_consolidation(
+    State(state): State<AppState>,
+) -> Result<(StatusCode, Json<ForceConsolidationResponse>), (StatusCode, String)> {
+    let scheduler = match &state.consolidation {
+        Some(s) => s.clone(),
+        None => {
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "consolidation scheduler not available (DREAM_ENABLED=false?)".into(),
+            ));
+        }
+    };
+
+    let (candidates, total) = scheduler.pending_count().await;
+
+    if candidates == 0 {
+        return Ok((
+            StatusCode::OK,
+            Json(ForceConsolidationResponse {
+                accepted: false,
+                candidates_found: 0,
+                total_nodes: total,
+                message: "no pending consolidation candidates".into(),
+            }),
+        ));
+    }
+
+    // Spawn consolidation in background — the HTTP response returns immediately
+    tokio::spawn(async move {
+        let (enqueued, failed, elapsed_ms) = scheduler.force_run().await;
+        tracing::info!(
+            enqueued, failed, elapsed_ms,
+            "force_consolidation: background task complete"
+        );
+    });
+
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(ForceConsolidationResponse {
+            accepted: true,
+            candidates_found: candidates,
+            total_nodes: total,
+            message: format!(
+                "consolidation started — {} candidates out of {} total nodes. \
+                 Monitor via GET /dream/status",
+                candidates, total
+            ),
+        }),
+    ))
+}
+
 // -- Retrieval Trajectory Endpoints (postgres-storage feature) --
 
 /// List recent retrieval runs with cursor-based pagination.

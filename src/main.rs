@@ -248,6 +248,7 @@ async fn run() -> anyhow::Result<()> {
         .route("/nodes/{id}", delete(routes::delete_node))
         .route("/nodes/batch_delete", post(routes::batch_delete_nodes))
         .route("/dream/status", get(routes::dream_status))
+        .route("/consolidation/force", post(routes::force_consolidation))
         // -- VLM Summarization Worker (3-stage fallback) --
         .route("/vlm/status", get(routes::vlm_status))
         .route("/vlm/summarize", post(routes::vlm_enqueue))
