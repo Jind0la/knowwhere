@@ -3,6 +3,7 @@ pub mod connectors;
 pub mod embedding;
 pub mod memory;
 pub mod multimodal;
+pub mod reflector;
 pub mod retrieval;
 pub mod scheduler;
 pub mod services;

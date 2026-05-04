@@ -1222,6 +1222,13 @@ pub struct RetrieveFractalRequest {
     pub retrieval_profile: RetrievalProfile,
     #[serde(default)]
     pub include_debug: bool,
+    /// Synthesize a coherent reflection from the top results (default: false).
+    /// Uses a small local model (llama3.2:1b) to produce a query-tailored summary.
+    #[serde(default)]
+    pub reflect: bool,
+    /// Max tokens for the reflection output (default: 600).
+    #[serde(default = "default_reflect_max_tokens")]
+    pub reflect_max_tokens: u32,
 }
 
 fn default_top_k() -> usize {
@@ -1237,6 +1244,10 @@ fn default_max_tier() -> Option<String> {
     // Default to None (show all tiers) — users can opt-in to tier filtering
     // by explicitly passing "summary" or "overview" in their request.
     None
+}
+
+fn default_reflect_max_tokens() -> u32 {
+    600
 }
 
 fn default_retrieval_profile() -> RetrievalProfile {
@@ -1739,6 +1750,80 @@ pub async fn retrieve_fractal(
             .partial_cmp(&effective_a)
             .unwrap_or(std::cmp::Ordering::Equal)
     });
+
+    // Stage 3: Optional Reflect — synthesize coherent summary from top results
+    if req.reflect && !scored.is_empty() {
+        let reflector = crate::reflector::Reflector::new();
+        if let Some(ref reflector) = reflector {
+            let query = req.query_text.as_deref().unwrap_or("");
+            if !query.is_empty() {
+                match {
+                    // Build chunk summaries from scored nodes for the reflector
+                    let chunks: Vec<crate::storage::ScoredNode> = scored.iter().map(|s| {
+                        use crate::storage::ScoredNode as StorageScoredNode;
+                        let mut meta_map: HashMap<String, serde_json::Value> = HashMap::new();
+                        for (k, v) in &s.metadata {
+                            if let Some(vs) = v.as_str() {
+                                meta_map.insert(k.clone(), serde_json::Value::String(vs.to_string()));
+                            }
+                        }
+                        let mut node = crate::memory::FractalNode::new_typed(
+                            s.content.clone(),
+                            None,
+                            vec![0.0; 1024],
+                            meta_map,
+                            s.memory_type,
+                            crate::memory::MemorySource::Consolidation,
+                        );
+                        node.id = s.id;
+                        StorageScoredNode {
+                            id: s.id,
+                            score: s.score,
+                            node,
+                            debug: None,
+                        }
+                    }).collect();
+                    reflector.reflect_on_chunks(&chunks, query).await
+                } {
+                    Ok(reflection) if !reflection.is_empty() => {
+                        // Prepend synthetic reflection node with max score
+                        let reflection_node = ScoredNode {
+                            id: uuid::Uuid::new_v4(),
+                            score: 1.0,
+                            memory_type: MemoryType::Meta,
+                            source: Some(MemorySource::Consolidation),
+                            content: Some(reflection),
+                            original_pointer: None,
+                            metadata: {
+                                let mut m = HashMap::new();
+                                m.insert("derivation".to_string(), serde_json::Value::String("reflected".to_string()));
+                                m
+                            },
+                            created_at: chrono::Utc::now(),
+                            retrieval_profile: RetrievalProfile::UserFacing,
+                            trust_tier: "primary".to_string(),
+                            score_debug: None,
+                            confidence: Some(0.98),
+                            sensitivity: Some(Sensitivity::Normal),
+                            governance_passed: Some(true),
+                            governance_issues: vec![],
+                        };
+                        let mut with_reflection = vec![reflection_node];
+                        with_reflection.extend(scored);
+                        return Ok(Json(with_reflection));
+                    }
+                    Ok(_) => {
+                        tracing::debug!("reflect produced empty output, returning unscored results");
+                    }
+                    Err(e) => {
+                        tracing::warn!("reflect failed (non-fatal): {}", e);
+                    }
+                }
+            }
+        } else {
+            tracing::debug!("reflector not available (Ollama not reachable)");
+        }
+    }
 
     Ok(Json(scored))
 }
