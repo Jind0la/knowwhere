@@ -34,7 +34,7 @@ impl Default for ReflectConfig {
     fn default() -> Self {
         Self {
             model: std::env::var("KNOWWHERE_REFLECT_MODEL")
-                .unwrap_or_else(|_| "llama3.2:1b".to_string()),
+                .unwrap_or_else(|_| "llama3.2".to_string()),
             url: std::env::var("OLLAMA_URL")
                 .unwrap_or_else(|_| "http://localhost:11434".to_string()),
             max_tokens: 600,
