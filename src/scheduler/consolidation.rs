@@ -344,8 +344,15 @@ impl ConsolidationScheduler {
 
         let sched = scheduler.clone();
         let handle = tokio::spawn(async move {
-            // Run once at startup
-            sched.trigger_if_needed().await;
+            // First run: always execute, bypass should_compact().
+            // This ensures startup consolidation even when the ratio
+            // hasn't been met yet (fresh server, bulk import, etc.)
+            if sched.is_running.swap(true, Ordering::AcqRel) {
+                return;
+            }
+            sched.run().await;
+            sched.cycle_count.fetch_add(1, Ordering::Relaxed);
+            sched.is_running.store(false, Ordering::Release);
 
             loop {
                 tokio::time::sleep(Duration::from_secs(3600)).await;
