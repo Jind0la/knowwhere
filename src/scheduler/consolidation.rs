@@ -275,7 +275,21 @@ impl ConsolidationScheduler {
                 failed += 1;
             }
 
-            let _ = self.store.update(node_id, UpdateOperation::SetParentTierId(*node_id)).await;
+            // Only mark as processed if failure is PERMANENT (no summarizer at all).
+            // Transient errors (DNS, timeout, Ollama restart) leave the node
+            // eligible for retry in the next consolidation cycle.
+            if !self.local_summarizer.is_available() && self.vlm_worker.is_none() {
+                tracing::warn!(
+                    node_id = %node_id,
+                    "force_run: permanent failure — no summarizer available, marking as processed"
+                );
+                let _ = self.store.update(node_id, UpdateOperation::SetParentTierId(*node_id)).await;
+            } else {
+                tracing::debug!(
+                    node_id = %node_id,
+                    "force_run: transient failure — node remains eligible for retry"
+                );
+            }
         }
 
         *self.last_enqueued.write().await = enqueued;
@@ -431,11 +445,24 @@ impl ConsolidationScheduler {
                 failed += 1;
             }
 
-            // Mark node as processed (even if failed, to avoid infinite retries)
-            let _ = self
-                .store
-                .update(node_id, UpdateOperation::SetParentTierId(*node_id))
-                .await;
+            // Only mark as processed if failure is PERMANENT (no summarizer at all).
+            // Transient errors (DNS, timeout, Ollama restart) leave the node
+            // eligible for retry in the next consolidation cycle.
+            if !self.local_summarizer.is_available() && self.vlm_worker.is_none() {
+                tracing::warn!(
+                    node_id = %node_id,
+                    "permanent failure — no summarizer available, marking as processed"
+                );
+                let _ = self
+                    .store
+                    .update(node_id, UpdateOperation::SetParentTierId(*node_id))
+                    .await;
+            } else {
+                tracing::debug!(
+                    node_id = %node_id,
+                    "transient failure — node remains eligible for retry"
+                );
+            }
         }
 
         *self.last_enqueued.write().await = enqueued;
