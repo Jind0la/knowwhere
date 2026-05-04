@@ -1758,31 +1758,68 @@ pub async fn retrieve_fractal(
             let query = req.query_text.as_deref().unwrap_or("");
             if !query.is_empty() {
                 match {
-                    // Build chunk summaries from scored nodes for the reflector
-                    let chunks: Vec<crate::storage::ScoredNode> = scored.iter().map(|s| {
-                        use crate::storage::ScoredNode as StorageScoredNode;
-                        let mut meta_map: HashMap<String, serde_json::Value> = HashMap::new();
-                        for (k, v) in &s.metadata {
-                            if let Some(vs) = v.as_str() {
-                                meta_map.insert(k.clone(), serde_json::Value::String(vs.to_string()));
+                    // Build chunk summaries for the reflector.
+                    // Skip Episodic nodes — raw transcripts add too much noise
+                    // and dilute synthesis quality of the small reflect model.
+                    // Kept: Decision, Semantic, Preference, Procedural, Meta.
+                    let chunks: Vec<crate::storage::ScoredNode> = scored.iter()
+                        .filter(|s| s.memory_type != MemoryType::Episodic)
+                        .map(|s| {
+                            use crate::storage::ScoredNode as StorageScoredNode;
+                            let mut meta_map: HashMap<String, serde_json::Value> = HashMap::new();
+                            for (k, v) in &s.metadata {
+                                if let Some(vs) = v.as_str() {
+                                    meta_map.insert(k.clone(), serde_json::Value::String(vs.to_string()));
+                                }
                             }
-                        }
-                        let mut node = crate::memory::FractalNode::new_typed(
-                            s.content.clone(),
-                            None,
-                            vec![0.0; 1024],
-                            meta_map,
-                            s.memory_type,
-                            crate::memory::MemorySource::Consolidation,
-                        );
-                        node.id = s.id;
-                        StorageScoredNode {
-                            id: s.id,
-                            score: s.score,
-                            node,
-                            debug: None,
-                        }
-                    }).collect();
+                            let mut node = crate::memory::FractalNode::new_typed(
+                                s.content.clone(),
+                                None,
+                                vec![0.0; 1024],
+                                meta_map,
+                                s.memory_type,
+                                crate::memory::MemorySource::Consolidation,
+                            );
+                            node.id = s.id;
+                            StorageScoredNode {
+                                id: s.id,
+                                score: s.score,
+                                node,
+                                debug: None,
+                            }
+                        }).collect();
+
+                    // Fallback: if all results are episodic (rare), pass all nodes
+                    // so the reflector doesn't produce an empty synthesis.
+                    let chunks = if chunks.is_empty() {
+                        scored.iter().map(|s| {
+                            use crate::storage::ScoredNode as StorageScoredNode;
+                            let mut meta_map: HashMap<String, serde_json::Value> = HashMap::new();
+                            for (k, v) in &s.metadata {
+                                if let Some(vs) = v.as_str() {
+                                    meta_map.insert(k.clone(), serde_json::Value::String(vs.to_string()));
+                                }
+                            }
+                            let mut node = crate::memory::FractalNode::new_typed(
+                                s.content.clone(),
+                                None,
+                                vec![0.0; 1024],
+                                meta_map,
+                                s.memory_type,
+                                crate::memory::MemorySource::Consolidation,
+                            );
+                            node.id = s.id;
+                            StorageScoredNode {
+                                id: s.id,
+                                score: s.score,
+                                node,
+                                debug: None,
+                            }
+                        }).collect()
+                    } else {
+                        chunks
+                    };
+
                     reflector.reflect_on_chunks(&chunks, query).await
                 } {
                     Ok(reflection) if !reflection.is_empty() => {
