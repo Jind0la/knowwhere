@@ -1477,16 +1477,12 @@ async fn postgres_store_expand_fractal_loads_parent_and_sibling() {
         .await
         .expect("failed to connect to PostgreSQL");
 
-    let dim = 128usize;
+    let dim = 768usize;
     let v = |a: f32| -> Vec<f32> {
         let mut x = vec![0.0f32; dim];
         x[0] = a;
         x
     };
-
-    let pid = uuid::Uuid::new_v4();
-    let c1 = uuid::Uuid::new_v4();
-    let c2 = uuid::Uuid::new_v4();
 
     let mut parent = FractalNode::new_typed(
         Some("pg fractal parent".into()),
@@ -1496,8 +1492,9 @@ async fn postgres_store_expand_fractal_loads_parent_and_sibling() {
         MemoryType::Episodic,
         MemorySource::Conversation,
     );
-    parent.id = pid;
-    parent.children_tier_ids = vec![c1, c2];
+    parent.children_tier_ids = vec![];
+
+    let pid = store.insert(parent).await.expect("insert parent");
 
     let mut child1 = FractalNode::new_typed(
         Some("pg fractal child1".into()),
@@ -1507,7 +1504,6 @@ async fn postgres_store_expand_fractal_loads_parent_and_sibling() {
         MemoryType::Semantic,
         MemorySource::Conversation,
     );
-    child1.id = c1;
     child1.parent_tier_id = Some(pid);
 
     let mut child2 = FractalNode::new_typed(
@@ -1518,19 +1514,26 @@ async fn postgres_store_expand_fractal_loads_parent_and_sibling() {
         MemoryType::Semantic,
         MemorySource::Conversation,
     );
-    child2.id = c2;
     child2.parent_tier_id = Some(pid);
 
-    store.insert(parent).await.expect("insert parent");
-    store.insert(child1.clone()).await.expect("insert c1");
-    store.insert(child2.clone()).await.expect("insert c2");
+    let c1 = store.insert(child1).await.expect("insert c1");
+    let c2 = store.insert(child2).await.expect("insert c2");
+    store
+        .update(&pid, knowwhere_server::storage::UpdateOperation::AddChildTierId(c1))
+        .await
+        .expect("attach c1");
+    store
+        .update(&pid, knowwhere_server::storage::UpdateOperation::AddChildTierId(c2))
+        .await
+        .expect("attach c2");
 
     let qv = v(1.0);
+    let child1_loaded = store.get(&c1).await.expect("load c1").expect("c1 exists");
     let seed = ScoredNode {
         id: c1,
         score: 0.9,
         debug: None,
-        node: child1,
+        node: child1_loaded,
     };
 
     let expanded = store

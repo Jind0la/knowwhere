@@ -1453,7 +1453,7 @@ impl StorageBackend for PostgresStore {
                 )
                 .await?;
             } else if let Some(pid) = node.parent_tier_id {
-                let loaded = self.get_fractal_nodes_any(&[*pid]).await?;
+                let loaded = self.get_fractal_nodes_any(&[pid]).await?;
                 if let Some(parent) = loaded.get(&pid) {
                     visited.insert(parent.id);
                     let parent_sim = crate::memory::fractal_node::cosine_similarity(
