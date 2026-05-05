@@ -67,6 +67,33 @@ impl PostgresStore {
         &self.pool
     }
 
+    /// Returns dominant embedding dimension in active memories, if any.
+    pub async fn active_embedding_dimension(&self) -> anyhow::Result<Option<usize>> {
+        let dim = sqlx::query_scalar::<_, Option<i32>>(
+            r#"
+            SELECT vector_dims(embedding)
+            FROM memories
+            WHERE status = 'active'
+              AND embedding IS NOT NULL
+            LIMIT 1
+            "#,
+        )
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(dim.map(|d| d as usize))
+    }
+
+    fn align_query_vector_dim(mut vector: Vec<f32>, target_dim: usize) -> Vec<f32> {
+        if vector.len() > target_dim {
+            vector.truncate(target_dim);
+            return vector;
+        }
+        if vector.len() < target_dim {
+            vector.resize(target_dim, 0.0);
+        }
+        vector
+    }
+
     /// Max nodes added by [`StorageBackend::expand_fractal`] beyond the initial hit list.
     pub const PG_EXPAND_FRACTAL_MAX_EXTRA: usize = 100;
 
@@ -490,6 +517,7 @@ impl PostgresStore {
         memory_type: Option<&str>,
         min_importance: Option<i32>,
     ) -> Result<Vec<MemoryWithScore>> {
+        let embedding_dim = embedding.len() as i32;
         // Build dynamic query with optional filters
         let rows = if let Some(mt) = memory_type {
             if let Some(mi) = min_importance {
@@ -517,11 +545,15 @@ impl PostgresStore {
                            context_tier::text, parent_tier_id,
                            COALESCE(children_tier_ids, ARRAY[]::uuid[]) AS children_tier_ids,
                            summary_content, overview_content
-                    FROM memories
-                    WHERE status = 'active'
-                      AND embedding IS NOT NULL
-                      AND memory_type = $3
-                      AND importance >= $4
+                    FROM (
+                        SELECT *
+                        FROM memories
+                        WHERE status = 'active'
+                          AND embedding IS NOT NULL
+                          AND memory_type = $3
+                          AND importance >= $4
+                          AND vector_dims(embedding) = $5
+                    ) filtered
                     ORDER BY embedding <=> $1::vector
                     LIMIT $2::bigint
                     "#,
@@ -530,6 +562,7 @@ impl PostgresStore {
                 .bind(limit as i64)
                 .bind(mt)
                 .bind(mi)
+                .bind(embedding_dim)
                 .fetch_all(&self.pool)
                 .await?
             } else {
@@ -557,16 +590,21 @@ impl PostgresStore {
                            context_tier::text, parent_tier_id,
                            COALESCE(children_tier_ids, ARRAY[]::uuid[]) AS children_tier_ids,
                            summary_content, overview_content
-                    FROM memories
-                    WHERE status = 'active'
-                      AND embedding IS NOT NULL
-                      AND memory_type = $3
+                    FROM (
+                        SELECT *
+                        FROM memories
+                        WHERE status = 'active'
+                          AND embedding IS NOT NULL
+                          AND memory_type = $3
+                          AND vector_dims(embedding) = $4
+                    ) filtered
                     ORDER BY embedding <=> $1::vector
                     LIMIT $2::bigint
                     "#)
                 .bind(&embedding_str)
                 .bind(limit as i64)
                 .bind(mt)
+                .bind(embedding_dim)
                 .fetch_all(&self.pool)
                 .await?
             }
@@ -596,15 +634,20 @@ impl PostgresStore {
                        context_tier::text, parent_tier_id,
                        COALESCE(children_tier_ids, ARRAY[]::uuid[]) AS children_tier_ids,
                        summary_content, overview_content
-                FROM memories
-                WHERE status = 'active'
-                  AND embedding IS NOT NULL
+                FROM (
+                    SELECT *
+                    FROM memories
+                    WHERE status = 'active'
+                      AND embedding IS NOT NULL
+                      AND vector_dims(embedding) = $3
+                ) filtered
                 ORDER BY embedding <=> $1::vector
                 LIMIT $2::bigint
                 "#,
             )
             .bind(&embedding_str)
             .bind(limit as i64)
+            .bind(embedding_dim)
             .fetch_all(&self.pool)
             .await?
         };
@@ -1311,7 +1354,20 @@ impl StorageBackend for PostgresStore {
     // --- Query ---
 
     async fn hybrid_retrieve(&self, query: &HybridQuery) -> anyhow::Result<Vec<ScoredNode>> {
-        let vector = query.query_vector.as_deref().unwrap_or(&[]);
+        let mut owned_vector = query.query_vector.clone().unwrap_or_default();
+        if !owned_vector.is_empty() {
+            if let Some(db_dim) = self.active_embedding_dimension().await? {
+                if db_dim != owned_vector.len() {
+                    tracing::warn!(
+                        query_dim = owned_vector.len(),
+                        db_dim,
+                        "aligning query vector dimension to active postgres embedding dimension"
+                    );
+                    owned_vector = Self::align_query_vector_dim(owned_vector, db_dim);
+                }
+            }
+        }
+        let vector = owned_vector.as_slice();
         let fetch_k = query.profile.fetch_k(query.top_k);
 
         // If only text is provided, fall back to BM25
@@ -1340,9 +1396,41 @@ impl StorageBackend for PostgresStore {
         }
 
         // Vector search (with optional BM25 boost)
-        let rows = self
-            .vector_search(vector, fetch_k as i32, None, None)
-            .await?;
+        let rows = match self.vector_search(vector, fetch_k as i32, None, None).await {
+            Ok(rows) => rows,
+            Err(e) => {
+                let msg = e.to_string();
+                if msg.contains("different vector dimensions") {
+                    tracing::warn!(
+                        query_dim = vector.len(),
+                        "vector dimension mismatch in Postgres, falling back to BM25-only retrieval"
+                    );
+                    if let Some(text) = query.query_text.as_ref() {
+                        let bm25_results = self.search_bm25(text, fetch_k as i32).await?;
+                        let mut scored_nodes = Vec::new();
+                        for (id, score) in bm25_results {
+                            if let Some(node) = self.get(&id).await? {
+                                let type_ok = query
+                                    .memory_type_filter
+                                    .map_or(true, |mt| node.memory_type == mt);
+                                if query.profile.allows(&node) && type_ok {
+                                    scored_nodes.push(query.profile.score_node(score, node));
+                                }
+                            }
+                        }
+                        scored_nodes.sort_by(|a, b| {
+                            b.score
+                                .partial_cmp(&a.score)
+                                .unwrap_or(std::cmp::Ordering::Equal)
+                        });
+                        scored_nodes.truncate(query.top_k);
+                        return Ok(scored_nodes);
+                    }
+                    return Ok(vec![]);
+                }
+                return Err(e);
+            }
+        };
 
         // If no text query, return pure vector results
         if query.query_text.is_none() {
