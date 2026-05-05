@@ -55,7 +55,19 @@ impl RetrievalProfile {
 
     pub fn score_multiplier(self, node: &FractalNode) -> f32 {
         let explicit = self.explicit_weight(node);
-        self.tier_multiplier(node.trust_tier()) * explicit
+        let tier = self.tier_multiplier(node.trust_tier());
+        let mtype = self.memory_type_multiplier(node);
+        tier * explicit * mtype
+    }
+
+    fn memory_type_multiplier(self, node: &FractalNode) -> f32 {
+        use crate::memory::types::MemoryType;
+        match node.memory_type {
+            MemoryType::Decision => 1.5,    // Structured claims are the most valuable facts
+            MemoryType::Procedural => 1.2,  // How-to knowledge is high-value
+            MemoryType::Episodic => 0.85,   // Conversation chatter is less valuable
+            _ => 1.0,
+        }
     }
 
     fn explicit_weight(self, node: &FractalNode) -> f32 {

@@ -229,6 +229,11 @@ impl FractalNode {
     }
 
     pub fn trust_tier(&self) -> &'static str {
+        // Decision nodes are PRIMARY facts — explicitly extracted claims with reasons.
+        // They must rank above ephemeral conversation turns in retrieval.
+        if self.memory_type == MemoryType::Decision {
+            return Self::TRUST_PRIMARY;
+        }
         if self.is_internal_only()
             || self.source == MemorySource::Consolidation
             || self.metadata_matches(Self::DERIVATION_KEY, &["system_summary"])
