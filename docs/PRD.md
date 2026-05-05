@@ -1,6 +1,6 @@
 # KnowWhere — Product Requirements Document
 
-> Stand: Mai 2026 — Repository `main`, Version `0.4.0`
+> Stand: Mai 2026 — Repository `main`, Version `0.5.0`
 
 ## 1. Produktname und One-Sentence Pitch
 
@@ -36,20 +36,20 @@ Ein Nutzer oder Agent-Betreiber soll:
 - Den gesamten Entscheidungspfad nachvollziehen — nicht nur das Endergebnis
 - Wissen mit voller Provenance speichern und abrufen
 
-## 5. Aktueller Produktumfang (v0.4.0)
+## 5. Aktueller Produktumfang (v0.5.0)
 
 ### 5.1 Kernfunktionalität
 
 | Bereich | Beschreibung | Status |
 |---------|-------------|--------|
-| `store_session` | Session als vollwertige Memory mit auto-chunking speichern | ✅ |
+| `store_session` | Session als vollwertige Memory mit auto-chunking speichern (inkl. memory_type parsing) | ✅ |
 | `store_external` | Externe Referenz pointer-first speichern | ✅ |
-| `retrieve_fractal` | Hybrid Retrieval mit Fractal Zoom und Profilen | ✅ |
+| `retrieve_fractal` | Hybrid Retrieval mit Fractal Zoom, Profilen und memory_type_filter | ✅ |
+| **Decision Scoring** | Decision-Nodes: PRIMARY trust tier (1.18×) + 1.5× memory_type_multiplier = 2× boost | ✅ |
 | `POST /rerank` | Cross-Encoder Reranking (bge-reranker-v2-m3 via ONNX, feature: reranker) | ✅ |
 | `chat/subconscious` | Retrieval-gestützte Antwort mit Quellenangaben | ✅ |
 | `dream/status` | Compaction Scheduler Status mit Space-Amplification Trigger | ✅ |
 | `governance/policy` | Governance Policy lesen/setzen | ✅ |
-| Google Drive Connector | Changes API Polling, OAuth2 Service Account (feature: google-drive) | ✅ |
 | HomeAssistant Webhook | POST /webhooks/homeassistant, Dedup + Secret | ✅ |
 | Cross-Modal Embedding | EmbeddingRouter: CLIP/Whisper/Sensor → 768-dim vector space | ✅ |
 | Reflect Mode | Query-Time Memory Synthesis via Ollama | ✅ |
@@ -57,6 +57,8 @@ Ein Nutzer oder Agent-Betreiber soll:
 | Event-Driven Consolidation | Write-triggered compaction (ersetzt Timer-Polling) | ✅ |
 | POST /consolidation/force | Admin-triggered full re-consolidation | ✅ |
 | Transient Error Resilience | DNS/Ollama failures don't mark nodes as processed | ✅ |
+| PostgreSQL Tier Persistence | Full roundtrip for fractal tier fields through PostgreSQL | ✅ |
+| Hermes MemoryProvider | Per-turn crash-safe storage + dual retrieval (episodic + decision) | ✅ |
 
 ### 5.2 6-Type Memory System
 
@@ -69,14 +71,27 @@ Ein Nutzer oder Agent-Betreiber soll:
 | **Decision** | Architektur-/Design-Entscheidungen | Immutable & Traceable | Unendlich / Immutable |
 | **Meta** | Metakognitives Wissen über das System | Audit-kritisch | 14 Tage |
 
-### 5.3 Trust Tiers
+### 5.3 Trust Tiers & Scoring
 
-| Tier | Beschreibung | Retrieval-Multiplier |
-|------|-------------|---------------------|
-| **primary** | Direkte Nutzereingaben, importierte Kernartefakte | 1.18x |
-| **reference** | Dokumente, manuelle Einträge | 1.0x |
-| **derived** | Assistant-Outputs, System-Zusammenfassungen | 0.88x |
-| **volatile** | Unsichere oder temporäre Daten | 0.72x |
+| Tier | Beschreibung | Tier-Multiplier | Beispiel-Typen |
+|------|-------------|----------------|---------------|
+| **primary** | Direkte Nutzereingaben, Decision-Nodes, importierte Kernartefakte | 1.18× | Decision, Episodic(user), Import(MEMORY.md) |
+| **reference** | Dokumente, manuelle Einträge | 1.0× | Semantic, Procedural(Manual) |
+| **derived** | Assistant-Outputs, System-Zusammenfassungen, Consolidation | 0.88× | Episodic(assistant), Semantic(Consolidation) |
+| **volatile** | Unsichere oder temporäre Daten | 0.72× | Meta(temp) |
+
+**Memory-Type-Multipliers (zusätzlich zum Tier-Multiplier):**
+
+| Typ | Multiplier | Begründung |
+|-----|-----------|-----------|
+| Decision | 1.5× | Strukturierte Entscheidungen sind die höchstwertigen Fakten |
+| Procedural | 1.2× | How-to-Wissen ist hochwertig |
+| Episodic | 0.85× | Konversations-Chatter ist weniger wertvoll |
+| Andere | 1.0× | Neutral |
+
+**Gesamtformel:** `final_score = base_score × tier_multiplier × memory_type_multiplier`
+
+Beispiel Decision-Node: `base × 1.18 × 1.5 = base × 1.77` (vorher: `base × 0.88 × 1.0 = base × 0.88`, weil Decision als DERIVED und ohne Type-Boost). Effektiver Boost: +101%.
 
 Tiers werden automatisch aus Metadaten (role, derivation, source) erkannt.
 

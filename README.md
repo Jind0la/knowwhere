@@ -36,7 +36,7 @@ When an agent asks "why did we decide X three months ago?", other memory systems
 
 ---
 
-## Current status — v0.4.0
+## Current status — v0.5.0
 
 | Category | Status |
 |----------|--------|
@@ -44,6 +44,7 @@ When an agent asks "why did we decide X three months ago?", other memory systems
 | **Batch API** | ✅ store_session_batch, batch_delete |
 | **Fractal Zoom** | ✅ zoom_retrieve() with hierarchical pruning across L0→L1→L2 |
 | **6-Type System** | ✅ Episodic, Semantic, Preference, Procedural, Meta, Decision |
+| **Decision Scoring** | ✅ PRIMARY trust tier + 1.5× memory_type_multiplier = 2× boost |
 | **Trust Tiers** | ✅ primary, reference, derived, volatile — auto-detected |
 | **L2→L1→L0 Compaction** | ✅ LocalSummarizer (Ollama llama3.2) + VLM fallback, event-driven |
 | **Claims Extraction** | ✅ Structured claim parsing from summaries → Decision nodes |
@@ -53,14 +54,13 @@ When an agent asks "why did we decide X three months ago?", other memory systems
 | **Energy Decay** | ✅ Ebbinghaus forgetting curve |
 | **Governance** | ✅ Retrieval profiles, sensitivity levels |
 | **Auth** | ✅ Static admin key + user registration (PostgreSQL) |
-| **PostgreSQL** | ✅ Dedup, conflicts, self-healing, namespaces, skills |
-| **Docker** | ✅ docker compose up — PostgreSQL + Ollama + KnowWhere |
-| **Tests** | ✅ 136 tests (0 failed, 9 ignored) |
+| **PostgreSQL** | ✅ Dedup, conflicts, self-healing, namespaces, skills, tier persistence |
+| **Native macOS** | ✅ Zero-Docker: Ollama native + PostgreSQL Homebrew + KnowWhere binary |
+| **Tests** | ✅ 136 unit (0 failed) + 35 integration (0 failed) + 9 ignored |
 | **Benchmark** | ✅ 50-case LongMemEval: Top-1 96%, Recall@5 96%, MRR 0.96 |
-| **OpenClaw** | ✅ 6-hook plugin for session capture + context injection |
+| **Hermes Plugin** | ✅ MemoryProvider: per-turn crash-safe storage + dual retrieval |
 | **Cross-Modal** | ✅ EmbeddingRouter: CLIP/Whisper/Sensor via Ollama |
 | **Cross-Encoder** | ✅ bge-reranker-v2-m3 via ONNX (feature: reranker) |
-| **Google Drive** | ✅ Changes API connector (feature: google-drive) |
 | **Webhooks** | ✅ Frigate + HomeAssistant webhook endpoints |
 
 ---
@@ -195,7 +195,7 @@ Every node carries: memory type (5 types), source (5 sources), trust tier (auto-
 ## SDK and integrations
 
 - **Python SDK:** `sdk/python`
-- **OpenClaw Plugin:** 6 hooks — session capture, context injection, gateway import
+- **Hermes MemoryProvider Plugin:** Per-turn crash-safe storage + dual retrieval (episodic + decision). Auto-discovered on Hermes startup.
 - **Swagger UI:** `http://localhost:3737/swagger-ui/`
 
 ---
@@ -206,15 +206,17 @@ Every node carries: memory type (5 types), source (5 sources), trust tier (auto-
 # Unit tests (always work)
 cargo test --lib                         # 136 tests
 
-# Integration tests (need Docker postgres + Ollama)
-DATABASE_URL="postgresql://postgres@localhost:5433/kw" \
-OLLAMA_URL=http://localhost:11434 \
-OLLAMA_MODEL=nomic-embed-text-v2-moe \
+# Integration tests (need PostgreSQL + Ollama)
+DATABASE_URL="postgresql:///knowwhere_dev?host=localhost" \
+OLLAMA_URL=http://127.0.0.1:11434 \
 SQLX_OFFLINE=true \
-cargo test --features postgres-storage --test integration  # 41 tests
+cargo test --features postgres-storage --test integration  # 35 tests
 
-# Local server
-cargo run --features postgres-storage
+# Native macOS server (recommended)
+export KNOWWHERE_API_KEY="kw_testkey_12345"
+export DATABASE_URL="postgresql:///knowwhere_dev?host=localhost"
+export OLLAMA_URL="http://127.0.0.1:11434"
+cargo run --release --features postgres-storage,summarizer
 ```
 
 ---

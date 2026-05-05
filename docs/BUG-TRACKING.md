@@ -2,13 +2,43 @@
 
 > Diese Datei enthaelt sowohl aktuelle Notizen als auch historische Bug-Eintraege. Versionsbegriffe hier sind Bug-Epochenmarker und nicht die autoritative Produktversion des aktuellen `main`-Standes.
 
-**Last Updated:** 2026-05-02
+**Last Updated:** 2026-05-05
 
 ---
 
-## Recent Fixes (Post-April-02)
+## Recent Fixes (Post-May-01)
 
-### BUG-012: VLM GPT-5-nano max_output_tokens Bug ✅ FIXED 2026-04-23
+### BUG-017: MemoryType::parse() erkennt "decision" nicht → alle Decision-Nodes als Episodic gespeichert ✅ FIXED 2026-05-05
+
+**Date Reported:** 2026-05-05
+**Date Resolved:** 2026-05-05
+**Status:** Fixed
+
+**Description:**
+`POST /store_session` mit `memory_type: "decision"` speicherte alle Nodes als `Episodic`. Die Scoring-Fixes (Decision → PRIMARY trust tier, 1.5× multiplier, commit `1dfa292`) liefen ins Leere weil keine Nodes den Typ `Decision` hatten.
+
+**Root Cause:**
+`MemoryType::parse()` in `src/memory/types.rs:182` hatte keinen Match-Arm für `"decision"`. Der String fiel auf `_ => None` → `unwrap_or(MemoryType::Episodic)`.
+
+**Fix:**
+```rust
+// src/memory/types.rs — parse()
+"decision" => Some(MemoryType::Decision),  // Eine Zeile
+```
+Zusätzlich: `all()` von `[Self; 5]` auf `[Self; 6]` erweitert (enthält jetzt Decision).
+Integrationstest `full_fidelity_profile_surfaces_internal_assistant_artifacts` auf Episodic-Multiplier 0.85 korrigiert.
+
+**Verification:**
+- A/B-Test mit 847 Decision-Nodes: Decision-Nodes erscheinen an Position 1-5 in allen Query-Typen
+- `memory_type_filter=decision` liefert 1.77× Multiplier (PRIMARY 1.18 × Decision 1.5)
+- Entscheidungs-Kette funktioniert: Store → Parse → Type → Score → Retrieve
+- 136+35 Tests passen.
+
+**Commit:** `679d8d3`
+
+---
+
+### BUG-016: CI cargo audit blockiert alle Builds ✅ FIXED 2026-05-02
 
 **Date Reported:** 2026-04-23
 **Date Resolved:** 2026-04-23
@@ -585,4 +615,6 @@ cargo run --features postgres-storage
 
 ## Offene Bugs
 
-- Postgres Integration Tests (CI) — pre-existing failure seit Run #268, nicht durch Cross-Modal verursacht.
+- **Postgres Integration Tests (CI):** Pre-existing failure seit Run #268, nicht durch aktuelle Changes verursacht. Lokal laufen alle 35 Integration-Tests mit `DATABASE_URL` auf Homebrew PostgreSQL.
+- **USearch Warnings:** "Reserve capacity ahead of insertions" erscheint bei Insertionen. Kein funktionaler Impact, aber Log-Noise. Fix: Warn-Level auf Debug senken oder Kapazität präventiv reservieren.
+- **Consolidation produziert keine Decision-Typen:** Summary-Nodes aus Consolidation sind `semantic`, nicht `decision`. Siehe `docs/NEXT_STEPS.md` Item 1.
