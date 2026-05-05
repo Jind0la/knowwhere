@@ -93,11 +93,36 @@ def post_retrieve(args: argparse.Namespace, query: str, **extra: object) -> tupl
         return json.loads(response.read().decode("utf-8")), time.perf_counter() - started
 
 
+def _session_id(node: dict) -> str:
+    m = node.get("metadata") or {}
+    sid = m.get("session_id")
+    return sid if isinstance(sid, str) else ""
+
+
+def _source_key(node: dict) -> str:
+    return f"{node.get('memory_type') or ''}|{node.get('source') or ''}"
+
+
+def _fractal_path_hit(node: dict) -> bool:
+    m = node.get("metadata") or {}
+    return any(
+        k in m
+        for k in (
+            "derived_from",
+            "source_node_ids",
+            "source_session_ids",
+            "source_turn_range",
+        )
+    )
+
+
 def flags(nodes: list[dict]) -> dict:
     raw_top1_meta = bool(nodes and is_meta(nodes[0]))
     usable = [node for node in nodes if not is_meta(node)]
     top3 = usable[:3]
     text = " ".join((node.get("content") or "").lower() for node in top3)
+    sessions = {_session_id(n) for n in top3 if _session_id(n)}
+    sources = {_source_key(n) for n in top3}
     return {
         "raw_top1_is_meta": raw_top1_meta,
         "top1_is_meta": False if top3 else raw_top1_meta,
@@ -106,6 +131,9 @@ def flags(nodes: list[dict]) -> dict:
         "top1_id": str(top3[0].get("id", "")) if top3 else "",
         "provenance_hits": sum(has_provenance(node) for node in top3),
         "stale_markers": sum(marker in text for marker in STALE_MARKERS),
+        "parent_session_diversity": (len(sessions) / len(top3)) if top3 else 0.0,
+        "source_diversity": (len(sources) / len(top3)) if top3 else 0.0,
+        "fractal_path_hits": sum(_fractal_path_hit(node) for node in top3),
     }
 
 
@@ -128,6 +156,19 @@ def evaluate_query(args: argparse.Namespace, item: dict) -> dict:
         return {"query": query, "intent": intent, "ok": False, "error": str(exc)}
 
 
+def unique_top1_rate(items: list[dict]) -> float:
+    top_ids = [item["flags"]["top1_id"] for item in items if item["flags"]["top1_id"]]
+    if not top_ids:
+        return 0.0
+    return round(len(set(top_ids)) / len(top_ids), 3)
+
+
+def mean_flag(ok: list[dict], key: str) -> float:
+    if not ok:
+        return 0.0
+    return round(sum(item["flags"][key] for item in ok) / len(ok), 3)
+
+
 def summarize(results: list[dict]) -> dict:
     ok = [item for item in results if item.get("ok")]
     latencies = sorted(item["latency"] for item in ok)
@@ -141,6 +182,10 @@ def summarize(results: list[dict]) -> dict:
         "decision_filter_purity": rate(ok, lambda item: item["decision_pure"]),
         "provenance_coverage": provenance_coverage(ok),
         "repeated_top1_rate": repeated_top1_rate(ok),
+        "unique_top1_rate": unique_top1_rate(ok),
+        "mean_source_diversity": mean_flag(ok, "source_diversity"),
+        "mean_session_diversity": mean_flag(ok, "parent_session_diversity"),
+        "fractal_path_coverage": fractal_path_coverage(ok),
         "stale_conflict_rate": rate(ok, lambda item: item["flags"]["stale_markers"] == 0),
         "latency_p50": percentile(latencies, 0.50),
         "latency_p95": percentile(latencies, 0.95),
@@ -158,6 +203,14 @@ def provenance_coverage(items: list[dict]) -> float:
     if denominator == 0:
         return 0.0
     numerator = sum(item["flags"]["provenance_hits"] for item in items)
+    return round(numerator / denominator, 3)
+
+
+def fractal_path_coverage(items: list[dict]) -> float:
+    denominator = sum(item["flags"]["top3_non_meta"] for item in items)
+    if denominator == 0:
+        return 0.0
+    numerator = sum(item["flags"]["fractal_path_hits"] for item in items)
     return round(numerator / denominator, 3)
 
 
@@ -193,6 +246,7 @@ def gates_pass(summary: dict) -> bool:
         and summary["decision_filter_purity"] == 1.0
         and summary["provenance_coverage"] >= 0.8
         and summary["repeated_top1_rate"] <= 0.5
+        and summary["mean_source_diversity"] >= 0.35
         and summary["stale_conflict_rate"] >= 0.9
     )
 

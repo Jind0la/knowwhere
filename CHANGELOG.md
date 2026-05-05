@@ -9,6 +9,8 @@ All notable changes to KnowWhere are documented in this file.
 - **Decision Parse Support:** `MemoryType::parse()` now recognizes `"decision"` string. Previously, `store_session` with `memory_type: "decision"` was silently downgraded to `Episodic`. Commit `679d8d3`.
 - **PostgreSQL Tier Persistence:** Full roundtrip for fractal tier fields (context_tier, parent_tier_id, children_tier_ids) through PostgreSQL. Commit `8452f46`.
 - **Hermes Retrieval Eval:** `scripts/eval_hermes_retrieval.py` now tracks Hermes-facing retrieval quality, including top-1 non-meta rate, decision-filter purity, provenance coverage, repeated top-1 rate, stale-conflict rate, and latency.
+- **PostgreSQL Fractal Expansion:** `PostgresStore::expand_fractal` mirrors `MemoryStore` (parent bridge, `children_tier_ids`, cosine pruning, global cap, cycle-safe batch fetch via `get_fractal_nodes_any`).
+- **Evidence Pack + MMR:** `/retrieve_fractal` applies intent scoring on storage hits, evidence dedupe (parent / `source_node_ids[0]` / session / pointer), then λ=0.65 MMR selection before `top_k` (with and without governance).
 - **Query Intent Routing:** `/retrieve_fractal` accepts `query_intent` hints (`current_state`, `decision_why`, `procedure`, `preference`, `debug`, `historical`) and applies lightweight intent-aware scoring.
 - **Decision Provenance Metadata:** Consolidation-created summaries and claim Decision nodes now include structured provenance metadata such as `source_node_ids`, `source_session_ids`, `source_turn_range`, `derived_from`, `claim_scope`, `decision_what`, and `decision_why`.
 
@@ -30,6 +32,7 @@ All notable changes to KnowWhere are documented in this file.
 - **Strict Memory-Type Filtering:** Unknown `memory_type_filter` values now return `400 Bad Request` and filters are enforced after fractal expansion and with `governance_enabled=false`.
 - **PostgreSQL Filter Parity:** `PostgresStore::hybrid_retrieve` now applies `memory_type_filter` consistently in BM25, vector-only, and hybrid branches before final `top_k`.
 - **Default Meta Leakage:** `/retrieve_fractal` no longer prepends synthetic `<knowwhere_memory>` instruction nodes when `reflect=false`.
+- **Hermes Eval metrics:** Eval script adds `unique_top1_rate`, `mean_source_diversity`, `mean_session_diversity`, `fractal_path_coverage`, and a `--fail-gates` check on source diversity.
 
 ---
 

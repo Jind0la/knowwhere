@@ -1,7 +1,7 @@
 # Next Steps — KnowWhere v0.5.0 → v1.0.0
 
-> Stand: 2026-05-05, nach Hermes Retrieval Hardening, Decision-Scoring-Fix und MemoryType::parse-Reparatur.
-> Aktueller Fokus: Hermes bekommt sicheren, belegbaren, aktuellen Memory-Kontext statt bloß viele Treffer.
+> Stand: 2026-05-05, nach Postgres-Fractal-Expansion, Evidence-Dedupe und MMR-Finalisierung in `/retrieve_fractal`.
+> Aktueller Fokus: Datenqualität (Provenance-Backfill) und Cross-Encoder auf Evidence-Packs.
 
 ---
 
@@ -12,17 +12,19 @@
 - **Hermes Eval:** `scripts/eval_hermes_retrieval.py` misst Top-1 non-meta, Decision-Purity, Provenance Coverage, Repeated Top-1, Stale-Conflict Rate und Latenz.
 - **Intent-Aware Retrieval:** `query_intent` erlaubt erste Routing-Hinweise für `current_state`, `decision_why`, `procedure`, `preference`, `debug`, `historical`.
 - **Provenance-Konvention:** Hermes- und Consolidation-Pfade schreiben bessere Metadata (`observed_at`, `claim_scope`, `source_node_ids`, `source_session_ids`, `derived_from`, `decision_what`, `decision_why`).
+- **Postgres Fractal Parity:** `PostgresStore::expand_fractal` + Batch-`get_fractal_nodes_any`, Cap gegen Fan-out, Integrationstest mit `DATABASE_URL`.
+- **Evidence Pack + MMR:** Dedupe nach Parent/Source/Session/Pointer, dann λ=0.65 MMR (Cosine zu Query + Gruppenstrafe); Intent-Scoring auch bei `governance_enabled=false`.
 
 ---
 
-## 1. ⚡ JETZT: Retrieval-Diversität und Provenance Coverage verbessern
+## 1. ⚡ JETZT: Provenance Coverage und Eval-Gates stabilisieren
 
 ### Problem
 
-Die API- und Plugin-Verträge sind jetzt sauber, aber der bestehende Datenbestand ist noch nicht gleichmäßig hochwertig:
+Die API- und Retrieval-Pipeline sind jetzt diverser und fraktalfähig auf Postgres, aber der bestehende Datenbestand ist noch nicht gleichmäßig hochwertig:
 
 - `provenance_coverage` ist noch nicht nahe genug an 1.0, weil alte Nodes keine vollständigen `source_*`-Metadaten haben.
-- `repeated_top1_rate` ist noch zu hoch: einzelne generische Decision-Nodes gewinnen zu viele unterschiedliche Query-Typen.
+- `repeated_top1_rate` kann trotz MMR noch hoch sein, wenn der Pool wenig echte Alternativen hat.
 - Current-State-Observation funktioniert für neue Daten, aber alte historische Zustände sind noch nicht systematisch scoped/superseded.
 
 ### Fix (geschätzt 1 Tag)
@@ -31,23 +33,13 @@ Die API- und Plugin-Verträge sind jetzt sauber, aber der bestehende Datenbestan
 2. **Intent-Ranking verfeinern:** Für `open_recall` und `procedure` weniger aggressive Decision-Gewichtung; für `current_state` aktuelle Semantic/Diagnostic-Evidence bevorzugen.
 3. **Golden Queries erweitern:** `scripts/eval_hermes_retrieval.py` mit echten erwarteten Trefferklassen/IDs anreichern.
 
-**Begründung:** Der gefährliche Meta/Filter-Fehler ist behoben. Jetzt entscheidet Datenqualität darüber, ob Hermes wirklich bessere Antworten gibt.
+**Begründung:** Der gefährliche Meta/Filter-Fehler ist behoben; Diversität und Fractal-Expansion sind implementiert. Jetzt entscheidet Datenqualität und optionales Reranking über Hermes-Nutzen.
 
 ---
 
-## 2. 🔜 Postgres-Fractal-Expansion nachziehen
+## 2. 🔜 Cross-Encoder auf Evidence-Packs
 
-### Problem
-
-`MemoryStore` kann über `expand_fractal` Kinder/Summary-Beziehungen nachladen. `PostgresStore` fällt aktuell weitgehend auf Hybrid Retrieval zurück. Dadurch ist Hermes auf PostgreSQL weniger „fraktal“ als das Architekturziel.
-
-### Ansatz
-
-1. `PostgresStore::expand_fractal` implementieren: `children_tier_ids`, `parent_tier_id` und ggf. source-node links nachladen.
-2. Nach Expansion weiterhin `retrieval_profile`, `memory_type_filter`, Governance und Intent-Scoring anwenden.
-3. Tests für Postgres-Fractal-Parität ergänzen.
-
-**Begründung:** KnowWheres Kernversprechen ist Fractal Zoom. Produktions-Hermes nutzt PostgreSQL; daher muss die Postgres-Seite denselben Navigationswert liefern.
+Nach Dedupe+MMR lohnt Reranking auf einem kleinen, nicht-redundanten Kandidatenpool (`reranker`-Feature).
 
 ---
 

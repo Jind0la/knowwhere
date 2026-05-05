@@ -839,6 +839,139 @@ async fn retrieve_fractal_current_state_intent_prefers_current_context() {
 }
 
 #[tokio::test]
+async fn memory_store_expand_fractal_includes_sibling_via_parent_bridge() {
+    use knowwhere_server::memory::fractal_node::FractalNode;
+    use knowwhere_server::memory::types::{MemorySource, MemoryType};
+    use knowwhere_server::storage::{MemoryStore, ScoredNode, StorageBackend};
+
+    let store = MemoryStore::new();
+    let dim = 8usize;
+    let v = |a: f32, b: f32| -> Vec<f32> {
+        let mut x = vec![0.0f32; dim];
+        x[0] = a;
+        x[1] = b;
+        x
+    };
+
+    let pid = uuid::Uuid::new_v4();
+    let c1 = uuid::Uuid::new_v4();
+    let c2 = uuid::Uuid::new_v4();
+
+    let mut parent = FractalNode::new_typed(
+        Some("parent raw".into()),
+        None,
+        v(1.0, 0.0),
+        Default::default(),
+        MemoryType::Episodic,
+        MemorySource::Conversation,
+    );
+    parent.id = pid;
+    parent.children_tier_ids = vec![c1, c2];
+
+    let mut child1 = FractalNode::new_typed(
+        Some("child1 summary".into()),
+        None,
+        v(0.98, 0.01),
+        Default::default(),
+        MemoryType::Semantic,
+        MemorySource::Conversation,
+    );
+    child1.id = c1;
+    child1.parent_tier_id = Some(pid);
+
+    let mut child2 = FractalNode::new_typed(
+        Some("child2 summary".into()),
+        None,
+        v(0.96, 0.02),
+        Default::default(),
+        MemoryType::Semantic,
+        MemorySource::Conversation,
+    );
+    child2.id = c2;
+    child2.parent_tier_id = Some(pid);
+
+    store.insert(parent).await.unwrap();
+    store.insert(child1.clone()).await.unwrap();
+    store.insert(child2.clone()).await.unwrap();
+
+    let seed = ScoredNode {
+        id: c1,
+        score: 0.9,
+        debug: None,
+        node: child1,
+    };
+
+    let qv = v(1.0, 0.0);
+    let expanded = store
+        .expand_fractal(vec![seed], &qv, 3, 0.05)
+        .await
+        .unwrap();
+
+    let ids: std::collections::HashSet<_> = expanded.iter().map(|s| s.id).collect();
+    assert!(ids.contains(&pid), "parent missing: {:?}", ids);
+    assert!(ids.contains(&c2), "sibling missing: {:?}", ids);
+}
+
+#[tokio::test]
+async fn memory_store_expand_fractal_stops_on_cycle() {
+    use knowwhere_server::memory::fractal_node::FractalNode;
+    use knowwhere_server::memory::types::{MemorySource, MemoryType};
+    use knowwhere_server::storage::{MemoryStore, ScoredNode, StorageBackend};
+
+    let store = MemoryStore::new();
+    let v = vec![1.0f32, 0.0, 0.0, 0.0];
+
+    let a = uuid::Uuid::new_v4();
+    let b = uuid::Uuid::new_v4();
+
+    let mut na = FractalNode::new_typed(
+        Some("node a".into()),
+        None,
+        v.clone(),
+        Default::default(),
+        MemoryType::Semantic,
+        MemorySource::Conversation,
+    );
+    na.id = a;
+    na.children_tier_ids = vec![b];
+
+    let mut nb = FractalNode::new_typed(
+        Some("node b".into()),
+        None,
+        v.clone(),
+        Default::default(),
+        MemoryType::Semantic,
+        MemorySource::Conversation,
+    );
+    nb.id = b;
+    nb.children_tier_ids = vec![a];
+
+    store.insert(na.clone()).await.unwrap();
+    store.insert(nb.clone()).await.unwrap();
+
+    let expanded = store
+        .expand_fractal(
+            vec![ScoredNode {
+                id: a,
+                score: 1.0,
+                debug: None,
+                node: na,
+            }],
+            &v,
+            10,
+            0.01,
+        )
+        .await
+        .unwrap();
+
+    assert!(
+        expanded.len() < 50,
+        "cycle should not explode results, got {}",
+        expanded.len()
+    );
+}
+
+#[tokio::test]
 async fn subconscious_chat_truncates_utf8_snippets_without_panicking() {
     let app = app_with_limited_auth();
     let long_content = format!("{} Ende", "Übergrößenträger🙂".repeat(24));
@@ -1327,6 +1460,91 @@ async fn postgres_store_hybrid_retrieve_bm25_only() {
 
     // Cleanup
     store.delete(node_id).await.expect("cleanup delete failed");
+}
+
+#[tokio::test]
+#[cfg(feature = "postgres-storage")]
+async fn postgres_store_expand_fractal_loads_parent_and_sibling() {
+    use knowwhere_server::memory::fractal_node::FractalNode;
+    use knowwhere_server::memory::types::{MemorySource, MemoryType};
+    use knowwhere_server::storage::postgres_store::PostgresStore;
+    use knowwhere_server::storage::{ScoredNode, StorageBackend};
+    use std::env;
+
+    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set for this test");
+
+    let store = PostgresStore::connect(&database_url)
+        .await
+        .expect("failed to connect to PostgreSQL");
+
+    let dim = 128usize;
+    let v = |a: f32| -> Vec<f32> {
+        let mut x = vec![0.0f32; dim];
+        x[0] = a;
+        x
+    };
+
+    let pid = uuid::Uuid::new_v4();
+    let c1 = uuid::Uuid::new_v4();
+    let c2 = uuid::Uuid::new_v4();
+
+    let mut parent = FractalNode::new_typed(
+        Some("pg fractal parent".into()),
+        None,
+        v(1.0),
+        Default::default(),
+        MemoryType::Episodic,
+        MemorySource::Conversation,
+    );
+    parent.id = pid;
+    parent.children_tier_ids = vec![c1, c2];
+
+    let mut child1 = FractalNode::new_typed(
+        Some("pg fractal child1".into()),
+        None,
+        v(0.99),
+        Default::default(),
+        MemoryType::Semantic,
+        MemorySource::Conversation,
+    );
+    child1.id = c1;
+    child1.parent_tier_id = Some(pid);
+
+    let mut child2 = FractalNode::new_typed(
+        Some("pg fractal child2".into()),
+        None,
+        v(0.97),
+        Default::default(),
+        MemoryType::Semantic,
+        MemorySource::Conversation,
+    );
+    child2.id = c2;
+    child2.parent_tier_id = Some(pid);
+
+    store.insert(parent).await.expect("insert parent");
+    store.insert(child1.clone()).await.expect("insert c1");
+    store.insert(child2.clone()).await.expect("insert c2");
+
+    let qv = v(1.0);
+    let seed = ScoredNode {
+        id: c1,
+        score: 0.9,
+        debug: None,
+        node: child1,
+    };
+
+    let expanded = store
+        .expand_fractal(vec![seed], &qv, 4, 0.05)
+        .await
+        .expect("expand_fractal");
+
+    let ids: std::collections::HashSet<_> = expanded.iter().map(|s| s.id).collect();
+    assert!(ids.contains(&pid), "parent missing: {:?}", ids);
+    assert!(ids.contains(&c2), "sibling missing: {:?}", ids);
+
+    store.delete(pid).await.ok();
+    store.delete(c1).await.ok();
+    store.delete(c2).await.ok();
 }
 
 #[tokio::test]

@@ -19,6 +19,8 @@
 //! └─────────────────────────────────────────────┘
 //! ```
 
+use std::collections::{HashMap, HashSet};
+
 use anyhow::Result;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -63,6 +65,112 @@ impl PostgresStore {
     /// Expose pool for internal integration tests and maintenance workers.
     pub fn pool(&self) -> &PgPool {
         &self.pool
+    }
+
+    /// Max nodes added by [`StorageBackend::expand_fractal`] beyond the initial hit list.
+    pub const PG_EXPAND_FRACTAL_MAX_EXTRA: usize = 100;
+
+    /// Batch-load fractal nodes (active only). One round-trip for UUID fan-out.
+    pub async fn get_fractal_nodes_any(
+        &self,
+        ids: &[Uuid],
+    ) -> anyhow::Result<HashMap<Uuid, FractalNode>> {
+        if ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+        let rows: Vec<MemoryRow> = sqlx::query_as::<_, MemoryRow>(
+            r#"
+            SELECT 
+                id , memory_type ,
+                content , content_preview,
+                importance , confidence ,
+                sensitivity , status ,
+                superseded_by, conflict_state ,
+                source , source_id, provenance ,
+                parent_id, depth , access_count ,
+                last_accessed, created_at , updated_at ,
+                deleted_at, metadata , entities ,
+                COALESCE(tags, ARRAY[]::TEXT[]) AS tags ,
+                embedding::float4[] ,
+                context_tier::text, parent_tier_id,
+                COALESCE(children_tier_ids, ARRAY[]::uuid[]) AS children_tier_ids,
+                summary_content, overview_content
+            FROM memories
+            WHERE id = ANY($1) AND status != 'deleted'
+            "#,
+        )
+        .bind(ids)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|r| {
+                let id = r.id;
+                (id, memory_row_to_fractal_node(r))
+            })
+            .collect())
+    }
+
+    /// Iterative fractal child expansion (matches `MemoryStore::expand_children` semantics).
+    async fn expand_children_pg(
+        &self,
+        child_ids: &[Uuid],
+        query_vector: &[f32],
+        depth: usize,
+        threshold: f32,
+        visited: &mut HashSet<Uuid>,
+        expanded: &mut Vec<ScoredNode>,
+        max_total: usize,
+    ) -> anyhow::Result<()> {
+        let mut stack: Vec<(Vec<Uuid>, usize)> = vec![(child_ids.to_vec(), depth)];
+
+        while let Some((ids, d)) = stack.pop() {
+            if d == 0 || expanded.len() >= max_total {
+                continue;
+            }
+
+            let fetch_ids: Vec<Uuid> = ids
+                .into_iter()
+                .filter(|id| !visited.contains(id))
+                .collect();
+            if fetch_ids.is_empty() {
+                continue;
+            }
+
+            let loaded = self.get_fractal_nodes_any(&fetch_ids).await?;
+
+            for id in fetch_ids {
+                if expanded.len() >= max_total {
+                    break;
+                }
+                if visited.contains(&id) {
+                    continue;
+                }
+                visited.insert(id);
+
+                let Some(child) = loaded.get(&id) else {
+                    tracing::debug!(node_id = %id, "expand_fractal: child id missing or deleted");
+                    continue;
+                };
+
+                let sim =
+                    crate::memory::fractal_node::cosine_similarity(&child.vector, query_vector);
+
+                expanded.push(ScoredNode {
+                    id: child.id,
+                    score: sim,
+                    debug: None,
+                    node: child.clone(),
+                });
+
+                if sim >= threshold && !child.children_tier_ids.is_empty() {
+                    stack.push((child.children_tier_ids.clone(), d.saturating_sub(1)));
+                }
+            }
+        }
+
+        Ok(())
     }
 
     // -------------------------------------------------------------------------
@@ -1305,6 +1413,84 @@ impl StorageBackend for PostgresStore {
                 r
             })
             .collect())
+    }
+
+    async fn expand_fractal(
+        &self,
+        nodes: Vec<ScoredNode>,
+        query_vector: &[f32],
+        max_depth: usize,
+        pruning_threshold: f32,
+    ) -> anyhow::Result<Vec<ScoredNode>> {
+        if max_depth == 0 || query_vector.is_empty() {
+            return Ok(nodes);
+        }
+
+        let max_total = nodes
+            .len()
+            .saturating_add(Self::PG_EXPAND_FRACTAL_MAX_EXTRA);
+        let mut expanded: Vec<ScoredNode> = Vec::with_capacity(nodes.len().saturating_mul(2));
+
+        for scored in nodes {
+            if expanded.len() >= max_total {
+                break;
+            }
+            expanded.push(scored.clone());
+
+            let node = &scored.node;
+            let mut visited: HashSet<Uuid> = HashSet::new();
+            visited.insert(node.id);
+
+            if !node.children_tier_ids.is_empty() {
+                self.expand_children_pg(
+                    &node.children_tier_ids,
+                    query_vector,
+                    max_depth.saturating_sub(1),
+                    pruning_threshold,
+                    &mut visited,
+                    &mut expanded,
+                    max_total,
+                )
+                .await?;
+            } else if let Some(pid) = node.parent_tier_id {
+                let loaded = self.get_fractal_nodes_any(&[*pid]).await?;
+                if let Some(parent) = loaded.get(&pid) {
+                    visited.insert(parent.id);
+                    let parent_sim = crate::memory::fractal_node::cosine_similarity(
+                        &parent.vector,
+                        query_vector,
+                    );
+                    if parent_sim >= pruning_threshold && expanded.len() < max_total {
+                        expanded.push(ScoredNode {
+                            id: parent.id,
+                            score: parent_sim,
+                            debug: None,
+                            node: parent.clone(),
+                        });
+                    }
+
+                    if !parent.children_tier_ids.is_empty() {
+                        self.expand_children_pg(
+                            &parent.children_tier_ids,
+                            query_vector,
+                            max_depth.saturating_sub(1),
+                            pruning_threshold,
+                            &mut visited,
+                            &mut expanded,
+                            max_total,
+                        )
+                        .await?;
+                    }
+                }
+            }
+        }
+
+        expanded.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        Ok(expanded)
     }
 
     async fn search_bm25(

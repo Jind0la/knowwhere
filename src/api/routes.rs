@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+use std::cmp::Ordering;
+use std::collections::{HashMap, HashSet};
 #[cfg(feature = "postgres-storage")]
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -708,29 +709,33 @@ fn scored_metadata_text<'a>(metadata: &'a HashMap<String, Value>, key: &str) -> 
     metadata.get(key).and_then(Value::as_str)
 }
 
-fn intent_score_multiplier(intent: QueryIntent, node: &ScoredNode) -> f32 {
-    let scope = scored_metadata_text(&node.metadata, "claim_scope").unwrap_or("");
+fn intent_metadata_multiplier(
+    intent: QueryIntent,
+    memory_type: MemoryType,
+    metadata: &HashMap<String, Value>,
+) -> f32 {
+    let scope = scored_metadata_text(metadata, "claim_scope").unwrap_or("");
     match intent {
         QueryIntent::CurrentState => match scope {
             "current" | "diagnostic" => 1.6,
             "episodic" => 1.25,
-            "historical" | "decision" if node.memory_type == MemoryType::Decision => 0.45,
-            _ if node.memory_type == MemoryType::Decision => 0.55,
+            "historical" | "decision" if memory_type == MemoryType::Decision => 0.45,
+            _ if memory_type == MemoryType::Decision => 0.55,
             _ => 1.0,
         },
-        QueryIntent::DecisionWhy => match node.memory_type {
+        QueryIntent::DecisionWhy => match memory_type {
             MemoryType::Decision => 1.7,
             MemoryType::Semantic => 1.15,
             MemoryType::Episodic => 0.9,
             _ => 1.0,
         },
-        QueryIntent::Procedure => match node.memory_type {
+        QueryIntent::Procedure => match memory_type {
             MemoryType::Procedural => 1.8,
             MemoryType::Semantic => 1.2,
             MemoryType::Decision => 0.75,
             _ => 1.0,
         },
-        QueryIntent::Preference => match node.memory_type {
+        QueryIntent::Preference => match memory_type {
             MemoryType::Preference => 1.8,
             MemoryType::Episodic => 1.1,
             MemoryType::Decision => 0.75,
@@ -738,7 +743,7 @@ fn intent_score_multiplier(intent: QueryIntent, node: &ScoredNode) -> f32 {
         },
         QueryIntent::Debug => 1.0,
         QueryIntent::Historical => {
-            if scope == "historical" || node.memory_type == MemoryType::Decision {
+            if scope == "historical" || memory_type == MemoryType::Decision {
                 1.25
             } else {
                 1.0
@@ -748,10 +753,255 @@ fn intent_score_multiplier(intent: QueryIntent, node: &ScoredNode) -> f32 {
     }
 }
 
-fn apply_intent_scoring(scored: &mut [ScoredNode], intent: QueryIntent) {
-    for node in scored {
-        node.score *= intent_score_multiplier(intent, node);
+fn apply_intent_scoring_storage(
+    scored: &mut [crate::storage::ScoredNode],
+    intent: QueryIntent,
+) {
+    for entry in scored {
+        entry.score *= intent_metadata_multiplier(
+            intent,
+            entry.node.memory_type,
+            &entry.node.metadata,
+        );
     }
+}
+
+fn evidence_pack_group_key(entry: &crate::storage::ScoredNode) -> String {
+    let parent = entry
+        .node
+        .parent_tier_id
+        .map(|u| u.to_string())
+        .unwrap_or_default();
+    let src0 = entry
+        .node
+        .metadata
+        .get("source_node_ids")
+        .and_then(|v| v.as_array())
+        .and_then(|a| a.first())
+        .map(|x| x.to_string())
+        .unwrap_or_default();
+    let session = entry
+        .node
+        .metadata
+        .get("session_id")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let ptr = entry.node.original_pointer.as_deref().unwrap_or("");
+    if parent.is_empty() && src0.is_empty() && session.is_empty() && ptr.is_empty() {
+        return entry.node.id.to_string();
+    }
+    format!("{parent}|{src0}|{session}|{ptr}")
+}
+
+fn evidence_dedupe_storage(mut scored: Vec<crate::storage::ScoredNode>) -> Vec<crate::storage::ScoredNode> {
+    scored.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(Ordering::Equal)
+    });
+    let mut seen = HashSet::new();
+    let mut out = Vec::new();
+    for s in scored {
+        let k = evidence_pack_group_key(&s);
+        if seen.insert(k) {
+            out.push(s);
+        }
+    }
+    out
+}
+
+fn governance_score_multiplier(issues: &[crate::memory::governance::ValidationIssue]) -> f32 {
+    issues
+        .iter()
+        .map(|i| i.score_impact)
+        .fold(1.0_f64, |acc, m| acc * m) as f32
+}
+
+const MMR_LAMBDA: f32 = 0.65;
+
+fn mmr_rel_score(entry: &crate::storage::ScoredNode, query_vector: &[f32]) -> f32 {
+    if !query_vector.is_empty() && !entry.node.vector.is_empty() {
+        crate::memory::fractal_node::cosine_similarity(&entry.node.vector, query_vector).clamp(0.0, 1.0)
+    } else {
+        entry.score.max(0.0)
+    }
+}
+
+fn mmr_max_sim_to_selected(
+    cand: &crate::storage::ScoredNode,
+    selected: &[crate::storage::ScoredNode],
+    query_vector: &[f32],
+) -> f32 {
+    let mut max_s = 0.0f32;
+    for s in selected {
+        let mut sim = if !query_vector.is_empty()
+            && !cand.node.vector.is_empty()
+            && !s.node.vector.is_empty()
+        {
+            crate::memory::fractal_node::cosine_similarity(&cand.node.vector, &s.node.vector)
+        } else {
+            0.0
+        };
+        if evidence_pack_group_key(cand) == evidence_pack_group_key(s) {
+            sim += 0.35;
+        }
+        max_s = max_s.max(sim);
+    }
+    max_s
+}
+
+fn mmr_finalize_storage(
+    mut candidates: Vec<crate::storage::ScoredNode>,
+    query_vector: &[f32],
+    top_k: usize,
+) -> Vec<crate::storage::ScoredNode> {
+    if top_k == 0 {
+        return vec![];
+    }
+    candidates.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(Ordering::Equal)
+    });
+    let pool_n = top_k.saturating_mul(10).max(top_k).min(candidates.len());
+    let pool: Vec<_> = candidates.into_iter().take(pool_n).collect();
+    if pool.len() <= top_k {
+        return pool;
+    }
+
+    let max_rel = pool
+        .iter()
+        .map(|c| mmr_rel_score(c, query_vector))
+        .fold(0.0f32, f32::max)
+        .max(1e-6);
+    let rel: Vec<f32> = pool
+        .iter()
+        .map(|c| mmr_rel_score(c, query_vector) / max_rel)
+        .collect();
+
+    let mut selected: Vec<crate::storage::ScoredNode> = Vec::new();
+    let mut cand_idx: Vec<usize> = (0..pool.len()).collect();
+
+    while selected.len() < top_k && !cand_idx.is_empty() {
+        let best = *cand_idx
+            .iter()
+            .max_by(|&&i, &&j| {
+                let max_sim_i = mmr_max_sim_to_selected(&pool[i], &selected, query_vector);
+                let max_sim_j = mmr_max_sim_to_selected(&pool[j], &selected, query_vector);
+                let mmr_i = MMR_LAMBDA * rel[i] - (1.0 - MMR_LAMBDA) * max_sim_i;
+                let mmr_j = MMR_LAMBDA * rel[j] - (1.0 - MMR_LAMBDA) * max_sim_j;
+                mmr_i
+                    .partial_cmp(&mmr_j)
+                    .unwrap_or(Ordering::Equal)
+            })
+            .expect("cand_idx non-empty");
+
+        cand_idx.retain(|&i| i != best);
+        selected.push(pool[best].clone());
+    }
+
+    selected
+}
+
+type GovernedStorage = (
+    crate::storage::ScoredNode,
+    bool,
+    Vec<crate::memory::governance::ValidationIssue>,
+);
+
+fn evidence_dedupe_governed(items: Vec<GovernedStorage>) -> Vec<GovernedStorage> {
+    let mut seen = HashSet::new();
+    let mut out = Vec::new();
+    for tup in items {
+        let k = evidence_pack_group_key(&tup.0);
+        if seen.insert(k) {
+            out.push(tup);
+        }
+    }
+    out
+}
+
+fn mmr_finalize_governed(
+    mut pool: Vec<GovernedStorage>,
+    query_vector: &[f32],
+    top_k: usize,
+) -> Vec<GovernedStorage> {
+    if top_k == 0 {
+        return vec![];
+    }
+    if pool.len() <= top_k {
+        return pool;
+    }
+
+    let pool_n = top_k.saturating_mul(10).max(top_k).min(pool.len());
+    pool.truncate(pool_n);
+
+    let pool_refs: Vec<crate::storage::ScoredNode> = pool.iter().map(|(s, _, _)| s.clone()).collect();
+
+    let max_rel = pool_refs
+        .iter()
+        .map(|c| mmr_rel_score(c, query_vector))
+        .fold(0.0f32, f32::max)
+        .max(1e-6);
+    let rel: Vec<f32> = pool_refs
+        .iter()
+        .map(|c| mmr_rel_score(c, query_vector) / max_rel)
+        .collect();
+
+    let mut selected_idx: Vec<usize> = Vec::new();
+    let mut cand_idx: Vec<usize> = (0..pool.len()).collect();
+
+    while selected_idx.len() < top_k && !cand_idx.is_empty() {
+        let best = *cand_idx
+            .iter()
+            .max_by(|&&i, &&j| {
+                let sel_nodes: Vec<crate::storage::ScoredNode> =
+                    selected_idx.iter().map(|&ix| pool[ix].0.clone()).collect();
+                let max_sim_i = mmr_max_sim_to_selected(&pool[i].0, &sel_nodes, query_vector);
+                let max_sim_j = mmr_max_sim_to_selected(&pool[j].0, &sel_nodes, query_vector);
+                let mmr_i = MMR_LAMBDA * rel[i] - (1.0 - MMR_LAMBDA) * max_sim_i;
+                let mmr_j = MMR_LAMBDA * rel[j] - (1.0 - MMR_LAMBDA) * max_sim_j;
+                mmr_i
+                    .partial_cmp(&mmr_j)
+                    .unwrap_or(Ordering::Equal)
+            })
+            .expect("cand_idx non-empty");
+
+        cand_idx.retain(|&i| i != best);
+        selected_idx.push(best);
+    }
+
+    selected_idx.into_iter().map(|i| pool[i].clone()).collect()
+}
+
+fn finalize_governed_retrieval(
+    mut governed: Vec<GovernedStorage>,
+    query_vector: &[f32],
+    top_k: usize,
+) -> Vec<GovernedStorage> {
+    governed.sort_by(|(a, _, ia), (b, _, ib)| {
+        let ea = a.score * governance_score_multiplier(ia);
+        let eb = b.score * governance_score_multiplier(ib);
+        eb.partial_cmp(&ea).unwrap_or(Ordering::Equal)
+    });
+    let governed = evidence_dedupe_governed(governed);
+    mmr_finalize_governed(governed, query_vector, top_k)
+}
+
+fn finalize_retrieval_storage(
+    mut results: Vec<crate::storage::ScoredNode>,
+    intent: QueryIntent,
+    query_vector: &[f32],
+    top_k: usize,
+) -> Vec<crate::storage::ScoredNode> {
+    apply_intent_scoring_storage(&mut results, intent);
+    results.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(Ordering::Equal)
+    });
+    let results = evidence_dedupe_storage(results);
+    mmr_finalize_storage(results, query_vector, top_k)
 }
 
 #[derive(Serialize, ToSchema)]
@@ -1881,9 +2131,14 @@ pub async fn retrieve_fractal(
         .collect();
 
     if !req.governance_enabled {
+        let results = finalize_retrieval_storage(
+            results,
+            query_intent,
+            &query_vector_for_expand,
+            req.top_k,
+        );
         let scored: Vec<ScoredNode> = results
             .into_iter()
-            .take(req.top_k)
             .map(|entry| ScoredNode::from_storage(entry, req.include_debug))
             .collect();
         return Ok(Json(scored));
@@ -1891,7 +2146,7 @@ pub async fn retrieve_fractal(
 
     // Stage 2: Governance validation
     let validator = GovernanceValidator::new(state.governance_policy.read().await.clone());
-    let mut scored: Vec<ScoredNode> = results
+    let mut governed: Vec<GovernedStorage> = results
         .into_iter()
         .filter_map(|s| {
             // Apply optional memory type filter
@@ -1911,39 +2166,30 @@ pub async fn retrieve_fractal(
                 return None;
             }
 
-            Some(ScoredNode::from_governed_storage(
+            Some((
                 s,
                 validation.passed,
                 validation.issues,
-                req.include_debug,
             ))
         })
         .collect();
 
-    apply_intent_scoring(&mut scored, query_intent);
+    for (entry, _, _) in &mut governed {
+        entry.score *= intent_metadata_multiplier(
+            query_intent,
+            entry.node.memory_type,
+            &entry.node.metadata,
+        );
+    }
 
-    // Re-sort by combined score (retrieval_score * governance_multiplier).
-    // Nodes with hard blocks are already filtered out above.
-    scored.sort_by(|a, b| {
-        // Apply governance score multiplier to retrieval score
-        let multiplier_a = a
-            .governance_issues
-            .iter()
-            .map(|i| i.score_impact)
-            .fold(1.0_f64, |acc, m| acc * m) as f32;
-        let multiplier_b = b
-            .governance_issues
-            .iter()
-            .map(|i| i.score_impact)
-            .fold(1.0_f64, |acc, m| acc * m) as f32;
+    let governed = finalize_governed_retrieval(governed, &query_vector_for_expand, req.top_k);
 
-        let effective_a = a.score * multiplier_a;
-        let effective_b = b.score * multiplier_b;
-        effective_b
-            .partial_cmp(&effective_a)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-    scored.truncate(req.top_k);
+    let scored: Vec<ScoredNode> = governed
+        .into_iter()
+        .map(|(s, passed, issues)| {
+            ScoredNode::from_governed_storage(s, passed, issues, req.include_debug)
+        })
+        .collect();
 
     // Stage 3: Optional Reflect — synthesize coherent summary from top results
     if req.reflect && !scored.is_empty() && type_filter.is_none() {
