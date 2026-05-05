@@ -643,8 +643,45 @@ fn retrieval_result_allowed(
     profile: RetrievalProfile,
     type_filter: Option<MemoryType>,
 ) -> bool {
+    let meta_allowed = if entry.node.memory_type == MemoryType::Meta {
+        type_filter == Some(MemoryType::Meta)
+    } else {
+        true
+    };
     profile.allows(&entry.node)
+        && meta_allowed
         && type_filter.map_or(true, |filter| entry.node.memory_type == filter)
+}
+
+fn is_internal_meta_artifact(node: &ScoredNode) -> bool {
+    let content = node.content.as_deref().unwrap_or("").trim().to_ascii_lowercase();
+    let derivation = node
+        .metadata
+        .get(FractalNode::DERIVATION_KEY)
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    node.memory_type == MemoryType::Meta
+        || derivation == "instruction"
+        || content.starts_with("<knowwhere_memory>")
+        || content.starts_with("<knowwhere_reflect>")
+        || content.starts_with("<memory-context>")
+}
+
+fn scrub_response_nodes(nodes: Vec<ScoredNode>, allow_meta: bool) -> Vec<ScoredNode> {
+    if allow_meta {
+        return nodes;
+    }
+    let before = nodes.len();
+    let cleaned: Vec<ScoredNode> = nodes
+        .into_iter()
+        .filter(|n| !is_internal_meta_artifact(n))
+        .collect();
+    let removed = before.saturating_sub(cleaned.len());
+    if removed > 0 {
+        tracing::warn!(removed, "retrieve_fractal strict scrub removed internal artifacts");
+    }
+    cleaned
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -717,10 +754,12 @@ fn intent_metadata_multiplier(
     let scope = scored_metadata_text(metadata, "claim_scope").unwrap_or("");
     match intent {
         QueryIntent::CurrentState => match scope {
-            "current" | "diagnostic" => 1.6,
-            "episodic" => 1.25,
-            "historical" | "decision" if memory_type == MemoryType::Decision => 0.45,
-            _ if memory_type == MemoryType::Decision => 0.55,
+            "current" | "diagnostic" => 1.8,
+            "episodic" => 1.2,
+            "historical" => 0.85,
+            "decision" if memory_type == MemoryType::Decision => 0.35,
+            _ if memory_type == MemoryType::Decision => 0.5,
+            _ if memory_type == MemoryType::Semantic => 1.2,
             _ => 1.0,
         },
         QueryIntent::DecisionWhy => match memory_type {
@@ -730,9 +769,9 @@ fn intent_metadata_multiplier(
             _ => 1.0,
         },
         QueryIntent::Procedure => match memory_type {
-            MemoryType::Procedural => 1.8,
-            MemoryType::Semantic => 1.2,
-            MemoryType::Decision => 0.75,
+            MemoryType::Procedural => 1.9,
+            MemoryType::Semantic => 1.25,
+            MemoryType::Decision => 0.55,
             _ => 1.0,
         },
         QueryIntent::Preference => match memory_type {
@@ -978,7 +1017,11 @@ fn finalize_governed_retrieval(
     mut governed: Vec<GovernedStorage>,
     query_vector: &[f32],
     top_k: usize,
+    allow_meta: bool,
 ) -> Vec<GovernedStorage> {
+    if !allow_meta {
+        governed.retain(|(entry, _, _)| entry.node.memory_type != MemoryType::Meta);
+    }
     governed.sort_by(|(a, _, ia), (b, _, ib)| {
         let ea = a.score * governance_score_multiplier(ia);
         let eb = b.score * governance_score_multiplier(ib);
@@ -993,8 +1036,12 @@ fn finalize_retrieval_storage(
     intent: QueryIntent,
     query_vector: &[f32],
     top_k: usize,
+    allow_meta: bool,
 ) -> Vec<crate::storage::ScoredNode> {
     apply_intent_scoring_storage(&mut results, intent);
+    if !allow_meta {
+        results.retain(|entry| entry.node.memory_type != MemoryType::Meta);
+    }
     results.sort_by(|a, b| {
         b.score
             .partial_cmp(&a.score)
@@ -2131,17 +2178,20 @@ pub async fn retrieve_fractal(
         .collect();
 
     if !req.governance_enabled {
+        let allow_meta = type_filter == Some(MemoryType::Meta);
         let results = finalize_retrieval_storage(
             results,
             query_intent,
             &query_vector_for_expand,
             req.top_k,
+            allow_meta,
         );
         let scored: Vec<ScoredNode> = results
             .into_iter()
             .map(|entry| ScoredNode::from_storage(entry, req.include_debug))
+            .filter(|s| allow_meta || s.memory_type != MemoryType::Meta)
             .collect();
-        return Ok(Json(scored));
+        return Ok(Json(scrub_response_nodes(scored, allow_meta)));
     }
 
     // Stage 2: Governance validation
@@ -2182,14 +2232,21 @@ pub async fn retrieve_fractal(
         );
     }
 
-    let governed = finalize_governed_retrieval(governed, &query_vector_for_expand, req.top_k);
+    let allow_meta = type_filter == Some(MemoryType::Meta);
+    let governed = finalize_governed_retrieval(governed, &query_vector_for_expand, req.top_k, allow_meta);
 
     let scored: Vec<ScoredNode> = governed
         .into_iter()
         .map(|(s, passed, issues)| {
             ScoredNode::from_governed_storage(s, passed, issues, req.include_debug)
         })
+        .filter(|s| allow_meta || s.memory_type != MemoryType::Meta)
         .collect();
+    let scored: Vec<ScoredNode> = scored
+        .into_iter()
+        .filter(|s| type_filter.map_or(true, |t| s.memory_type == t))
+        .collect();
+    let scored = scrub_response_nodes(scored, allow_meta);
 
     // Stage 3: Optional Reflect — synthesize coherent summary from top results
     if req.reflect && !scored.is_empty() && type_filter.is_none() {
@@ -2319,7 +2376,23 @@ pub async fn retrieve_fractal(
         }
     }
 
+    let scored = scrub_response_nodes(scored, allow_meta);
+    tracing::info!(
+        response_len = scored.len(),
+        response_meta = scored.iter().filter(|n| n.memory_type == MemoryType::Meta).count(),
+        "retrieve_fractal response stats"
+    );
     Ok(Json(scored))
+}
+
+pub async fn retrieve_fractal_safe(
+    state: State<AppState>,
+    auth: Option<Extension<AuthContext>>,
+    req: Json<RetrieveFractalRequest>,
+) -> Result<Json<Vec<ScoredNode>>, (StatusCode, String)> {
+    let allow_meta = req.0.memory_type_filter.as_deref() == Some("meta");
+    let Json(nodes) = retrieve_fractal(state, auth, req).await?;
+    Ok(Json(scrub_response_nodes(nodes, allow_meta)))
 }
 
 // ---------------------------------------------------------------------------

@@ -31,6 +31,28 @@ fn repair_text(node: &FractalNode) -> Option<&str> {
         .filter(|text| !text.trim().is_empty())
 }
 
+fn allow_internal_meta(filter: Option<crate::memory::types::MemoryType>) -> bool {
+    filter == Some(crate::memory::types::MemoryType::Meta)
+}
+
+fn is_internal_meta_artifact(node: &FractalNode) -> bool {
+    if node.memory_type != crate::memory::types::MemoryType::Meta {
+        return false;
+    }
+    let derivation = node
+        .metadata
+        .get(FractalNode::DERIVATION_KEY)
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    matches!(derivation.as_str(), "instruction" | "reflected")
+        || node
+            .metadata
+            .get(FractalNode::RETRIEVAL_VISIBILITY_KEY)
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|v| v.eq_ignore_ascii_case(FractalNode::INTERNAL_VISIBILITY))
+}
+
 fn dominant_dimension(nodes: &HashMap<Uuid, FractalNode>) -> Option<usize> {
     let mut counts = HashMap::new();
     for dim in nodes.values().filter_map(node_dimension) {
@@ -163,6 +185,9 @@ impl StorageBackend for MemoryStore {
         let mut weighted: Vec<_> = results
             .into_iter()
             .filter(|(_, node)| query.profile.allows(node))
+            .filter(|(_, node)| {
+                allow_internal_meta(query.memory_type_filter) || !is_internal_meta_artifact(node)
+            })
             .filter(|(_, node)| {
                 // memory_type_filter: keep only nodes matching the requested type
                 query.memory_type_filter.map_or(true, |mt| node.memory_type == mt)

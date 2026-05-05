@@ -46,6 +46,28 @@ pub struct PostgresStore {
     pool: PgPool,
 }
 
+fn allow_internal_meta(filter: Option<MemoryType>) -> bool {
+    filter == Some(MemoryType::Meta)
+}
+
+fn is_internal_meta_artifact(node: &FractalNode) -> bool {
+    if node.memory_type != MemoryType::Meta {
+        return false;
+    }
+    let derivation = node
+        .metadata
+        .get(FractalNode::DERIVATION_KEY)
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    matches!(derivation.as_str(), "instruction" | "reflected")
+        || node
+            .metadata
+            .get(FractalNode::RETRIEVAL_VISIBILITY_KEY)
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|v| v.eq_ignore_ascii_case(FractalNode::INTERNAL_VISIBILITY))
+}
+
 impl PostgresStore {
     /// Connect to PostgreSQL.
     pub async fn connect(database_url: &str) -> Result<Self> {
@@ -1354,6 +1376,7 @@ impl StorageBackend for PostgresStore {
     // --- Query ---
 
     async fn hybrid_retrieve(&self, query: &HybridQuery) -> anyhow::Result<Vec<ScoredNode>> {
+        let include_internal_meta = allow_internal_meta(query.memory_type_filter);
         let mut owned_vector = query.query_vector.clone().unwrap_or_default();
         if !owned_vector.is_empty() {
             if let Some(db_dim) = self.active_embedding_dimension().await? {
@@ -1381,7 +1404,8 @@ impl StorageBackend for PostgresStore {
                     let type_ok = query
                         .memory_type_filter
                         .map_or(true, |mt| node.memory_type == mt);
-                    if query.profile.allows(&node) && type_ok {
+                    let internal_ok = include_internal_meta || !is_internal_meta_artifact(&node);
+                    if query.profile.allows(&node) && type_ok && internal_ok {
                         scored_nodes.push(query.profile.score_node(score, node));
                     }
                 }
@@ -1413,7 +1437,9 @@ impl StorageBackend for PostgresStore {
                                 let type_ok = query
                                     .memory_type_filter
                                     .map_or(true, |mt| node.memory_type == mt);
-                                if query.profile.allows(&node) && type_ok {
+                                let internal_ok =
+                                    include_internal_meta || !is_internal_meta_artifact(&node);
+                                if query.profile.allows(&node) && type_ok && internal_ok {
                                     scored_nodes.push(query.profile.score_node(score, node));
                                 }
                             }
@@ -1440,7 +1466,8 @@ impl StorageBackend for PostgresStore {
                     let type_ok = query
                         .memory_type_filter
                         .map_or(true, |mt| node.memory_type == mt);
-                    if query.profile.allows(&node) && type_ok {
+                    let internal_ok = include_internal_meta || !is_internal_meta_artifact(&node);
+                    if query.profile.allows(&node) && type_ok && internal_ok {
                         let row_vector = row.embedding.clone().unwrap_or_default();
                         let sim =
                             crate::memory::fractal_node::cosine_similarity(&row_vector, vector);
@@ -1472,7 +1499,8 @@ impl StorageBackend for PostgresStore {
                 let type_ok = query
                     .memory_type_filter
                     .map_or(true, |mt| node.memory_type == mt);
-                if query.profile.allows(&node) && type_ok {
+                let internal_ok = include_internal_meta || !is_internal_meta_artifact(&node);
+                if query.profile.allows(&node) && type_ok && internal_ok {
                     scored_nodes.push(query.profile.score_node(score, node));
                 }
             }

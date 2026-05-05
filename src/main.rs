@@ -238,7 +238,7 @@ async fn run() -> anyhow::Result<()> {
         .route("/store_session_batch", post(routes::store_session_batch))
         .route("/store_external", post(routes::store_external))
         .route("/retrieve/{id}", get(routes::retrieve))
-        .route("/retrieve_fractal", post(routes::retrieve_fractal))
+        .route("/retrieve_fractal", post(routes::retrieve_fractal_safe))
         .route("/rerank", post(routes::rerank))
         .route("/chat/subconscious", post(routes::subconscious_chat))
         .route("/nodes/recent", get(routes::recent_nodes))
