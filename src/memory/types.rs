@@ -186,18 +186,20 @@ impl MemoryType {
             "preference" => Some(MemoryType::Preference),
             "procedural" => Some(MemoryType::Procedural),
             "meta" => Some(MemoryType::Meta),
+            "decision" => Some(MemoryType::Decision),
             _ => None,
         }
     }
 
     /// All types as a list.
-    pub fn all() -> [Self; 5] {
+    pub fn all() -> [Self; 6] {
         [
             MemoryType::Episodic,
             MemoryType::Semantic,
             MemoryType::Preference,
             MemoryType::Procedural,
             MemoryType::Meta,
+            MemoryType::Decision,
         ]
     }
 }

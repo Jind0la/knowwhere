@@ -375,7 +375,10 @@ impl PostgresStore {
                            source_id, provenance, last_accessed,
                            content_preview,
                            COALESCE((1 - (embedding <=> $1::vector))::float, 0.0) AS similarity,
-                           embedding::float4[] as embedding
+                           embedding::float4[] as embedding,
+                           context_tier::text, parent_tier_id,
+                           COALESCE(children_tier_ids, ARRAY[]::uuid[]) AS children_tier_ids,
+                           summary_content, overview_content
                     FROM memories
                     WHERE status = 'active'
                       AND embedding IS NOT NULL
@@ -404,7 +407,10 @@ impl PostgresStore {
                            last_accessed,
                            content_preview,
                            COALESCE((1 - (embedding <=> $1::vector))::float, 0.0) AS similarity,
-                           embedding::float4[] as embedding
+                           embedding::float4[] as embedding,
+                           context_tier::text, parent_tier_id,
+                           COALESCE(children_tier_ids, ARRAY[]::uuid[]) AS children_tier_ids,
+                           summary_content, overview_content
                     FROM memories
                     WHERE status = 'active'
                       AND embedding IS NOT NULL
@@ -432,7 +438,10 @@ impl PostgresStore {
                        last_accessed,
                        content_preview,
                        COALESCE((1 - (embedding <=> $1::vector))::float, 0.0) AS similarity,
-                       embedding::float4[] as embedding
+                       embedding::float4[] as embedding,
+                       context_tier::text, parent_tier_id,
+                       COALESCE(children_tier_ids, ARRAY[]::uuid[]) AS children_tier_ids,
+                       summary_content, overview_content
                 FROM memories
                 WHERE status = 'active'
                   AND embedding IS NOT NULL

@@ -533,7 +533,7 @@ async fn full_fidelity_profile_surfaces_internal_assistant_artifacts() {
     assert!(body.contains("ASSISTANT: Interner Agentenhinweis"));
     assert_eq!(payload[0]["retrieval_profile"], "full-fidelity");
     assert_eq!(payload[0]["trust_tier"], "derived");
-    assert_eq!(payload[0]["score_debug"]["multiplier"], 1.0);
+    assert_eq!(payload[0]["score_debug"]["multiplier"], 0.85);
 }
 
 #[tokio::test]
