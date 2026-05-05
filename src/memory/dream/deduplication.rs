@@ -161,7 +161,7 @@ impl<'a> DeduplicationWorker<'a> {
                 WHERE m.status = 'active'
                   AND m.embedding IS NOT NULL
             )
-            SELECT source_id as "id_a!", neighbor_id as "id_b!", similarity as "similarity!"
+            SELECT source_id AS id_a, neighbor_id AS id_b, similarity
             FROM neighbors
             WHERE similarity > $1::float4
             ORDER BY similarity DESC
