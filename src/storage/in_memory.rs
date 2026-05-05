@@ -253,6 +253,53 @@ impl StorageBackend for MemoryStore {
         let _ = self.rebuild_index_for_dimension(target_dimension).await?;
         Ok(report)
     }
+
+    /// Expand flat results into fractal children via `children_tier_ids`.
+    ///
+    /// Bridges the gap between consolidation-built UUID links and the old
+    /// synchronous `zoom_retrieve()` (which only traversed the unused
+    /// `self.children` field). Uses `self.nodes` HashMap for O(1) UUID
+    /// resolution — synchronous after acquiring the read lock.
+    async fn expand_fractal(
+        &self,
+        nodes: Vec<ScoredNode>,
+        query_vector: &[f32],
+        max_depth: usize,
+        pruning_threshold: f32,
+    ) -> anyhow::Result<Vec<ScoredNode>> {
+        if max_depth == 0 || query_vector.is_empty() {
+            return Ok(nodes);
+        }
+
+        let all_nodes = self.nodes.read().await;
+        let mut expanded = Vec::with_capacity(nodes.len() * 2);
+
+        for scored in nodes {
+            expanded.push(scored.clone());
+
+            let node = &scored.node;
+            if node.children_tier_ids.is_empty() {
+                continue;
+            }
+
+            // Expand children, tracking visited to avoid cycles
+            let mut visited: HashSet<Uuid> = HashSet::new();
+            visited.insert(node.id);
+            self.expand_children(
+                &all_nodes,
+                &node.children_tier_ids,
+                query_vector,
+                max_depth - 1,
+                pruning_threshold,
+                &mut visited,
+                &mut expanded,
+            );
+        }
+
+        // Sort all results by score descending
+        expanded.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(Ordering::Equal));
+        Ok(expanded)
+    }
 }
 
 impl std::fmt::Debug for MemoryStore {
@@ -950,6 +997,58 @@ impl MemoryStore {
             .take(top_k)
             .map(|(_, n)| n.clone())
             .collect()
+    }
+
+    /// Recursively expand `children_tier_ids` into scored results.
+    ///
+    /// Called by `expand_fractal`. Traverses UUID-based fractal links
+    /// (the data structure that consolidation actually builds) instead
+    /// of the unused `self.children` field.
+    fn expand_children(
+        &self,
+        all_nodes: &HashMap<Uuid, FractalNode>,
+        child_ids: &[Uuid],
+        query_vector: &[f32],
+        depth: usize,
+        threshold: f32,
+        visited: &mut HashSet<Uuid>,
+        results: &mut Vec<ScoredNode>,
+    ) {
+        if depth == 0 {
+            return;
+        }
+
+        for child_id in child_ids {
+            if visited.contains(child_id) {
+                continue;
+            }
+
+            let Some(child) = all_nodes.get(child_id) else {
+                continue;
+            };
+
+            let sim = crate::memory::fractal_node::cosine_similarity(&child.vector, query_vector);
+            visited.insert(*child_id);
+
+            results.push(ScoredNode {
+                id: child.id,
+                score: sim,
+                debug: None,
+                node: child.clone(),
+            });
+
+            if sim >= threshold && !child.children_tier_ids.is_empty() {
+                self.expand_children(
+                    all_nodes,
+                    &child.children_tier_ids,
+                    query_vector,
+                    depth - 1,
+                    threshold,
+                    visited,
+                    results,
+                );
+            }
+        }
     }
 }
 

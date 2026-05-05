@@ -1612,6 +1612,7 @@ pub async fn retrieve_fractal(
     let max_tier = req.max_tier.as_ref().and_then(|s| ContextTier::parse(s));
 
     // Stage 1: Hybrid retrieval via StorageBackend trait
+    let query_vector_for_expand = query_vector.clone();
     let mut query = HybridQuery {
         query_text: req.query_text.clone(),
         query_vector: Some(query_vector),
@@ -1636,6 +1637,24 @@ pub async fn retrieve_fractal(
         tracing::error!("hybrid_retrieve failed: {}", e);
         (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
     })?;
+
+    // Stage 1.5: Expand flat results via fractal zoom (children_tier_ids).
+    // Uses the query vector to compute child similarity, prunes branches
+    // below ZOOM_PRUNING_THRESHOLD (0.7), and follows children up to
+    // max_depth levels deep. Default impl returns nodes unchanged.
+    let results = state
+        .store
+        .expand_fractal(
+            results,
+            &query_vector_for_expand,
+            req.max_depth,
+            FractalNode::ZOOM_PRUNING_THRESHOLD,
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!("expand_fractal failed: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+        })?;
 
     // Stage 2: Optional Cross-Encoder reranking (feature-gated)
     #[cfg(feature = "reranker")]

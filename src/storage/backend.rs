@@ -334,6 +334,29 @@ pub trait StorageBackend: Send + Sync {
     /// Recursive fractal zoom retrieval — explores children above similarity threshold.
     async fn retrieve_fractal(&self, query: &HybridQuery) -> anyhow::Result<Vec<ScoredNode>>;
 
+    /// Expand a flat result set into fractal children via `children_tier_ids`.
+    ///
+    /// This bridges the gap between consolidation-built UUID links
+    /// (`children_tier_ids`) and the old synchronous `zoom_retrieve()`
+    /// (which only traversed the unused `self.children` field).
+    ///
+    /// For each input node with non-empty `children_tier_ids`:
+    /// 1. Look up each child UUID via `get()`.
+    /// 2. Compute cosine similarity against `query_vector`.
+    /// 3. If similarity >= `pruning_threshold`: include the child and
+    ///    recursively expand its children (up to `max_depth`).
+    ///
+    /// The default impl returns the input unchanged (no fractal expansion).
+    async fn expand_fractal(
+        &self,
+        nodes: Vec<ScoredNode>,
+        _query_vector: &[f32],
+        _max_depth: usize,
+        _pruning_threshold: f32,
+    ) -> anyhow::Result<Vec<ScoredNode>> {
+        Ok(nodes)
+    }
+
     /// Standalone BM25 keyword search (no vector component).
     async fn search_bm25(&self, query_text: &str, top_k: usize)
         -> anyhow::Result<Vec<(Uuid, f32)>>;
