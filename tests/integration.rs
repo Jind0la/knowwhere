@@ -1251,7 +1251,7 @@ async fn fractal_retrieve_with_vector_only() {
 
     // Query with explicit 1024-dim vector (Ollama snowflake-arctic-embed2 compatible)
     // Using a uniform vector — cosine similarity with itself should be 1.0
-    let vector: Vec<f32> = vec![0.1; 1024];
+    let vector: Vec<f32> = vec![0.1; 768];
     let query = serde_json::json!({
         "query_vector": vector,
         "top_k": 5,
@@ -1422,7 +1422,7 @@ async fn postgres_store_hybrid_retrieve_bm25_only() {
     let node = FractalNode::new_typed(
         Some(test_content.clone()),
         None,
-        vec![0.0; 1024], // dummy vector — not used in BM25-only query
+        vec![0.0; 768], // dummy vector — not used in BM25-only query
         Default::default(),
         knowwhere_server::memory::types::MemoryType::Episodic,
         knowwhere_server::memory::types::MemorySource::Conversation,
@@ -1568,7 +1568,7 @@ async fn postgres_store_hybrid_retrieve_with_vector() {
 
     // Insert with a real-ish vector (1024-dim, matching snowflake-arctic-embed2)
     let test_content = format!("vector search test node {}", uuid::Uuid::new_v4());
-    let vector: Vec<f32> = (0..1024).map(|i| (i as f32) * 0.001).collect();
+    let vector: Vec<f32> = (0..768).map(|i| (i as f32) * 0.001).collect();
     let node = FractalNode::new_typed(
         Some(test_content.clone()),
         None,
@@ -1629,7 +1629,7 @@ async fn postgres_store_count_matches_active_memories() {
     let node1 = FractalNode::new_typed(
         Some("count test node 1".to_string()),
         None,
-        vec![0.1; 1024],
+        vec![0.1; 768],
         Default::default(),
         knowwhere_server::memory::types::MemoryType::Episodic,
         knowwhere_server::memory::types::MemorySource::Conversation,
@@ -1637,7 +1637,7 @@ async fn postgres_store_count_matches_active_memories() {
     let node2 = FractalNode::new_typed(
         Some("count test node 2".to_string()),
         None,
-        vec![0.2; 1024],
+        vec![0.2; 768],
         Default::default(),
         knowwhere_server::memory::types::MemoryType::Episodic,
         knowwhere_server::memory::types::MemorySource::Conversation,
@@ -1732,7 +1732,7 @@ async fn postgres_retention_flow_decay_low_energy_and_compress() {
     let node1 = FractalNode::new_typed(
         Some("retention decay test 1".to_string()),
         None,
-        vec![0.11; 1024],
+        vec![0.11; 768],
         Default::default(),
         MemoryType::Episodic,
         MemorySource::Conversation,
@@ -1740,7 +1740,7 @@ async fn postgres_retention_flow_decay_low_energy_and_compress() {
     let node2 = FractalNode::new_typed(
         Some("retention decay test 2".to_string()),
         None,
-        vec![0.12; 1024],
+        vec![0.12; 768],
         Default::default(),
         MemoryType::Episodic,
         MemorySource::Conversation,
