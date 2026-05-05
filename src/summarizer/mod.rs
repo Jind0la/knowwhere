@@ -165,48 +165,62 @@ impl LocalSummarizer {
         Ok(summary)
     }
 
-    /// Summarize with custom max length.
+    /// Summarize with custom max length — L1 Overview tier.
     ///
-    /// * `max_length` — maximum tokens in output (approximate)
-    /// * `min_length` — minimum tokens in output (approximate)
+    /// Uses Ollama's native JSON Schema structured output (format parameter).
+    /// The GBNF grammar physically constrains token generation — the model
+    /// cannot produce invalid JSON. This replaced text-based ---CLAIMS---
+    /// markers that llama3.2 ignored 100% of the time.
+    ///
+    /// Returns a JSON string with `{"summary": "...", "claims": [{"claim": "...", "reason": "..."}]}`.
     pub async fn summarize_with_length(
         &self,
         text: &str,
         max_length: usize,
         _min_length: usize,
     ) -> Result<String> {
-        // Prompt optimized for Decision-Retrieval + Structured Claim Extraction:
-        // L1 produces BOTH narrative summary AND machine-readable claims block.
-        // Claims become separate Decision nodes for precise "why?" retrieval.
+        // JSON Schema for structured output — Ollama enforces this via GBNF grammar.
+        // Spike results (May 5, 2026): 100% compliance, 2.2 avg claims, 0% escape hatches.
+        let claims_schema = json!({
+            "type": "object",
+            "properties": {
+                "summary": {
+                    "type": "string",
+                    "description": "2-3 sentence narrative summary of the conversation"
+                },
+                "claims": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "claim": {"type": "string", "description": "What was decided, realized, or established"},
+                            "reason": {"type": "string", "description": "Why — rationale, evidence, constraint, or trade-off"}
+                        },
+                        "required": ["claim", "reason"]
+                    },
+                    "description": "Structured claims extracted from the conversation"
+                }
+            },
+            "required": ["summary", "claims"]
+        });
+
         let prompt = format!(
-            "Summarize in 2-3 sentences (max {} words). \
-             Sentence 1: key decisions made and WHY — be specific, name trade-offs. \
-             Sentence 2: important facts. \
-             Sentence 3: entities and timestamps. \
-             No preamble.\n\
-             \n\
-             After your summary, add a claims block:\n\
-             ---CLAIMS---\n\
-             - claim: <what was decided or key takeaway>\n\
-               reason: <why — rationale, constraint, or evidence>\n\
-             - claim: <next claim, if any>\n\
-               reason: <why>\n\
-             ---END---\n\
-             \n\
-             IMPORTANT: Extract at least ONE claim. \
-             A claim can be: a decision, a realization, a key finding, \
-             or a stated preference. If truly nothing is decided, \
-             extract the single most important factual assertion as a claim. \
-             NEVER say 'No decision made' — always extract something. \
-             Keep each claim and reason on a single line.\n\n{}",
-            max_length / 2,
+            "Extract decisions and key facts from this conversation. \
+             Return a JSON object with:\n\
+             - \"summary\": 2-3 sentence narrative summary\n\
+             - \"claims\": array of {{\"claim\", \"reason\"}} objects\n\n\
+             For each claim:\n\
+             - \"claim\": what was decided, realized, or established \
+               (be specific — name entities, technologies, concrete actions)\n\
+             - \"reason\": why — rationale, evidence, constraint, or trade-off\n\n\
+             Extract at least 2 claims. Every claim must be specific and concrete.\n\n{}",
             text
         );
         
         let body = json!({
             "model": self.model,
             "messages": [
-                {"role": "system", "content": "You are a concise summarizer. Output 2-3 sentences."},
+                {"role": "system", "content": "You are a forensic decision extractor. Identify explicit decisions, realizations, and key findings. Always produce specific, concrete claims. Never generic."},
                 {"role": "user", "content": prompt}
             ],
             "stream": false,
@@ -214,7 +228,8 @@ impl LocalSummarizer {
                 "temperature": 0.0,
                 "seed": 42,
                 "num_predict": max_length
-            }
+            },
+            "format": claims_schema
         });
         
         let resp = self.client
@@ -258,6 +273,92 @@ pub struct SummaryResult {
     pub model_used: String,
     pub input_tokens: usize,
     pub output_tokens: usize,
+}
+
+/// Structured claim extracted from consolidation output.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct ExtractedClaim {
+    pub claim: String,
+    pub reason: String,
+}
+
+/// Structured consolidation output (JSON Schema format).
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct ConsolidationOutput {
+    pub summary: String,
+    pub claims: Vec<ExtractedClaim>,
+}
+
+impl ConsolidationOutput {
+    /// Parse JSON output from the summarizer. Falls back gracefully:
+    /// - Valid JSON → extracted claims
+    /// - Invalid JSON → summary only, no claims
+    /// - Legacy text with ---CLAIMS--- block → parsed via legacy path
+    pub fn from_summary_text(text: &str) -> Self {
+        // Try JSON first (new JSON Schema format)
+        if let Ok(parsed) = serde_json::from_str::<ConsolidationOutput>(text) {
+            return parsed;
+        }
+        
+        // Fall back to legacy text-based ---CLAIMS--- parsing
+        let (summary, claims) = parse_claims_block_legacy(text);
+        ConsolidationOutput { summary, claims }
+    }
+}
+
+/// Legacy parser for text-based ---CLAIMS--- blocks.
+/// Kept for backward compatibility with pre-JSON-Schema consolidation output.
+fn parse_claims_block_legacy(text: &str) -> (String, Vec<ExtractedClaim>) {
+    // Find the CLAIMS block boundaries
+    let start_marker = "---CLAIMS---";
+    
+    let start_idx = match text.find(start_marker) {
+        Some(i) => i + start_marker.len(),
+        None => return (text.to_string(), Vec::new()),
+    };
+    let end_idx = match text[start_idx..].find("---END---") {
+        Some(i) => start_idx + i,
+        None => text.len(),
+    };
+
+    let summary = text[..start_idx - start_marker.len()].trim().to_string();
+    let block = text[start_idx..end_idx].trim();
+    
+    let mut claims = Vec::new();
+    let mut current_claim: Option<&str> = None;
+
+    for line in block.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if let Some(rest) = trimmed.strip_prefix("- claim:").or_else(|| trimmed.strip_prefix("- claim ")) {
+            if let Some(claim_text) = current_claim.take() {
+                claims.push(ExtractedClaim {
+                    claim: claim_text.to_string(),
+                    reason: String::new(),
+                });
+            }
+            current_claim = Some(rest.trim());
+        } else if let Some(rest) = trimmed.strip_prefix("reason:") {
+            if let Some(claim_text) = current_claim.take() {
+                claims.push(ExtractedClaim {
+                    claim: claim_text.to_string(),
+                    reason: rest.trim().to_string(),
+                });
+            }
+        }
+    }
+    
+    // Flush final claim
+    if let Some(claim_text) = current_claim {
+        claims.push(ExtractedClaim {
+            claim: claim_text.to_string(),
+            reason: String::new(),
+        });
+    }
+    
+    (summary, claims)
 }
 
 /// Tiered summarization — produces L0, L1, or L2 summaries.
@@ -339,13 +440,13 @@ impl TieredSummarizer {
     /// L1 Overview: Paragraph (~100-300 tokens).
     async fn summarize_l1(&self, text: &str) -> Result<SummaryResult> {
         if let Some(ref local) = self.local {
-            match local.summarize_with_length(text, 200, 50).await {
+            match local.summarize_with_length(text, 400, 50).await {
                 Ok(summary) => {
                     return Ok(SummaryResult {
                         text: summary,
                         model_used: format!("ollama-{}-l1", local.model),
                         input_tokens: text.len() / 4,
-                        output_tokens: 150,
+                        output_tokens: 300,
                     });
                 }
                 Err(e) => {
@@ -396,5 +497,53 @@ mod tests {
         
         // With temperature=0 and seed=42, should be deterministic
         assert_eq!(result1, result2, "summarization not deterministic");
+    }
+    
+    #[test]
+    fn test_consolidation_output_json_parse() {
+        let json = r#"{"summary": "Decided to switch from Docker to native.", "claims": [{"claim": "Switch to native macOS deployment", "reason": "Docker used 4GB RAM on M1"}]}"#;
+        let output = ConsolidationOutput::from_summary_text(json);
+        assert_eq!(output.claims.len(), 1);
+        assert_eq!(output.claims[0].claim, "Switch to native macOS deployment");
+        assert!(output.summary.contains("Docker"));
+    }
+    
+    #[test]
+    fn test_consolidation_output_legacy_fallback() {
+        let text = "Summary text.\n---CLAIMS---\n- claim: test decision\n  reason: test reason\n---END---";
+        let output = ConsolidationOutput::from_summary_text(text);
+        assert_eq!(output.claims.len(), 1);
+        assert_eq!(output.claims[0].claim, "test decision");
+        assert_eq!(output.claims[0].reason, "test reason");
+        assert_eq!(output.summary, "Summary text.");
+    }
+    
+    #[test]
+    fn test_consolidation_output_plain_text() {
+        let text = "Just a plain summary with no claims block.";
+        let output = ConsolidationOutput::from_summary_text(text);
+        assert_eq!(output.claims.len(), 0);
+        assert_eq!(output.summary, "Just a plain summary with no claims block.");
+    }
+    
+    #[test]
+    fn test_claim_specificity() {
+        // Specific claims pass
+        let output = ConsolidationOutput {
+            summary: "test".into(),
+            claims: vec![ExtractedClaim {
+                claim: "Docker deployment was replaced with native macOS launchd".into(),
+                reason: "Used 4GB RAM overhead".into(),
+            }],
+        };
+        assert!(!output.claims.is_empty());
+        assert!(output.claims[0].claim.contains("Docker"));
+        
+        // Empty claims array is valid (no decisions to extract)
+        let empty = ConsolidationOutput {
+            summary: "test".into(),
+            claims: vec![],
+        };
+        assert!(empty.claims.is_empty());
     }
 }

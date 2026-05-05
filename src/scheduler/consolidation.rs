@@ -592,11 +592,17 @@ impl ConsolidationScheduler {
             .update(&l1_id, UpdateOperation::AddChildTierId(node_id))
             .await?;
 
-        // Step 4a: Extract structured claims from summary text
-        // Each claim becomes a separate Decision node for precise "why?" retrieval
-        let claims = parse_claims_block(&summary.text);
+        // Step 4a: Extract structured claims from summary text.
+        // New JSON Schema format (May 2026): Ollama produces valid JSON with
+        // {"summary": "...", "claims": [{"claim": "...", "reason": "..."}]}
+        // Falls back to legacy ---CLAIMS--- text parsing for older output.
+        let consolidation = crate::summarizer::ConsolidationOutput::from_summary_text(&summary.text);
+        let claims = &consolidation.claims;
+        let narrative_summary = &consolidation.summary;
         let mut claim_node_ids = Vec::new();
-        for (claim_text, reason) in &claims {
+        for claim in claims {
+            let claim_text = &claim.claim;
+            let reason = &claim.reason;
             // Build claim content optimized for embedding similarity:
             // "claim: {what}  reason: {why}" — both fields in one string
             // lets vector search match on either "was wurde entschieden"
@@ -656,7 +662,7 @@ impl ConsolidationScheduler {
             tracing::info!(
                 l1_id = %l1_id,
                 claim_count = claim_node_ids.len(),
-                claims = ?claims.iter().map(|(c, _)| c.as_str()).collect::<Vec<_>>(),
+                claims = ?claims.iter().map(|c| c.claim.as_str()).collect::<Vec<_>>(),
                 "Extracted structured claims from consolidation"
             );
         }
