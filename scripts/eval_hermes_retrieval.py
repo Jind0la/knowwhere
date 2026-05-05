@@ -125,7 +125,7 @@ def flags(nodes: list[dict]) -> dict:
     sources = {_source_key(n) for n in top3}
     return {
         "raw_top1_is_meta": raw_top1_meta,
-        "top1_is_meta": False if top3 else raw_top1_meta,
+        "top1_is_meta": raw_top1_meta,
         "top3_non_meta": sum(not is_meta(node) for node in top3),
         "top3_decisions": sum((node.get("memory_type") or "").lower() == "decision" for node in top3),
         "top1_id": str(top3[0].get("id", "")) if top3 else "",
@@ -134,7 +134,26 @@ def flags(nodes: list[dict]) -> dict:
         "parent_session_diversity": (len(sessions) / len(top3)) if top3 else 0.0,
         "source_diversity": (len(sources) / len(top3)) if top3 else 0.0,
         "fractal_path_hits": sum(_fractal_path_hit(node) for node in top3),
+        "novelty_gain": novelty_gain(top3),
     }
+
+
+def novelty_gain(nodes: list[dict]) -> float:
+    if not nodes:
+        return 0.0
+    seen = set()
+    gained = 0
+    for node in nodes:
+        bits = (
+            _session_id(node),
+            _source_key(node),
+            str((node.get("metadata") or {}).get("source_node_ids", [])),
+            (node.get("memory_type") or "").lower(),
+        )
+        if bits not in seen:
+            gained += 1
+            seen.add(bits)
+    return gained / len(nodes)
 
 
 def evaluate_query(args: argparse.Namespace, item: dict) -> dict:
@@ -186,6 +205,7 @@ def summarize(results: list[dict]) -> dict:
         "mean_source_diversity": mean_flag(ok, "source_diversity"),
         "mean_session_diversity": mean_flag(ok, "parent_session_diversity"),
         "fractal_path_coverage": fractal_path_coverage(ok),
+        "mean_novelty_gain": mean_flag(ok, "novelty_gain"),
         "stale_conflict_rate": rate(ok, lambda item: item["flags"]["stale_markers"] == 0),
         "latency_p50": percentile(latencies, 0.50),
         "latency_p95": percentile(latencies, 0.95),
@@ -247,6 +267,7 @@ def gates_pass(summary: dict) -> bool:
         and summary["provenance_coverage"] >= 0.8
         and summary["repeated_top1_rate"] <= 0.5
         and summary["mean_source_diversity"] >= 0.35
+        and summary["mean_novelty_gain"] >= 0.5
         and summary["stale_conflict_rate"] >= 0.9
     )
 
