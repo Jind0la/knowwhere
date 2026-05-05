@@ -740,6 +740,105 @@ async fn retrieve_fractal_keeps_imported_user_prefix_content_visible() {
 }
 
 #[tokio::test]
+async fn retrieve_fractal_rejects_unknown_memory_type_filter() {
+    let app = app_with_limited_auth();
+    let resp = app
+        .oneshot(
+            Request::post("/retrieve_fractal")
+                .header("content-type", "application/json")
+                .header("authorization", "Bearer limited-key")
+                .body(Body::from(
+                    r#"{"query_vector":[1,1,1,1],"memory_type_filter":"decisions"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn retrieve_fractal_decision_filter_is_pure_without_governance() {
+    let app = app_with_limited_auth();
+    for body in [
+        r#"{"content":"Decision: keep Hermes retrieval strict.","memory_type":"decision","vector":[1,1,1,1]}"#,
+        r#"{"content":"Semantic: Hermes retrieval has background context.","memory_type":"semantic","vector":[1,1,1,1]}"#,
+    ] {
+        let _ = app
+            .clone()
+            .oneshot(
+                Request::post("/store_session")
+                    .header("content-type", "application/json")
+                    .header("authorization", "Bearer limited-key")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+    }
+
+    let resp = app
+        .oneshot(
+            Request::post("/retrieve_fractal")
+                .header("content-type", "application/json")
+                .header("authorization", "Bearer limited-key")
+                .body(Body::from(
+                    r#"{"query_vector":[1,1,1,1],"top_k":5,"governance_enabled":false,"memory_type_filter":"decision","reflect":true}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = body_string(resp.into_body()).await;
+    let results = serde_json::from_str::<Vec<serde_json::Value>>(&body).unwrap();
+
+    assert!(!body.contains("<knowwhere_memory>"));
+    assert!(!body.contains("<knowwhere_reflect>"));
+    assert!(!body.contains("Semantic: Hermes retrieval"));
+    assert!(results.iter().all(|node| node["memory_type"] == "decision"));
+}
+
+#[tokio::test]
+async fn retrieve_fractal_current_state_intent_prefers_current_context() {
+    let app = app_with_limited_auth();
+    for body in [
+        r#"{"content":"Decision: KnowWhere retrieval scoring fixed.","memory_type":"decision","vector":[1,1,1,1]}"#,
+        r#"{"content":"KnowWhere is currently active in Hermes on port 3737.","memory_type":"semantic","vector":[1,1,1,1],"metadata":{"claim_scope":"current"}}"#,
+    ] {
+        let _ = app
+            .clone()
+            .oneshot(
+                Request::post("/store_session")
+                    .header("content-type", "application/json")
+                    .header("authorization", "Bearer limited-key")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+    }
+
+    let resp = app
+        .oneshot(
+            Request::post("/retrieve_fractal")
+                .header("content-type", "application/json")
+                .header("authorization", "Bearer limited-key")
+                .body(Body::from(
+                    r#"{"query_vector":[1,1,1,1],"top_k":2,"query_intent":"current_state"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = body_string(resp.into_body()).await;
+    let results = serde_json::from_str::<Vec<serde_json::Value>>(&body).unwrap();
+    assert_eq!(results[0]["memory_type"], "semantic");
+    assert!(body.contains("currently active in Hermes"));
+}
+
+#[tokio::test]
 async fn subconscious_chat_truncates_utf8_snippets_without_panicking() {
     let app = app_with_limited_auth();
     let long_content = format!("{} Ende", "Übergrößenträger🙂".repeat(24));

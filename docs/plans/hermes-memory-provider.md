@@ -72,6 +72,27 @@ hooks:
 
 Config stored in `~/.hermes/config.yaml` under `memory.providers.knowwhere`.
 
+## 3.1 Current Hardened Runtime Contract
+
+The active plugin lives outside this repository at `~/.hermes/plugins/knowwhere/__init__.py`.
+As of 2026-05-05 the hardened contract is:
+
+- `prefetch()` sends raw user-facing retrieval with `reflect=false` by default.
+- `prefetch()` also performs a separate `memory_type_filter=decision` request, but only injects nodes whose response type is actually `decision`.
+- `<knowwhere_reflect>`, `<knowwhere_memory>`, and `memory_type=meta` are filtered before Hermes prompt injection.
+- Stored Hermes turns include `session_id`, `turn_index`, `role`, `agent`, `source_system`, `observed_at`, and `claim_scope`.
+- On initialization the plugin stores a current-state observation that KnowWhere is active as Hermes memory provider.
+- Retrieved context is background evidence, not an authority above the current user instruction or live observations.
+
+To sync the active runtime plugin after checkout:
+
+```bash
+mkdir -p ~/.hermes/plugins/knowwhere
+cp hermes-plugin/knowwhere/__init__.py ~/.hermes/plugins/knowwhere/__init__.py
+```
+
+The repository mirror lives at `hermes-plugin/knowwhere/__init__.py`.
+
 ---
 
 ## 4. KnowWhereProvider Class Design

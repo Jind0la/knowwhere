@@ -1,103 +1,91 @@
 # Next Steps — KnowWhere v0.5.0 → v1.0.0
 
-> Stand: 2026-05-05, nach Decision-Scoring-Fix und MemoryType::parse-Reparatur.
-> Entscheidungen basieren auf Live-A/B-Tests mit 847 Decision-Nodes und 2154 Total-Nodes.
+> Stand: 2026-05-05, nach Hermes Retrieval Hardening, Decision-Scoring-Fix und MemoryType::parse-Reparatur.
+> Aktueller Fokus: Hermes bekommt sicheren, belegbaren, aktuellen Memory-Kontext statt bloß viele Treffer.
 
 ---
 
-## 1. ⚡ JETZT: Consolidation erzeugt keine Decision-Typen
+## Erledigt seit dem letzten Stand
 
-### Problem
-
-Die `store_session`-API akzeptiert jetzt `memory_type: "decision"` und speichert korrekt als `MemoryType::Decision`. Aber die **automatische Consolidation** (`src/scheduler/consolidation.rs`, `src/summarizer/mod.rs`) erzeugt Summary-Nodes mit `memory_type: Semantic` — selbst wenn sie explizit Decision-Content enthalten.
-
-**Beweis aus dem A/B-Test:**
-```
-Query: "why PostgreSQL instead of SQLite"
-→ Position 1-3: semantic (trust=derived, mult=0.88)
-→ KEIN Decision-Node, obwohl es PostgreSQL-Entscheidungen gab
-```
-
-Die 847 Decision-Nodes in der DB sind fast alle aus manuellen `store_session`-Calls oder dem Batch-Retype. Die automatische Pipeline produziert sie nicht.
-
-### Fix (geschätzt 2-3 Stunden)
-
-1. **`src/scheduler/consolidation.rs`:** `is_decision_content()` prüft bereits auf "DECISION:", "decided", "Entscheidung". Der erkannte Typ muss als `MemoryType::Decision` in den generierten Node übernommen werden.
-2. **`src/summarizer/mod.rs`:** `LocalSummarizer::summarize()` muss bei Decision-Content `MemoryType::Decision` statt `Semantic` setzen.
-3. **Test:** Consolidation-Loop durchlaufen lassen, dann `retrieve_fractal` mit `memory_type_filter=decision` — es sollten N＞0 Decision-Nodes aus Consolidation erscheinen.
-
-**Begründung:** Ohne diesen Fix wächst der Decision-Bestand nur durch explizite API-Calls, nicht organisch. 80%+ der zukünftigen Decision-Nodes werden durch Consolidation entstehen müssen.
+- **Decision Parsing & Scoring:** `memory_type: "decision"` wird korrekt geparst; Decision-Nodes ranken als PRIMARY plus Type-Boost.
+- **Hermes Retrieval Hardening:** `/retrieve_fractal` hat strikte Typfilter, keine Default-`<knowwhere_memory>`-Injection mehr und keine Meta/Reflect-Leakage im Hermes-Plugin.
+- **Hermes Eval:** `scripts/eval_hermes_retrieval.py` misst Top-1 non-meta, Decision-Purity, Provenance Coverage, Repeated Top-1, Stale-Conflict Rate und Latenz.
+- **Intent-Aware Retrieval:** `query_intent` erlaubt erste Routing-Hinweise für `current_state`, `decision_why`, `procedure`, `preference`, `debug`, `historical`.
+- **Provenance-Konvention:** Hermes- und Consolidation-Pfade schreiben bessere Metadata (`observed_at`, `claim_scope`, `source_node_ids`, `source_session_ids`, `derived_from`, `decision_what`, `decision_why`).
 
 ---
 
-## 2. 🔜 Cross-Encoder Reranking aktivieren
+## 1. ⚡ JETZT: Retrieval-Diversität und Provenance Coverage verbessern
 
 ### Problem
 
-Der Cross-Encoder (`bge-reranker-v2-m3`, 491 Zeilen Code) ist vollständig implementiert, getestet und verbessert die Precision um **+33-42%**. Aber er ist **nicht kompiliert** — der `reranker` Feature-Flag fehlt im Default-Build.
+Die API- und Plugin-Verträge sind jetzt sauber, aber der bestehende Datenbestand ist noch nicht gleichmäßig hochwertig:
+
+- `provenance_coverage` ist noch nicht nahe genug an 1.0, weil alte Nodes keine vollständigen `source_*`-Metadaten haben.
+- `repeated_top1_rate` ist noch zu hoch: einzelne generische Decision-Nodes gewinnen zu viele unterschiedliche Query-Typen.
+- Current-State-Observation funktioniert für neue Daten, aber alte historische Zustände sind noch nicht systematisch scoped/superseded.
+
+### Fix (geschätzt 1 Tag)
+
+1. **Backfill/repair provenance:** Admin- oder Script-Pfad, der vorhandene Hermes/Decision-Nodes mit ableitbarer Provenance ergänzt.
+2. **Intent-Ranking verfeinern:** Für `open_recall` und `procedure` weniger aggressive Decision-Gewichtung; für `current_state` aktuelle Semantic/Diagnostic-Evidence bevorzugen.
+3. **Golden Queries erweitern:** `scripts/eval_hermes_retrieval.py` mit echten erwarteten Trefferklassen/IDs anreichern.
+
+**Begründung:** Der gefährliche Meta/Filter-Fehler ist behoben. Jetzt entscheidet Datenqualität darüber, ob Hermes wirklich bessere Antworten gibt.
+
+---
+
+## 2. 🔜 Postgres-Fractal-Expansion nachziehen
+
+### Problem
+
+`MemoryStore` kann über `expand_fractal` Kinder/Summary-Beziehungen nachladen. `PostgresStore` fällt aktuell weitgehend auf Hybrid Retrieval zurück. Dadurch ist Hermes auf PostgreSQL weniger „fraktal“ als das Architekturziel.
+
+### Ansatz
+
+1. `PostgresStore::expand_fractal` implementieren: `children_tier_ids`, `parent_tier_id` und ggf. source-node links nachladen.
+2. Nach Expansion weiterhin `retrieval_profile`, `memory_type_filter`, Governance und Intent-Scoring anwenden.
+3. Tests für Postgres-Fractal-Parität ergänzen.
+
+**Begründung:** KnowWheres Kernversprechen ist Fractal Zoom. Produktions-Hermes nutzt PostgreSQL; daher muss die Postgres-Seite denselben Navigationswert liefern.
+
+---
+
+## 3. 🔜 Current-vs-Historical konsequent machen
+
+### Problem
+
+Alte Aussagen wie „KnowWhere ist deaktiviert“ bleiben historisch wahr, dürfen aber aktuelle Antworten nicht dominieren.
+
+### Ansatz
+
+Ein additiver Repair-/Governance-Pfad:
+1. Current-State-Claims mit `claim_scope=current`, `observed_at`, `valid_from` schreiben.
+2. Historische Zustands-Claims als `claim_scope=historical` markieren.
+3. Bei klaren Nachfolgern `superseded_by` setzen, ohne alte Nodes zu löschen.
+
+**Begründung:** Moderne temporal RAG Benchmarks zeigen, dass stale knowledge einer der größten Fehlerquellen ist.
+
+---
+
+## 4. 🔜 Cross-Encoder Reranking aktivieren
+
+Der Cross-Encoder (`bge-reranker-v2-m3`) ist implementiert und feature-gated. Nach Provenance/Intent lohnt sich die Aktivierung als Qualitätshebel.
 
 **Aktivierung:**
 ```bash
 SQLX_OFFLINE=true cargo build --release --features "postgres-storage,summarizer,reranker"
 ```
 
-**Trade-off:** +2.5 GB RAM für das ONNX-Modell. Auf einem 8 GB M1 MacBook Air bedeutet das: Ollama (1 GB) + ONNX (2.5 GB) + KnowWhere (~500 MB) = 4 GB. Mit System-Overhead bleiben ~2 GB für andere Apps. Akzeptabel für Dev, aber für ein 8 GB Deployment muss der Reranker optional bleiben.
-
-**Begründung:** +33-42% Precision ist der größte einzelne Qualitätssprung, der sofort verfügbar ist. Keine neuen Features nötig — nur ein Rebuild.
+**Trade-off:** +2.5 GB RAM für das ONNX-Modell.
 
 ---
 
-## 3. 🔜 Decision-Nodes aus existierenden Summaries extrahieren
+## 5. 📋 Quality-of-Life
 
-### Problem
-
-~880 `semantic` Summary-Nodes enthalten Decision-Content ("Key decisions made", "Decision:", "Entscheidung:"), sind aber als `semantic` getypt. Der Batch-Retype (PostgreSQL `UPDATE`) hat 474 davon auf `decision` umgestellt, aber pattern-basiertes Retyping ist ungenau — es erwischt False Positives ("No decision was made") und verpasst False Negatives (Entscheidungen ohne "Decision:" Prefix).
-
-### Ansatz
-
-Ein Admin-Endpoint `POST /maintenance/retype_decisions` der:
-1. Alle `semantic` Nodes mit bestimmten Patterns findet
-2. Den Content durch llama3.2 schickt mit Prompt: "Enthält dieser Text eine konkrete Entscheidung? Antworte nur YES oder NO."
-3. Bei YES → `memory_type` auf `decision` updated
-
-**Begründung:** LLM-basiertes Retyping ist präziser als Regex und skaliert (automatisch für zukünftige Summaries). Ersetzt den manuellen SQL `UPDATE` der nur einmal läuft.
-
----
-
-## 4. 📋 Quality-of-Life
-
-### 4a. `cargo test --features postgres-storage` ohne manuelles DATABASE_URL
-
-Integration-Tests brauchen `DATABASE_URL`. `CI=true` aktiviert einen `FixedEmbeddingProvider(768)`, aber das Flag wird nicht dokumentiert. Entweder:
-- Default `DATABASE_URL` in Test-Harness setzen, oder
-- Integration-Tests mit `#[ignore]` markieren wenn `DATABASE_URL` fehlt
-
-### 4b. USearch Warnings unterdrücken
-
-"Reserve capacity ahead of insertions" erscheint bei fast jeder Insertion. Kein funktionaler Impact, aber füllt die Logs. `tracing::warn` → `tracing::debug` oder USearch-Kapazität vorab alloziieren.
-
-### 4c. README Version Auto-Detect
-
-`grep 'version' Cargo.toml` → README-Version auto-updaten via CI/Pre-Commit. Manuelles Sync produziert Staleness.
-
----
-
-## 5. 🧪 Messung: Retrieval Quality Tracking
-
-### Problem
-
-Wir haben kein systematisches Tracking ob Retrieval *besser* wird. Der A/B-Test war manuell.
-
-### Ansatz
-
-Ein minimales Eval-Framework:
-```bash
-curl -X POST /eval/cases  # 20 hand-crafted Query→Expected-Node-ID pairs
-curl -X POST /eval/run    # Returns precision@5, recall@5, MRR
-```
-Wird vor jedem Release ausgeführt. Regression wird sofort sichtbar.
-
-**Begründung:** Ohne Metriken ist jede Änderung am Scoring ein Blindflug. Der LongMemEval-Benchmark (50 Cases) existiert bereits — er muss nur automatisierbar werden.
+- `cargo test --features postgres-storage` ohne manuelles `DATABASE_URL` besser dokumentieren/ergonomisieren.
+- USearch-Warnings reduzieren.
+- README/Cargo-Version synchronisieren.
 
 ---
 
@@ -105,11 +93,10 @@ Wird vor jedem Release ausgeführt. Regression wird sofort sichtbar.
 
 | # | Item | Impact | Effort | Risk | Order |
 |---|------|--------|--------|------|-------|
-| 1 | Consolidation → Decision-Typen | 🔴 Hoch | 2-3h | Niedrig | **1** |
-| 2 | Cross-Encoder aktivieren | 🔴 Hoch | 30min | RAM (2.5GB) | **2** |
-| 3 | LLM-basiertes Decision-Retyping | 🟡 Mittel | 3-4h | OpenAI-Kosten | **3** |
-| 4a | Test-Ergonomie | 🟢 Niedrig | 1h | Kein | 4 |
-| 4b | USearch Warnings | 🟢 Niedrig | 30min | Kein | 5 |
-| 5 | Retrieval Eval | 🟡 Mittel | 4-5h | Kein | 6 |
+| 1 | Provenance + Retrieval-Diversität | 🔴 Hoch | 1 Tag | Mittel | **1** |
+| 2 | Postgres-Fractal-Expansion | 🔴 Hoch | 1-2 Tage | Mittel | **2** |
+| 3 | Current-vs-Historical Repair | 🔴 Hoch | 1 Tag | Mittel | **3** |
+| 4 | Cross-Encoder aktivieren | 🟡 Mittel | 30min | RAM | 4 |
+| 5 | Test-Ergonomie / Warnings | 🟢 Niedrig | 1-2h | Niedrig | 5 |
 
-**Gesamtaufwand für 1+2 (kritischer Pfad):** 3 Stunden. Danach ist die Decision-Pipeline vollständig: Store → Consolidate → Type → Score → Retrieve.
+**Kritischer Pfad:** Provenance Coverage hochziehen, repeated Top-1 senken, danach Postgres-Fractal-Parität herstellen.

@@ -214,7 +214,16 @@ use crate::storage::{HybridQuery, RetrievalProfile, StorageBackend};
 /// Split conversation text into rounds (user+assistant turn pairs).
 /// Falls back to the full text as a single chunk when no role prefixes are detected.
 fn chunk_into_rounds(text: &str, min_round_chars: usize) -> Vec<String> {
-    let role_prefixes = ["user:", "assistant:", "human:", "ai:", "User:", "Assistant:", "Human:", "AI:"];
+    let role_prefixes = [
+        "user:",
+        "assistant:",
+        "human:",
+        "ai:",
+        "User:",
+        "Assistant:",
+        "Human:",
+        "AI:",
+    ];
     let lines: Vec<&str> = text.lines().collect();
     let mut rounds: Vec<String> = Vec::new();
     let mut current = String::new();
@@ -285,7 +294,9 @@ pub struct AppState {
     pub consolidation: Option<std::sync::Arc<crate::scheduler::ConsolidationScheduler>>,
     /// Cross-encoder reranker for two-stage retrieval (feature-gated).
     #[cfg(feature = "reranker")]
-    pub reranker: Option<std::sync::Arc<std::sync::Mutex<crate::retrieval::cross_encoder::CrossEncoderReranker>>>,
+    pub reranker: Option<
+        std::sync::Arc<std::sync::Mutex<crate::retrieval::cross_encoder::CrossEncoderReranker>>,
+    >,
     /// Dedup cache for Frigate webhook events.
     pub frigate_dedup: DedupCache,
     /// Frigate webhook secret (read once at startup, not per-request).
@@ -544,6 +555,18 @@ fn default_trust_tier(
     }
 }
 
+fn default_claim_scope(memory_type: MemoryType, source: MemorySource) -> &'static str {
+    match memory_type {
+        MemoryType::Episodic => "episodic",
+        MemoryType::Preference => "preference",
+        MemoryType::Procedural => "procedural",
+        MemoryType::Meta => "diagnostic",
+        MemoryType::Decision => "decision",
+        MemoryType::Semantic if source == MemorySource::Consolidation => "historical",
+        MemoryType::Semantic => "current",
+    }
+}
+
 fn normalize_node_metadata(
     memory_type: MemoryType,
     source: MemorySource,
@@ -555,6 +578,9 @@ fn normalize_node_metadata(
             .or_insert_with(|| Value::String(derivation.to_string()));
     }
     let trust_tier = default_trust_tier(memory_type, source, metadata);
+    metadata
+        .entry("claim_scope".to_string())
+        .or_insert_with(|| Value::String(default_claim_scope(memory_type, source).to_string()));
     if should_hide_from_user_retrieval(memory_type, metadata) {
         set_metadata_text(metadata, FractalNode::TRUST_TIER_KEY, trust_tier);
         metadata
@@ -595,6 +621,137 @@ fn ensure_retrieval_profile_allowed(
             allowed_profiles_list(auth)
         ),
     ))
+}
+
+fn parse_memory_type_filter(
+    raw: Option<&String>,
+) -> Result<Option<MemoryType>, (StatusCode, String)> {
+    match raw {
+        Some(value) => MemoryType::parse(value).map(Some).ok_or_else(|| {
+            (
+                StatusCode::BAD_REQUEST,
+                format!("unknown memory_type_filter '{}'", value),
+            )
+        }),
+        None => Ok(None),
+    }
+}
+
+fn retrieval_result_allowed(
+    entry: &crate::storage::ScoredNode,
+    profile: RetrievalProfile,
+    type_filter: Option<MemoryType>,
+) -> bool {
+    profile.allows(&entry.node)
+        && type_filter.map_or(true, |filter| entry.node.memory_type == filter)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum QueryIntent {
+    CurrentState,
+    DecisionWhy,
+    Procedure,
+    Preference,
+    Debug,
+    Historical,
+    OpenRecall,
+}
+
+fn parse_query_intent(raw: Option<&String>, query_text: Option<&String>) -> QueryIntent {
+    if let Some(value) = raw {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "current_state" | "current-state" | "current" => return QueryIntent::CurrentState,
+            "decision_why" | "decision-why" | "why" | "decision" => {
+                return QueryIntent::DecisionWhy
+            }
+            "procedure" | "procedural" | "how_to" | "how-to" => return QueryIntent::Procedure,
+            "preference" => return QueryIntent::Preference,
+            "debug" | "diagnostic" => return QueryIntent::Debug,
+            "historical" | "history" => return QueryIntent::Historical,
+            _ => {}
+        }
+    }
+
+    let text = query_text
+        .map(|value| value.to_ascii_lowercase())
+        .unwrap_or_default();
+    if text.contains("gerade")
+        || text.contains("aktuell")
+        || text.contains("current")
+        || text.contains("laeuft")
+        || text.contains("läuft")
+        || text.contains("status")
+    {
+        return QueryIntent::CurrentState;
+    }
+    if text.contains("warum")
+        || text.contains("why")
+        || text.contains("decision")
+        || text.contains("entschied")
+    {
+        return QueryIntent::DecisionWhy;
+    }
+    if text.contains("wie starte")
+        || text.contains("how to")
+        || text.contains("workflow")
+        || text.contains("verfahren")
+    {
+        return QueryIntent::Procedure;
+    }
+    if text.contains("praeferenz") || text.contains("präferenz") || text.contains("preference") {
+        return QueryIntent::Preference;
+    }
+    QueryIntent::OpenRecall
+}
+
+fn scored_metadata_text<'a>(metadata: &'a HashMap<String, Value>, key: &str) -> Option<&'a str> {
+    metadata.get(key).and_then(Value::as_str)
+}
+
+fn intent_score_multiplier(intent: QueryIntent, node: &ScoredNode) -> f32 {
+    let scope = scored_metadata_text(&node.metadata, "claim_scope").unwrap_or("");
+    match intent {
+        QueryIntent::CurrentState => match scope {
+            "current" | "diagnostic" => 1.6,
+            "episodic" => 1.25,
+            "historical" | "decision" if node.memory_type == MemoryType::Decision => 0.45,
+            _ if node.memory_type == MemoryType::Decision => 0.55,
+            _ => 1.0,
+        },
+        QueryIntent::DecisionWhy => match node.memory_type {
+            MemoryType::Decision => 1.7,
+            MemoryType::Semantic => 1.15,
+            MemoryType::Episodic => 0.9,
+            _ => 1.0,
+        },
+        QueryIntent::Procedure => match node.memory_type {
+            MemoryType::Procedural => 1.8,
+            MemoryType::Semantic => 1.2,
+            MemoryType::Decision => 0.75,
+            _ => 1.0,
+        },
+        QueryIntent::Preference => match node.memory_type {
+            MemoryType::Preference => 1.8,
+            MemoryType::Episodic => 1.1,
+            MemoryType::Decision => 0.75,
+            _ => 1.0,
+        },
+        QueryIntent::Debug => 1.0,
+        QueryIntent::Historical => {
+            if scope == "historical" || node.memory_type == MemoryType::Decision {
+                1.25
+            } else {
+                1.0
+            }
+        }
+        QueryIntent::OpenRecall => 1.0,
+    }
+}
+
+fn apply_intent_scoring(scored: &mut [ScoredNode], intent: QueryIntent) {
+    for node in scored {
+        node.score *= intent_score_multiplier(intent, node);
+    }
 }
 
 #[derive(Serialize, ToSchema)]
@@ -798,14 +955,8 @@ async fn store_session_json(
             chunks[idx].clone()
         };
 
-        let mut node = FractalNode::new_typed(
-            Some(content),
-            None,
-            vector,
-            metadata,
-            memory_type,
-            source,
-        );
+        let mut node =
+            FractalNode::new_typed(Some(content), None, vector, metadata, memory_type, source);
         if let Some(imp) = req.importance {
             node.importance = imp.clamp(1, 10);
         }
@@ -851,15 +1002,12 @@ async fn store_session_binary(
         "cross-modal embedding router not configured".to_string(),
     ))?;
 
-    let vector = router
-        .route(content_type, body)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("cross-modal embed failed: {e}"),
-            )
-        })?;
+    let vector = router.route(content_type, body).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("cross-modal embed failed: {e}"),
+        )
+    })?;
 
     let kind = if content_type.starts_with("image/") {
         "image"
@@ -880,9 +1028,18 @@ async fn store_session_binary(
         "embedding_source".to_string(),
         Value::String("cross-modal-router".to_string()),
     );
-    normalize_node_metadata(MemoryType::Episodic, MemorySource::Conversation, &mut metadata);
+    normalize_node_metadata(
+        MemoryType::Episodic,
+        MemorySource::Conversation,
+        &mut metadata,
+    );
 
-    let content = format!("[{}/{}] {} bytes binary payload", kind, content_type, body.len());
+    let content = format!(
+        "[{}/{}] {} bytes binary payload",
+        kind,
+        content_type,
+        body.len()
+    );
     let mut node = FractalNode::new_typed(
         Some(content),
         None,
@@ -969,7 +1126,10 @@ pub async fn store_session_batch(
         for chunk in &chunks {
             let c = clean_for_embedding(chunk);
             if c.len() >= 4 {
-                all_chunks.push(ChunkWork { session_idx: s_idx, text: c });
+                all_chunks.push(ChunkWork {
+                    session_idx: s_idx,
+                    text: c,
+                });
             }
         }
         let end = all_chunks.len();
@@ -1006,8 +1166,14 @@ pub async fn store_session_batch(
         for chunk_idx in chunk_start..chunk_end {
             let vector = vectors[chunk_idx].clone();
             let mut metadata = session.metadata.clone();
-            metadata.insert("chunk_index".to_string(), Value::Number(serde_json::Number::from(chunk_idx - chunk_start)));
-            metadata.insert("session_chunk_count".to_string(), Value::Number(serde_json::Number::from(chunk_count)));
+            metadata.insert(
+                "chunk_index".to_string(),
+                Value::Number(serde_json::Number::from(chunk_idx - chunk_start)),
+            );
+            metadata.insert(
+                "session_chunk_count".to_string(),
+                Value::Number(serde_json::Number::from(chunk_count)),
+            );
             normalize_node_metadata(memory_type, source, &mut metadata);
 
             let content = if chunk_idx == chunk_start {
@@ -1016,14 +1182,8 @@ pub async fn store_session_batch(
                 all_chunks[chunk_idx].text.clone()
             };
 
-            let mut node = FractalNode::new_typed(
-                Some(content),
-                None,
-                vector,
-                metadata,
-                memory_type,
-                source,
-            );
+            let mut node =
+                FractalNode::new_typed(Some(content), None, vector, metadata, memory_type, source);
             if let Some(imp) = session.importance {
                 node.importance = imp.clamp(1, 10);
             }
@@ -1065,7 +1225,6 @@ pub async fn store_session_batch(
         }),
     ))
 }
-
 
 // -- Store External (Pointer-First: nie Rohdaten, nur Pointer) --
 
@@ -1235,6 +1394,9 @@ pub struct RetrieveFractalRequest {
     /// Filter by memory type.
     #[serde(default)]
     pub memory_type_filter: Option<String>,
+    /// Optional retrieval intent hint: current_state, decision_why, procedure, preference, debug, historical.
+    #[serde(default)]
+    pub query_intent: Option<String>,
     /// Maximum context tier to retrieve: "summary", "overview", or "raw".
     /// Only memories at or below this tier are returned (default: "overview").
     #[serde(default = "default_max_tier")]
@@ -1508,20 +1670,14 @@ pub async fn subconscious_chat(
     let answer = if is_qa_mode(&req.answer_mode) {
         let temporal = is_temporal_question(&req.message, req.question_type.as_deref());
         let mut qa_results = filtered_results.clone();
-        let sort_chrono =
-            temporal || is_multi_session_type(req.question_type.as_deref());
+        let sort_chrono = temporal || is_multi_session_type(req.question_type.as_deref());
         if sort_chrono {
             qa_results.sort_by_key(|entry| source_timestamp(&entry.node));
         }
         let contexts: Vec<String> = qa_results
             .iter()
             .map(|entry| {
-                source_context_block(
-                    &req.message,
-                    req.question_type.as_deref(),
-                    temporal,
-                    entry,
-                )
+                source_context_block(&req.message, req.question_type.as_deref(), temporal, entry)
             })
             .collect();
         match openai_qa_answer(
@@ -1611,28 +1767,19 @@ pub async fn retrieve_fractal(
     // Parse max_tier filter (default: overview)
     let max_tier = req.max_tier.as_ref().and_then(|s| ContextTier::parse(s));
 
+    let type_filter = parse_memory_type_filter(req.memory_type_filter.as_ref())?;
+    let query_intent = parse_query_intent(req.query_intent.as_ref(), req.query_text.as_ref());
+
     // Stage 1: Hybrid retrieval via StorageBackend trait
     let query_vector_for_expand = query_vector.clone();
-    let mut query = HybridQuery {
+    let query = HybridQuery {
         query_text: req.query_text.clone(),
         query_vector: Some(query_vector),
         top_k: req.top_k,
         max_depth: req.max_depth,
         profile: req.retrieval_profile,
-        memory_type_filter: None,
+        memory_type_filter: type_filter,
     };
-    // Parse memory_type_filter from string
-    if let Some(ref mt_str) = req.memory_type_filter {
-        match mt_str.to_lowercase().as_str() {
-            "decision" => query.memory_type_filter = Some(MemoryType::Decision),
-            "semantic" => query.memory_type_filter = Some(MemoryType::Semantic),
-            "episodic" => query.memory_type_filter = Some(MemoryType::Episodic),
-            "preference" => query.memory_type_filter = Some(MemoryType::Preference),
-            "procedural" => query.memory_type_filter = Some(MemoryType::Procedural),
-            "meta" => query.memory_type_filter = Some(MemoryType::Meta),
-            _ => {} // Unknown type → no filter
-        }
-    }
     let results = state.store.hybrid_retrieve(&query).await.map_err(|e| {
         tracing::error!("hybrid_retrieve failed: {}", e);
         (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
@@ -1685,7 +1832,11 @@ pub async fn retrieve_fractal(
                 Ok(reranked) => {
                     let mut mapped = Vec::with_capacity(reranked.len());
                     for r in reranked {
-                        if let Ok(Some(node)) = state.store.get(&uuid::Uuid::parse_str(&r.node_id).unwrap_or_default()).await {
+                        if let Ok(Some(node)) = state
+                            .store
+                            .get(&uuid::Uuid::parse_str(&r.node_id).unwrap_or_default())
+                            .await
+                        {
                             mapped.push(crate::storage::ScoredNode {
                                 id: node.id,
                                 score: r.cross_encoder_score,
@@ -1724,19 +1875,19 @@ pub async fn retrieve_fractal(
         results
     };
 
+    let results: Vec<crate::storage::ScoredNode> = results
+        .into_iter()
+        .filter(|s| retrieval_result_allowed(s, req.retrieval_profile, type_filter))
+        .collect();
+
     if !req.governance_enabled {
         let scored: Vec<ScoredNode> = results
             .into_iter()
+            .take(req.top_k)
             .map(|entry| ScoredNode::from_storage(entry, req.include_debug))
             .collect();
         return Ok(Json(scored));
     }
-
-    // Optional memory type filter
-    let type_filter = req
-        .memory_type_filter
-        .as_ref()
-        .and_then(|s| MemoryType::parse(s));
 
     // Stage 2: Governance validation
     let validator = GovernanceValidator::new(state.governance_policy.read().await.clone());
@@ -1769,6 +1920,8 @@ pub async fn retrieve_fractal(
         })
         .collect();
 
+    apply_intent_scoring(&mut scored, query_intent);
+
     // Re-sort by combined score (retrieval_score * governance_multiplier).
     // Nodes with hard blocks are already filtered out above.
     scored.sort_by(|a, b| {
@@ -1790,9 +1943,10 @@ pub async fn retrieve_fractal(
             .partial_cmp(&effective_a)
             .unwrap_or(std::cmp::Ordering::Equal)
     });
+    scored.truncate(req.top_k);
 
     // Stage 3: Optional Reflect — synthesize coherent summary from top results
-    if req.reflect && !scored.is_empty() {
+    if req.reflect && !scored.is_empty() && type_filter.is_none() {
         let reflector = crate::reflector::Reflector::new();
         if let Some(ref reflector) = reflector {
             let query = req.query_text.as_deref().unwrap_or("");
@@ -1802,14 +1956,18 @@ pub async fn retrieve_fractal(
                     // Skip Episodic nodes — raw transcripts add too much noise
                     // and dilute synthesis quality of the small reflect model.
                     // Kept: Decision, Semantic, Preference, Procedural, Meta.
-                    let chunks: Vec<crate::storage::ScoredNode> = scored.iter()
+                    let chunks: Vec<crate::storage::ScoredNode> = scored
+                        .iter()
                         .filter(|s| s.memory_type != MemoryType::Episodic)
                         .map(|s| {
                             use crate::storage::ScoredNode as StorageScoredNode;
                             let mut meta_map: HashMap<String, serde_json::Value> = HashMap::new();
                             for (k, v) in &s.metadata {
                                 if let Some(vs) = v.as_str() {
-                                    meta_map.insert(k.clone(), serde_json::Value::String(vs.to_string()));
+                                    meta_map.insert(
+                                        k.clone(),
+                                        serde_json::Value::String(vs.to_string()),
+                                    );
                                 }
                             }
                             let mut node = crate::memory::FractalNode::new_typed(
@@ -1827,35 +1985,43 @@ pub async fn retrieve_fractal(
                                 node,
                                 debug: None,
                             }
-                        }).collect();
+                        })
+                        .collect();
 
                     // Fallback: if all results are episodic (rare), pass all nodes
                     // so the reflector doesn't produce an empty synthesis.
                     let chunks = if chunks.is_empty() {
-                        scored.iter().map(|s| {
-                            use crate::storage::ScoredNode as StorageScoredNode;
-                            let mut meta_map: HashMap<String, serde_json::Value> = HashMap::new();
-                            for (k, v) in &s.metadata {
-                                if let Some(vs) = v.as_str() {
-                                    meta_map.insert(k.clone(), serde_json::Value::String(vs.to_string()));
+                        scored
+                            .iter()
+                            .map(|s| {
+                                use crate::storage::ScoredNode as StorageScoredNode;
+                                let mut meta_map: HashMap<String, serde_json::Value> =
+                                    HashMap::new();
+                                for (k, v) in &s.metadata {
+                                    if let Some(vs) = v.as_str() {
+                                        meta_map.insert(
+                                            k.clone(),
+                                            serde_json::Value::String(vs.to_string()),
+                                        );
+                                    }
                                 }
-                            }
-                            let mut node = crate::memory::FractalNode::new_typed(
-                                s.content.clone(),
-                                None,
-                                vec![0.0; 1024],
-                                meta_map,
-                                s.memory_type,
-                                crate::memory::MemorySource::Consolidation,
-                            );
-                            node.id = s.id;
-                            StorageScoredNode {
-                                id: s.id,
-                                score: s.score,
-                                node,
-                                debug: None,
-                            }
-                        }).collect()
+                                let mut node = crate::memory::FractalNode::new_typed(
+                                    s.content.clone(),
+                                    None,
+                                    vec![0.0; 1024],
+                                    meta_map,
+                                    s.memory_type,
+                                    crate::memory::MemorySource::Consolidation,
+                                );
+                                node.id = s.id;
+                                StorageScoredNode {
+                                    id: s.id,
+                                    score: s.score,
+                                    node,
+                                    debug: None,
+                                }
+                            })
+                            .collect()
                     } else {
                         chunks
                     };
@@ -1873,7 +2039,10 @@ pub async fn retrieve_fractal(
                             original_pointer: None,
                             metadata: {
                                 let mut m = HashMap::new();
-                                m.insert("derivation".to_string(), serde_json::Value::String("reflected".to_string()));
+                                m.insert(
+                                    "derivation".to_string(),
+                                    serde_json::Value::String("reflected".to_string()),
+                                );
                                 m
                             },
                             created_at: chrono::Utc::now(),
@@ -1890,7 +2059,9 @@ pub async fn retrieve_fractal(
                         return Ok(Json(with_reflection));
                     }
                     Ok(_) => {
-                        tracing::debug!("reflect produced empty output, returning unscored results");
+                        tracing::debug!(
+                            "reflect produced empty output, returning unscored results"
+                        );
                     }
                     Err(e) => {
                         tracing::warn!("reflect failed (non-fatal): {}", e);
@@ -1900,50 +2071,6 @@ pub async fn retrieve_fractal(
         } else {
             tracing::debug!("reflector not available (Ollama not reachable)");
         }
-    } else if !scored.is_empty() {
-        // reflect=false: prepend agent guidance for raw results so Hermes
-        // knows how to interpret trust tiers, decision claims, and provenance
-        let memory_instruction = format!(
-            "<knowwhere_memory>\n\
-             **Wichtige Anweisung für dich (den Agenten):**\n\
-             Nutze die folgenden hierarchischen Erinnerungen aus deinem \
-             Langzeitgedächtnis (KnowWhere).\n\
-             - Höhere Trust-Tiers (primary > reference > derived) sind verlässlicher.\n\
-             - Decision-Nodes enthalten explizit claim + reason — priorisiere \
-               diese bei „Warum?\"-Fragen.\n\
-             - Nodes vom Typ „reflect\" sind synthetisierte Zusammenfassungen.\n\
-             - Ignoriere Erinnerungen, die nicht direkt zur aktuellen Query passen.\n\
-             - Beziehe dich bei Bedarf auf die Quellen (Pointer), wenn du Details brauchst.\n\
-             \n\
-             --- Erinnerungen ---\n\
-             {} nodes retrieved\n\
-             </knowwhere_memory>",
-            scored.len()
-        );
-        let instruction_node = ScoredNode {
-            id: uuid::Uuid::new_v4(),
-            score: 1.0,
-            memory_type: MemoryType::Meta,
-            source: Some(MemorySource::Consolidation),
-            content: Some(memory_instruction),
-            original_pointer: None,
-            metadata: {
-                let mut m = HashMap::new();
-                m.insert("derivation".to_string(), serde_json::Value::String("instruction".to_string()));
-                m
-            },
-            created_at: chrono::Utc::now(),
-            retrieval_profile: RetrievalProfile::UserFacing,
-            trust_tier: "primary".to_string(),
-            score_debug: None,
-            confidence: Some(1.0),
-            sensitivity: Some(Sensitivity::Normal),
-            governance_passed: Some(true),
-            governance_issues: vec![],
-        };
-        let mut with_instruction = vec![instruction_node];
-        with_instruction.extend(scored);
-        return Ok(Json(with_instruction));
     }
 
     Ok(Json(scored))
@@ -2087,7 +2214,9 @@ pub async fn rerank(
         };
 
         let strategy_name = match strategy {
-            crate::retrieval::cross_encoder::RerankStrategy::CrossEncoderOnly => "cross_encoder_only",
+            crate::retrieval::cross_encoder::RerankStrategy::CrossEncoderOnly => {
+                "cross_encoder_only"
+            }
             crate::retrieval::cross_encoder::RerankStrategy::MergedRrf { .. } => "merged_rrf",
         };
 
@@ -2209,10 +2338,14 @@ pub async fn batch_delete_nodes(
             Err(_) => not_found += 1,
         }
     }
-    tracing::info!(deleted, not_found, total = req.ids.len(), "batch delete complete");
+    tracing::info!(
+        deleted,
+        not_found,
+        total = req.ids.len(),
+        "batch delete complete"
+    );
     Ok(Json(BatchDeleteResponse { deleted, not_found }))
 }
-
 
 // -- Purge Dummy Nodes --
 
@@ -2360,19 +2493,21 @@ pub async fn repair_embeddings(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    match state.store.repair_embedding_dimensions(&*state.embedding).await {
-        Ok(report) => {
-            Ok(Json(RepairEmbeddingsResponse {
-                scanned: report.scanned,
-                repaired: report.repaired,
-                skipped: report.skipped,
-                target_dimension: report.target_dimension,
-                message: format!(
-                    "Repaired {} of {} memories ({} skipped). Target dimension: {}",
-                    report.repaired, report.scanned, report.skipped, report.target_dimension
-                ),
-            }))
-        }
+    match state
+        .store
+        .repair_embedding_dimensions(&*state.embedding)
+        .await
+    {
+        Ok(report) => Ok(Json(RepairEmbeddingsResponse {
+            scanned: report.scanned,
+            repaired: report.repaired,
+            skipped: report.skipped,
+            target_dimension: report.target_dimension,
+            message: format!(
+                "Repaired {} of {} memories ({} skipped). Target dimension: {}",
+                report.repaired, report.scanned, report.skipped, report.target_dimension
+            ),
+        })),
         Err(e) => {
             tracing::error!("Embedding repair failed: {}", e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
@@ -2457,7 +2592,9 @@ pub async fn force_consolidation(
     tokio::spawn(async move {
         let (enqueued, failed, elapsed_ms) = scheduler.force_run().await;
         tracing::info!(
-            enqueued, failed, elapsed_ms,
+            enqueued,
+            failed,
+            elapsed_ms,
             "force_consolidation: background task complete"
         );
     });
@@ -3322,7 +3459,7 @@ pub async fn reindex_external_node(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "no trajectory pool".into(),
                 )
-                .into())
+                    .into())
             }
         })
         .await

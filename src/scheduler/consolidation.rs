@@ -96,6 +96,37 @@ fn parse_claims_block(text: &str) -> Vec<(String, String)> {
 
     claims
 }
+
+fn consolidation_metadata(
+    source: &FractalNode,
+    derived_from: &str,
+    claim_scope: &str,
+) -> std::collections::HashMap<String, serde_json::Value> {
+    let mut metadata = source.metadata.clone();
+    metadata.insert(
+        "derived_from".to_string(),
+        serde_json::Value::String(derived_from.to_string()),
+    );
+    metadata.insert(
+        "claim_scope".to_string(),
+        serde_json::Value::String(claim_scope.to_string()),
+    );
+    metadata.insert(
+        "source_node_ids".to_string(),
+        serde_json::Value::Array(vec![serde_json::Value::String(source.id.to_string())]),
+    );
+    if let Some(session_id) = source.metadata.get("session_id").cloned() {
+        metadata.insert(
+            "source_session_ids".to_string(),
+            serde_json::Value::Array(vec![session_id]),
+        );
+    }
+    if let Some(turn_index) = source.metadata.get("turn_index").cloned() {
+        metadata.insert("source_turn_range".to_string(), turn_index);
+    }
+    metadata
+}
+
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
@@ -103,13 +134,13 @@ use tokio::sync::RwLock;
 use tokio::time::{interval, Duration, Instant};
 use uuid::Uuid;
 
+use crate::embedding::EmbeddingProvider;
 use crate::memory::types::{ContextTier, MemoryStatus};
 use crate::memory::{FractalNode, MemorySource, MemoryType};
 use crate::scheduler::SchedulerConfig;
 use crate::storage::{StorageBackend, UpdateOperation};
 use crate::summarizer::TieredSummarizer;
 use crate::vlm::{SummaryContext, VlmJob, VlmWorkerHandle};
-use crate::embedding::EmbeddingProvider;
 
 /// Consolidation Scheduler state.
 ///
@@ -164,7 +195,7 @@ impl ConsolidationScheduler {
                  Or configure VLM (OPENAI_API_KEY) for cloud fallback."
             );
         }
-        
+
         Self {
             store,
             vlm_worker,
@@ -254,12 +285,22 @@ impl ConsolidationScheduler {
         // Collect ALL eligible candidates (no vlm_max_jobs_per_cycle cap)
         let mut candidates: Vec<(Uuid, DateTime<Utc>)> = Vec::new();
         for node in all_nodes {
-            if node.parent_tier_id.is_some() { continue; }
-            if node.context_tier != ContextTier::Raw { continue; }
-            if node.status != MemoryStatus::Active { continue; }
-            if node.importance < 3 { continue; }
+            if node.parent_tier_id.is_some() {
+                continue;
+            }
+            if node.context_tier != ContextTier::Raw {
+                continue;
+            }
+            if node.status != MemoryStatus::Active {
+                continue;
+            }
+            if node.importance < 3 {
+                continue;
+            }
             let content_len = node.content.as_ref().map(|c| c.len()).unwrap_or(0);
-            if content_len <= 500 { continue; }
+            if content_len <= 500 {
+                continue;
+            }
             candidates.push((node.id, node.created_at));
         }
         candidates.sort_by(|a, b| a.1.cmp(&b.1));
@@ -295,7 +336,9 @@ impl ConsolidationScheduler {
             if let Some(ref handle) = self.vlm_worker {
                 let job = VlmJob::new(vec![*node_id], SummaryContext::Overview);
                 match handle.enqueue(job).await {
-                    Ok(()) => { enqueued += 1; }
+                    Ok(()) => {
+                        enqueued += 1;
+                    }
                     Err(e) => {
                         tracing::error!(node_id = %node_id, error = %e, "force_run: VLM enqueue failed");
                         failed += 1;
@@ -314,7 +357,10 @@ impl ConsolidationScheduler {
                     node_id = %node_id,
                     "force_run: permanent failure — no summarizer available, marking as processed"
                 );
-                let _ = self.store.update(node_id, UpdateOperation::SetParentTierId(*node_id)).await;
+                let _ = self
+                    .store
+                    .update(node_id, UpdateOperation::SetParentTierId(*node_id))
+                    .await;
             } else {
                 tracing::debug!(
                     node_id = %node_id,
@@ -327,7 +373,12 @@ impl ConsolidationScheduler {
         *self.last_run.write().await = Some(Instant::now());
 
         let elapsed = start.elapsed().as_millis() as u64;
-        tracing::info!(enqueued, failed, elapsed_ms = elapsed, "force_run: complete");
+        tracing::info!(
+            enqueued,
+            failed,
+            elapsed_ms = elapsed,
+            "force_run: complete"
+        );
         (enqueued, failed, elapsed)
     }
 
@@ -486,7 +537,7 @@ impl ConsolidationScheduler {
             None => anyhow::bail!("node {} not found", node_id),
         };
 
-        let content = node.content.unwrap_or_default();
+        let content = node.content.clone().unwrap_or_default();
         if content.is_empty() {
             anyhow::bail!("node {} has empty content", node_id);
         }
@@ -505,12 +556,20 @@ impl ConsolidationScheduler {
         } else {
             MemoryType::Semantic
         };
-        
+
         let mut l1_node = FractalNode::new_typed(
             Some(l1_content),
             None,
             l1_embedding,
-            node.metadata.clone(),
+            consolidation_metadata(
+                &node,
+                "local_l1_overview",
+                if l1_type == MemoryType::Decision {
+                    "decision"
+                } else {
+                    "historical"
+                },
+            ),
             l1_type,
             MemorySource::Consolidation,
         );
@@ -519,15 +578,15 @@ impl ConsolidationScheduler {
         l1_node.children_tier_ids = vec![]; // Will be populated when L0 is created
         l1_node.importance = node.importance;
         l1_node.confidence = node.confidence * 0.95; // Slightly lower confidence for derived content
-        
+
         // Step 2: Store L1 node
         let l1_id = self.store.insert(l1_node).await?;
-        
+
         // Step 3: Link L2 → L1 (parent_tier_id on L2 points to L1)
         self.store
             .update(&node_id, UpdateOperation::SetParentTierId(l1_id))
             .await?;
-        
+
         // Step 4: Link L1 → L2 (children_tier_ids on L1 includes L2)
         self.store
             .update(&l1_id, UpdateOperation::AddChildTierId(node_id))
@@ -560,7 +619,21 @@ impl ConsolidationScheduler {
                 Some(claim_content),
                 None,
                 claim_embedding,
-                node.metadata.clone(),
+                {
+                    let mut metadata =
+                        consolidation_metadata(&node, "local_claim_extraction", "decision");
+                    metadata.insert(
+                        "decision_what".to_string(),
+                        serde_json::Value::String(claim_text.to_string()),
+                    );
+                    if !reason.is_empty() {
+                        metadata.insert(
+                            "decision_why".to_string(),
+                            serde_json::Value::String(reason.to_string()),
+                        );
+                    }
+                    metadata
+                },
                 MemoryType::Decision,
                 MemorySource::Consolidation,
             );
@@ -593,7 +666,7 @@ impl ConsolidationScheduler {
             .local_summarizer
             .summarize_for_tier(&summary.text, ContextTier::Summary)
             .await?;
-        
+
         let l0_content = l0_summary.text.clone();
         let l0_embedding = self.embed_text(&l0_content).await?;
         // Inherit type from L1: if L1 is a Decision, L0 is too
@@ -602,12 +675,20 @@ impl ConsolidationScheduler {
         } else {
             MemoryType::Semantic
         };
-        
+
         let mut l0_node = FractalNode::new_typed(
             Some(l0_content),
             None,
             l0_embedding,
-            node.metadata.clone(),
+            consolidation_metadata(
+                &node,
+                "local_l0_summary",
+                if l0_type == MemoryType::Decision {
+                    "decision"
+                } else {
+                    "historical"
+                },
+            ),
             l0_type,
             MemorySource::Consolidation,
         );
@@ -616,20 +697,20 @@ impl ConsolidationScheduler {
         l0_node.children_tier_ids = vec![node_id]; // L0 → L2 (direct, skipping L1 for fast zoom)
         l0_node.importance = node.importance;
         l0_node.confidence = node.confidence * 0.90; // Lower confidence for double-derived
-        
+
         // Step 6: Store L0 node
         let l0_id = self.store.insert(l0_node).await?;
-        
+
         // Step 7: Link L1 → L0 (parent_tier_id on L1 points to L0)
         self.store
             .update(&l1_id, UpdateOperation::SetParentTierId(l0_id))
             .await?;
-        
+
         // Step 8: Update L1 children_tier_ids to include L2
         self.store
             .update(&l1_id, UpdateOperation::AddChildTierId(node_id))
             .await?;
-        
+
         tracing::info!(
             l2_node_id = %node_id,
             l1_node_id = %l1_id,
@@ -640,11 +721,11 @@ impl ConsolidationScheduler {
 
         Ok(())
     }
-    
+
     /// Embed text using the configured embedding provider.
     async fn embed_text(&self, text: &str) -> anyhow::Result<Vec<f32>> {
         use crate::embedding::embed_document;
-        
+
         match embed_document(self.embedding.as_ref(), text).await {
             Ok(vector) => Ok(vector),
             Err(e) => {
@@ -807,11 +888,21 @@ mod trigger_tests {
 
     #[test]
     fn test_is_decision_content() {
-        assert!(is_decision_content("DECISION: migrate embeddings 1536→1024"));
-        assert!(is_decision_content("Decision: use sqlx COALESCE for mode-agnostic queries"));
-        assert!(is_decision_content("We decided to move from Docker to native macOS"));
-        assert!(is_decision_content("Die Entscheidung fiel auf OpenAI statt Ollama"));
-        assert!(is_decision_content("Es wurde entschieden, den Prompt umzuschreiben"));
+        assert!(is_decision_content(
+            "DECISION: migrate embeddings 1536→1024"
+        ));
+        assert!(is_decision_content(
+            "Decision: use sqlx COALESCE for mode-agnostic queries"
+        ));
+        assert!(is_decision_content(
+            "We decided to move from Docker to native macOS"
+        ));
+        assert!(is_decision_content(
+            "Die Entscheidung fiel auf OpenAI statt Ollama"
+        ));
+        assert!(is_decision_content(
+            "Es wurde entschieden, den Prompt umzuschreiben"
+        ));
         // Not a decision
         assert!(!is_decision_content("The sky is blue"));
         assert!(!is_decision_content("KnowWhere has 1000 nodes"));

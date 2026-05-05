@@ -8,6 +8,9 @@ All notable changes to KnowWhere are documented in this file.
 - **Decision Scoring Pipeline:** Decision memory types now receive PRIMARY trust tier (1.18×) and a dedicated memory_type_multiplier (1.5×) for a total 2.01× score boost. Commit `1dfa292`.
 - **Decision Parse Support:** `MemoryType::parse()` now recognizes `"decision"` string. Previously, `store_session` with `memory_type: "decision"` was silently downgraded to `Episodic`. Commit `679d8d3`.
 - **PostgreSQL Tier Persistence:** Full roundtrip for fractal tier fields (context_tier, parent_tier_id, children_tier_ids) through PostgreSQL. Commit `8452f46`.
+- **Hermes Retrieval Eval:** `scripts/eval_hermes_retrieval.py` now tracks Hermes-facing retrieval quality, including top-1 non-meta rate, decision-filter purity, provenance coverage, repeated top-1 rate, stale-conflict rate, and latency.
+- **Query Intent Routing:** `/retrieve_fractal` accepts `query_intent` hints (`current_state`, `decision_why`, `procedure`, `preference`, `debug`, `historical`) and applies lightweight intent-aware scoring.
+- **Decision Provenance Metadata:** Consolidation-created summaries and claim Decision nodes now include structured provenance metadata such as `source_node_ids`, `source_session_ids`, `source_turn_range`, `derived_from`, `claim_scope`, `decision_what`, and `decision_why`.
 
 ### Changed
 - **Ollama Embedding:** Switched from OpenAI to local `nomic-embed-text-v2-moe` (768-dim, MoE, 1.0GB VRAM). Zero API cost, 0.23s warm latency. Commit `1a1ee1f`.
@@ -15,6 +18,8 @@ All notable changes to KnowWhere are documented in this file.
 - **MemoryType::all()** expanded from 5 to 6 types (includes Decision). Commit `679d8d3`.
 - **Episodic scoring:** Episodic nodes now get 0.85× memory_type_multiplier (was 1.0×). Conversation chatter is properly de-prioritized relative to structured knowledge.
 - **Integration**: Hermes MemoryProvider replaces OpenClaw plugin. Per-turn crash-safe storage with dual retrieval (episodic + decision).
+- **Hermes Memory Context:** Hermes prefetch now treats KnowWhere memories as background context rather than authoritative instructions, avoids default Reflect, filters Meta/XML memory artifacts, and labels facts/decisions as `[KW-N]` / `[KW-DECISION]`.
+- **Current-vs-Historical Convention:** New writes receive a `claim_scope` metadata convention (`episodic`, `current`, `historical`, `decision`, `preference`, `procedural`, `diagnostic`) to support time-aware ranking without data deletion.
 
 ### Fixed
 - **Fractal Zoom Bridge:** `parent_tier_id` backward traversal for child nodes without children. Commit `bee746b`.
@@ -22,6 +27,9 @@ All notable changes to KnowWhere are documented in this file.
 - **VLM UTF-8 Panic:** Byte-boundary crash with emoji/special characters fixed. Commit `d059e40`.
 - **Prompt Escape Hatches:** LocalSummarizer and VLM prompts no longer allow "No decision made" output. Commit `46facb1`, `b43d20a`.
 - **Integration Test:** `full_fidelity_profile_surfaces_internal_assistant_artifacts` updated for Episodic 0.85× multiplier. Commit `679d8d3`.
+- **Strict Memory-Type Filtering:** Unknown `memory_type_filter` values now return `400 Bad Request` and filters are enforced after fractal expansion and with `governance_enabled=false`.
+- **PostgreSQL Filter Parity:** `PostgresStore::hybrid_retrieve` now applies `memory_type_filter` consistently in BM25, vector-only, and hybrid branches before final `top_k`.
+- **Default Meta Leakage:** `/retrieve_fractal` no longer prepends synthetic `<knowwhere_memory>` instruction nodes when `reflect=false`.
 
 ---
 

@@ -51,6 +51,7 @@ When an agent asks "why did we decide X three months ago?", other memory systems
 | **Reflect Mode** | ✅ Query-time memory synthesis via Ollama |
 | **Event Consolidation** | ✅ Write-driven trigger + POST /consolidation/force |
 | **Hybrid Retrieval** | ✅ USearch vector + BM25 keyword + RRF fusion |
+| **Hermes Retrieval Quality** | ✅ Strict type filters, no default Meta/Reflect leakage, intent-aware scoring, eval script |
 | **Energy Decay** | ✅ Ebbinghaus forgetting curve |
 | **Governance** | ✅ Retrieval profiles, sensitivity levels |
 | **Auth** | ✅ Static admin key + user registration (PostgreSQL) |
@@ -58,7 +59,7 @@ When an agent asks "why did we decide X three months ago?", other memory systems
 | **Native macOS** | ✅ Zero-Docker: Ollama native + PostgreSQL Homebrew + KnowWhere binary |
 | **Tests** | ✅ 136 unit (0 failed) + 35 integration (0 failed) + 9 ignored |
 | **Benchmark** | ✅ 50-case LongMemEval: Top-1 96%, Recall@5 96%, MRR 0.96 |
-| **Hermes Plugin** | ✅ MemoryProvider: per-turn crash-safe storage + dual retrieval |
+| **Hermes Plugin** | ✅ MemoryProvider: per-turn crash-safe storage, safe prefetch, provenance metadata |
 | **Cross-Modal** | ✅ EmbeddingRouter: CLIP/Whisper/Sensor via Ollama |
 | **Cross-Encoder** | ✅ bge-reranker-v2-m3 via ONNX (feature: reranker) |
 | **Webhooks** | ✅ Frigate + HomeAssistant webhook endpoints |
