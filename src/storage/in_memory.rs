@@ -278,22 +278,55 @@ impl StorageBackend for MemoryStore {
             expanded.push(scored.clone());
 
             let node = &scored.node;
-            if node.children_tier_ids.is_empty() {
-                continue;
-            }
-
-            // Expand children, tracking visited to avoid cycles
             let mut visited: HashSet<Uuid> = HashSet::new();
             visited.insert(node.id);
-            self.expand_children(
-                &all_nodes,
-                &node.children_tier_ids,
-                query_vector,
-                max_depth - 1,
-                pruning_threshold,
-                &mut visited,
-                &mut expanded,
-            );
+
+            if !node.children_tier_ids.is_empty() {
+                // Direct expansion: this node IS a parent, expand children
+                self.expand_children(
+                    &all_nodes,
+                    &node.children_tier_ids,
+                    query_vector,
+                    max_depth - 1,
+                    pruning_threshold,
+                    &mut visited,
+                    &mut expanded,
+                );
+            } else if let Some(ref parent_id) = node.parent_tier_id {
+                // Bridge expansion: this node is a CHILD (e.g. L1 summary).
+                // Semantic search naturally finds compact summary nodes,
+                // but they are leaves, not roots. Climb UP to the parent
+                // (L0 raw) and expand its children_tier_ids (siblings).
+                if let Some(parent) = all_nodes.get(parent_id) {
+                    visited.insert(*parent_id);
+
+                    // Add the parent itself if above threshold
+                    let parent_sim = crate::memory::fractal_node::cosine_similarity(
+                        &parent.vector, query_vector,
+                    );
+                    if parent_sim >= pruning_threshold {
+                        expanded.push(ScoredNode {
+                            id: parent.id,
+                            score: parent_sim,
+                            debug: None,
+                            node: parent.clone(),
+                        });
+                    }
+
+                    // Now expand parent's other children (siblings of original node)
+                    if !parent.children_tier_ids.is_empty() {
+                        self.expand_children(
+                            &all_nodes,
+                            &parent.children_tier_ids,
+                            query_vector,
+                            max_depth - 1,
+                            pruning_threshold,
+                            &mut visited,
+                            &mut expanded,
+                        );
+                    }
+                }
+            }
         }
 
         // Sort all results by score descending
