@@ -1,0 +1,6 @@
+{
+  "mean_abs_delta": 0.03292723710002584,
+  "max_abs_delta": 0.06163986798813814,
+  "rank_preservation_pct": 79.2,
+  "recommendation": "1024"
+}

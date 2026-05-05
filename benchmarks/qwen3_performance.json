@@ -1,0 +1,25 @@
+{
+  "qwen3": {
+    "load_time_ms": 4267.835855484009,
+    "single_latency_avg_ms": 117.68548488616943,
+    "single_latency_p50_ms": 89.9055004119873,
+    "single_latency_p95_ms": 128.37589979171793,
+    "single_latency_min_ms": 81.95996284484863,
+    "single_latency_max_ms": 647.6061344146729,
+    "batch_50_time_ms": 4730.160713195801,
+    "throughput_emb_per_sec": 10.570465367173307,
+    "dimension": 2048
+  },
+  "arctic": {
+    "single_latency_avg_ms": 125.52393674850464,
+    "single_latency_p50_ms": 119.96853351593018,
+    "single_latency_p95_ms": 148.51248264312747,
+    "single_latency_min_ms": 104.45284843444824,
+    "single_latency_max_ms": 202.0089626312256,
+    "batch_50_time_ms": 6059.817790985107,
+    "throughput_emb_per_sec": 8.251073171603037,
+    "dimension": 1024
+  },
+  "memory_mb": 612.0,
+  "model_size_gb": 1.71
+}

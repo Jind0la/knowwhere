@@ -1,0 +1,11 @@
+{
+  "precision": 0.3333333333333333,
+  "correct": 2,
+  "total": 6,
+  "method": "text-proxy (VLM description \u2192 text embedding)",
+  "descriptions": {
+    "sunset": " image\n image\n image\n image\n image\n image\n image\n image\n image\n image\n image\n image\n image\n image\n image\n",
+    "ocean": " image\n image\n image\n image\n image\n image\n image\n image\n image\n image\n image\n image\n image\n image\n image\n",
+    "forest": " image\n image\n image\n image\n image\n image\n image\n image\n image\n image\n image\n image\n image\n image\n image\n"
+  }
+}
