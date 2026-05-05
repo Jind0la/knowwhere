@@ -48,3 +48,9 @@ benchmarks/data/
 .env.native
 start-native.sh
 native_data/
+
+# Logs
+*.log
+
+# Model files (large binaries)
+models/
