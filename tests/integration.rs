@@ -439,6 +439,7 @@ async fn user_facing_retrieval_prioritizes_primary_trust_tiers() {
             top_k: 3,
             max_depth: 0,
             profile: RetrievalProfile::UserFacing,
+            memory_type_filter: None,
         },
     )
     .await
@@ -1205,6 +1206,7 @@ async fn postgres_store_hybrid_retrieve_bm25_only() {
         top_k: 5,
         max_depth: 0,
         profile: knowwhere_server::storage::RetrievalProfile::FullFidelity,
+        memory_type_filter: None,
     };
 
     let results = store
@@ -1265,6 +1267,7 @@ async fn postgres_store_hybrid_retrieve_with_vector() {
         top_k: 3,
         max_depth: 0,
         profile: knowwhere_server::storage::RetrievalProfile::FullFidelity,
+        memory_type_filter: None,
     };
 
     let results = store

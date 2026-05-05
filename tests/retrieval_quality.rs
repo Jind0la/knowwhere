@@ -129,6 +129,7 @@ fn query_for(case: &EchoCase, variant_idx: usize, query_text: &str) -> HybridQue
         top_k: TOP_K,
         max_depth: 0,
         profile: RetrievalProfile::FullFidelity,
+        memory_type_filter: None,
     }
 }
 

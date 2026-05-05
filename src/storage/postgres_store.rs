@@ -134,6 +134,11 @@ impl PostgresStore {
         confidence: f64,
         sensitivity: &str,
         metadata: serde_json::Value,
+        context_tier: &str,
+        parent_tier_id: Option<Uuid>,
+        children_tier_ids: Vec<Uuid>,
+        summary_content: Option<&str>,
+        overview_content: Option<&str>,
     ) -> Result<Uuid> {
         let id = Uuid::new_v4();
         let memory_type_str = match memory_type {
@@ -149,9 +154,11 @@ impl PostgresStore {
             INSERT INTO memories (
                 id, memory_type, content, embedding, entities, tags,
                 provenance, source, source_id, importance, confidence,
-                sensitivity, metadata, status, access_count, created_at, updated_at
+                sensitivity, metadata, status, access_count, created_at, updated_at,
+                context_tier, parent_tier_id, children_tier_ids,
+                summary_content, overview_content
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'active', 0, NOW(), NOW())
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'active', 0, NOW(), NOW(), $14::context_tier, $15, $16, $17, $18)
             "#)
         .bind(id)
         .bind(memory_type_str)
@@ -166,6 +173,11 @@ impl PostgresStore {
         .bind(confidence)
         .bind(sensitivity)
         .bind(metadata)
+        .bind(context_tier)
+        .bind(parent_tier_id)
+        .bind(&children_tier_ids)
+        .bind(summary_content)
+        .bind(overview_content)
         .execute(&self.pool)
         .await?;
 
@@ -197,7 +209,10 @@ impl PostgresStore {
                 last_accessed, created_at , updated_at ,
                 deleted_at, metadata , entities ,
                 COALESCE(tags, ARRAY[]::TEXT[]) AS tags ,
-                embedding::float4[] 
+                embedding::float4[] ,
+                context_tier::text, parent_tier_id,
+                COALESCE(children_tier_ids, ARRAY[]::uuid[]) AS children_tier_ids,
+                summary_content, overview_content
             FROM memories
             WHERE id = $1 AND status != 'deleted'
             "#).bind(id)
@@ -446,8 +461,11 @@ impl PostgresStore {
                 parent_id, depth , access_count ,
                 last_accessed, created_at , updated_at ,
                 deleted_at, metadata , entities ,
-                COALESCE(tags, ARRAY[]::TEXT[]) ,
-                embedding::float4[] 
+                COALESCE(tags, ARRAY[]::TEXT[]) AS tags ,
+                embedding::float4[] ,
+                context_tier::text, parent_tier_id,
+                COALESCE(children_tier_ids, ARRAY[]::uuid[]) AS children_tier_ids,
+                summary_content, overview_content
             FROM memories
             WHERE status = 'active'
             ORDER BY created_at DESC
@@ -471,8 +489,11 @@ impl PostgresStore {
                 parent_id, depth , access_count ,
                 last_accessed, created_at , updated_at ,
                 deleted_at, metadata , entities ,
-                COALESCE(tags, ARRAY[]::TEXT[]) ,
-                embedding::float4[] 
+                COALESCE(tags, ARRAY[]::TEXT[]) AS tags ,
+                embedding::float4[] ,
+                context_tier::text, parent_tier_id,
+                COALESCE(children_tier_ids, ARRAY[]::uuid[]) AS children_tier_ids,
+                summary_content, overview_content
             FROM memories
             WHERE status = 'active'
             ORDER BY created_at DESC
@@ -627,7 +648,7 @@ impl PostgresStore {
                    created_at , updated_at ,
                    superseded_by, source_id, provenance, parent_id,
                    last_accessed, deleted_at, metadata, entities,
-                   COALESCE(tags, ARRAY[]::TEXT[]) ,
+                   COALESCE(tags, ARRAY[]::TEXT[]) AS tags ,
                    content_preview,
                    embedding::float4[] 
             FROM fractal_tree
@@ -1066,6 +1087,12 @@ impl StorageBackend for PostgresStore {
         };
         let metadata = serde_json::to_value(&node.metadata).unwrap_or(serde_json::json!({}));
 
+        let context_tier = node.context_tier.label();
+        let parent_tier_id = node.parent_tier_id;
+        let children_tier_ids = node.children_tier_ids.clone();
+        let summary_content = node.summary_content.as_deref();
+        let overview_content = node.overview_content.as_deref();
+
         self.store_session(
             content,
             embedding,
@@ -1079,6 +1106,11 @@ impl StorageBackend for PostgresStore {
             confidence,
             sensitivity,
             metadata,
+            context_tier,
+            parent_tier_id,
+            children_tier_ids,
+            summary_content,
+            overview_content,
         )
         .await
     }
@@ -1325,11 +1357,14 @@ fn memory_row_to_fractal_node(row: MemoryRow) -> FractalNode {
     let status = MemoryStatus::parse(&row.status).unwrap_or(MemoryStatus::Active);
     let conflict_state = ConflictState::parse(&row.conflict_state).unwrap_or(ConflictState::None);
 
-    // Fields not stored per-row — use sensible defaults
-    let context_tier = ContextTier::Raw;
-    let parent_tier_id: Option<Uuid> = None;
-    let summary_content: Option<String> = None;
-    let overview_content: Option<String> = None;
+    // Parse tier fields from DB — now properly stored and retrieved
+    let context_tier = row.context_tier
+        .and_then(|t| ContextTier::parse(&t))
+        .unwrap_or(ContextTier::Raw);
+    let parent_tier_id = row.parent_tier_id;
+    let children_tier_ids = row.children_tier_ids.unwrap_or_default();
+    let summary_content = row.summary_content;
+    let overview_content = row.overview_content;
     let children: Vec<FractalNode> = vec![];
     let relations: Vec<crate::memory::fractal_node::Relation> = vec![];
     let original_pointer: Option<String> = None;
@@ -1350,7 +1385,7 @@ fn memory_row_to_fractal_node(row: MemoryRow) -> FractalNode {
         weight: 1.0,
         multimodal,
         children,
-        children_tier_ids: vec![],
+        children_tier_ids,
         relations,
         created_at: row.created_at,
         last_accessed: row.last_accessed.unwrap_or(row.created_at),
@@ -1476,6 +1511,12 @@ pub struct MemoryRow {
     pub tags: Vec<String>,
     /// Dense vector embedding (stored as f32 array, deserialized from PostgreSQL vector type).
     pub embedding: Option<Vec<f32>>,
+    // -- Fractal tier fields --
+    pub context_tier: Option<String>,
+    pub parent_tier_id: Option<Uuid>,
+    pub children_tier_ids: Option<Vec<Uuid>>,
+    pub summary_content: Option<String>,
+    pub overview_content: Option<String>,
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -1498,6 +1539,12 @@ pub struct MemoryWithScore {
     pub similarity: Option<f64>,
     /// Dense vector embedding (stored as f32 array, deserialized from PostgreSQL vector type).
     pub embedding: Option<Vec<f32>>,
+    // -- Fractal tier fields --
+    pub context_tier: Option<String>,
+    pub parent_tier_id: Option<Uuid>,
+    pub children_tier_ids: Option<Vec<Uuid>>,
+    pub summary_content: Option<String>,
+    pub overview_content: Option<String>,
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]
