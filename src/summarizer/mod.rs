@@ -205,22 +205,28 @@ impl LocalSummarizer {
         });
 
         let prompt = format!(
-            "Extract decisions and key facts from this conversation. \
+            "Find decisions in this conversation. \
+             A real decision has: (a) a clear choice between options, \
+             (b) stated reasons with concrete evidence (numbers, benchmarks, \
+             error logs, comparisons, or explicit trade-offs). \
+             Return ONLY claims that meet both criteria.\n\n\
              Return a JSON object with:\n\
              - \"summary\": 2-3 sentence narrative summary\n\
              - \"claims\": array of {{\"claim\", \"reason\"}} objects\n\n\
-             For each claim:\n\
-             - \"claim\": what was decided, realized, or established \
-               (be specific — name entities, technologies, concrete actions)\n\
-             - \"reason\": why — rationale, evidence, constraint, or trade-off\n\n\
-             Extract at least 2 claims. Every claim must be specific and concrete.\n\n{}",
+             For each valid claim:\n\
+             - \"claim\": what was chosen — name exact technologies, versions, \
+               file paths, or actions\n\
+             - \"reason\": why — cite specific evidence from the text \
+               (metrics, benchmarks, constraints, or comparisons)\n\n\
+             Skip observations, status updates, facts without decisions, \
+             and general discussion.\n\n{}",
             text
         );
         
         let body = json!({
             "model": self.model,
             "messages": [
-                {"role": "system", "content": "You are a forensic decision extractor. Identify explicit decisions, realizations, and key findings. Always produce specific, concrete claims. Never generic."},
+                {"role": "system", "content": "You extract decisions from technical discussions. Every claim must cite specific evidence from the text — numbers, benchmarks, error messages, or explicit comparisons. If you cannot cite evidence, omit the claim. Quality over quantity. Empty claims array is better than vague claims."},
                 {"role": "user", "content": prompt}
             ],
             "stream": false,
