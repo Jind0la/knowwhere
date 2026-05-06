@@ -178,11 +178,20 @@ pub mod ort_impl {
                 )
                 .context("failed to create token_type_ids tensor")?;
 
-                let outputs = self.session.run([
-                    input_ids_tensor.into(),
-                    attention_mask_tensor.into(),
-                    token_type_ids_tensor.into(),
-                ]).context("ONNX inference failed")?;
+                let input_count = self.session.inputs().len();
+                let outputs = if input_count >= 3 {
+                    self.session.run([
+                        input_ids_tensor.into(),
+                        attention_mask_tensor.into(),
+                        token_type_ids_tensor.into(),
+                    ])
+                } else {
+                    self.session.run([
+                        input_ids_tensor.into(),
+                        attention_mask_tensor.into(),
+                    ])
+                }
+                .context("ONNX inference failed")?;
 
                 let (shape, logits) = outputs[0]
                     .try_extract_tensor::<f32>()
