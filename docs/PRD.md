@@ -100,12 +100,28 @@ Tiers werden automatisch aus Metadaten (role, derivation, source) erkannt.
 | Ebene | Inhalt | Generierung |
 |-------|--------|-------------|
 | **L0 (Raw)** | Originaltext der Session-Runde | Direkt gespeichert |
-| **L1 (Summary)** | Paragraph-Zusammenfassung mehrerer L0s | LocalSummarizer (Ollama llama3.2, temp=0) |
+| **L1 (Summary)** | Paragraph-Zusammenfassung mehrerer L0s | LocalSummarizer (Ollama qwen2.5:3b, temp=0) |
 | **L2 (Overview)** | Ein-Satz-Zusammenfassung mehrerer L1s | LocalSummarizer + VLM-Fallback-Chain |
 
 Compaction ist deterministisch (temperature=0, seed=42) und läuft über den ConsolidationScheduler.
 
-### 5.5 Retrieval-Ansatz
+### 5.5 Structured Claims Extraction
+
+Jeder Consolidation-Durchlauf extrahiert strukturierte Claims aus den Summaries und erstellt eigenständige `MemoryType::Decision`-Nodes:
+
+| Feature | Wert |
+|---|---|
+| **Methode** | Ollama JSON Schema (GBNF-Grammatik, 100% Format-Compliance) |
+| **Prompt** | Evidence-First — erfordert konkrete Belege (Zahlen, Benchmarks, Vergleiche) |
+| **Modell** | qwen2.5:3b (92.1% instruction-following, beste 3B-Klasse) |
+| **Coverage** | 92.6% der Child-Decision-Nodes haben strukturierte Claims |
+| **Spezifität** | ∅4.3/5 (Spike: 5 Testfälle, Evidence-First vs Baseline) |
+| **Retrieval-Boost** | 1.77× Scoring-Multiplier (TRUST_PRIMARY + memory_type ×1.5) |
+| **Claim-Format** | `decision_what` + `decision_why` in Metadata, optimiert für "Warum?"-Queries |
+
+Claims werden als separate Decision-Nodes mit eigenem Embedding gespeichert und per `parent_tier_id` mit der L1-Overview verkettet.
+
+### 5.6 Retrieval-Ansatz
 
 1. **USearch Vector Search** — semantische Nähe via cosine similarity
 2. **BM25 Keyword Search** — exakte Begriffs-Matches
@@ -114,7 +130,7 @@ Compaction ist deterministisch (temperature=0, seed=42) und läuft über den Con
 5. **Profilbasierte Gewichtung** — Trust Tier × Retrieval Profile
 6. **Score-Debugging** — optionales Debug für Operatoren
 
-### 5.6 Energy Decay (Ebbinghaus)
+### 5.7 Energy Decay (Ebbinghaus)
 
 Memories verlieren mit der Zeit an Energie. Der Decay folgt der Ebbinghaus-Vergessenskurve:
 - `/energy/decay` — wendet Decay auf alle Memories an
@@ -122,7 +138,7 @@ Memories verlieren mit der Zeit an Energie. Der Decay folgt der Ebbinghaus-Verge
 - `/energy/compress` — komprimiert low-energy Cluster
 - `/memories/{id}/energy/boost` — boostet einzelne Memory (z.B. nach Zugriff)
 
-### 5.7 Self-Healing
+### 5.8 Self-Healing
 
 - Orphaned Nodes: Knoten ohne gültigen Parent → re-parented oder archiviert
 - Broken Links: Pointer ins Nichts → cleaned up
@@ -131,7 +147,7 @@ Memories verlieren mit der Zeit an Energie. Der Decay folgt der Ebbinghaus-Verge
 - `/memories/{id}/health` — Health-Check für einzelnen Knoten
 - `/memories/{id}/reindex` — Neu-Indizierung externer Knoten
 
-### 5.8 Auth
+### 5.9 Auth
 
 | Modus | Beschreibung |
 |-------|-------------|
@@ -139,7 +155,7 @@ Memories verlieren mit der Zeit an Energie. Der Decay folgt der Ebbinghaus-Verge
 | Self-Service User | `/register`, `/login`, `/refresh` mit PostgreSQL |
 | Capability Endpoint | `GET /auth/me` liefert Token-Art + erlaubte Profile |
 
-### 5.9 Retrieval-Profile
+### 5.10 Retrieval-Profile
 
 | Profil | Zugriff | Beschreibung |
 |--------|---------|-------------|
@@ -187,7 +203,7 @@ pub struct FractalNode {
 | Backend | Rust 1.85+, Axum 0.8, Tokio, Tower |
 | Embeddings | Ollama (nomic-embed-text-v2-moe, 768-dim, MoE, multilingual) |
 | Retrieval | USearch 2.23 + BM25 2.3.2 + RRF |
-| Summarization | Ollama llama3.2 (lokal, deterministisch) |
+| Summarization | Ollama qwen2.5:3b (lokal, JSON Schema GBNF-constrained, 92.1% instruction-following) |
 | VLM Fallback | GPT-5-nano → GPT-4o-mini → Grok-4-fast |
 | Persistenz default | MemoryStore (JSON) |
 | Persistenz erweitert | PostgreSQL/pgvector |

@@ -46,8 +46,8 @@ When an agent asks "why did we decide X three months ago?", other memory systems
 | **6-Type System** | ✅ Episodic, Semantic, Preference, Procedural, Meta, Decision |
 | **Decision Scoring** | ✅ PRIMARY trust tier + 1.5× memory_type_multiplier = 2× boost |
 | **Trust Tiers** | ✅ primary, reference, derived, volatile — auto-detected |
-| **L2→L1→L0 Compaction** | ✅ LocalSummarizer (Ollama llama3.2) + VLM fallback, event-driven |
-| **Claims Extraction** | ✅ Structured claim parsing from summaries → Decision nodes |
+| **L2→L1→L0 Compaction** | ✅ LocalSummarizer (Ollama qwen2.5:3b, 92.1% instruction-following) + VLM fallback |
+| **Claims Extraction** | ✅ JSON Schema (GBNF-constrained) → 92.6% coverage, ∅4.3/5 specificity, Evidence-First prompt |
 | **Reflect Mode** | ✅ Query-time memory synthesis via Ollama |
 | **Event Consolidation** | ✅ Write-driven trigger + POST /consolidation/force |
 | **Hybrid Retrieval** | ✅ USearch vector + BM25 keyword + RRF fusion |
@@ -185,7 +185,7 @@ Every node carries: memory type (5 types), source (5 sources), trust tier (auto-
 | `DATABASE_URL` | unset | PostgreSQL backend (postgres-storage feature) |
 | `OLLAMA_URL` | `http://localhost:11434` | Ollama API base URL |
 | `OLLAMA_MODEL` | `nomic-embed-text-v2-moe` | Embedding model (768-dim, MoE, multilingual) |
-| `OLLAMA_SUMMARIZER_MODEL` | `llama3.2` | Summarization model for L2→L1→L0 |
+| `OLLAMA_SUMMARIZER_MODEL` | `qwen2.5:3b` | Summarization model (92.1% instruction-following, best in 3B class) |
 | `KNOWWHERE_EMBEDDING_PROVIDER` | `ollama` | Embedding backend: ollama (default), openai, grok |
 | `GROK_API_KEY` | unset | Grok/xAI embeddings or VLM fallback |
 | `FRIGATE_URL` | unset | Frigate NVR connector |
