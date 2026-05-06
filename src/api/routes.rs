@@ -4512,6 +4512,73 @@ pub async fn match_skills(
     }
 }
 
+/// GET /entities — search entity edges
+#[cfg(feature = "postgres-storage")]
+pub async fn entity_search(
+    State(state): State<AppState>,
+    axum::extract::Query(params): axum::extract::Query<EntitySearchParams>,
+) -> Result<Json<Vec<EntityEdge>>, (StatusCode, String)> {
+    use sqlx::Row;
+
+    let pool = match &state.trajectory_pool {
+        Some(p) => p.clone(),
+        None => return Err((StatusCode::SERVICE_UNAVAILABLE, "PostgreSQL not configured".into())),
+    };
+
+    let query = if let Some(ref entity_type) = params.entity_type {
+        if let Some(ref relation) = params.relation {
+            "SELECT id, source_node_id, target_node_id, entity_type, entity_name, relation_type, confidence, extracted_at FROM entity_edges WHERE entity_type = $1 AND relation_type = $2 ORDER BY confidence DESC LIMIT $3"
+        } else {
+            "SELECT id, source_node_id, target_node_id, entity_type, entity_name, relation_type, confidence, extracted_at FROM entity_edges WHERE entity_type = $1 ORDER BY confidence DESC LIMIT $2"
+        }
+    } else {
+        "SELECT id, source_node_id, target_node_id, entity_type, entity_name, relation_type, confidence, extracted_at FROM entity_edges ORDER BY confidence DESC LIMIT $1"
+    };
+
+    let limit = params.limit.unwrap_or(50).min(200) as i64;
+    let rows: Vec<sqlx::postgres::PgRow> = if let Some(ref entity_type) = params.entity_type {
+        if let Some(ref relation) = params.relation {
+            sqlx::query(query).bind(entity_type).bind(relation).bind(limit).fetch_all(pool.as_ref()).await
+        } else {
+            sqlx::query(query).bind(entity_type).bind(limit).fetch_all(pool.as_ref()).await
+        }
+    } else {
+        sqlx::query(query).bind(limit).fetch_all(pool.as_ref()).await
+    }.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let edges: Vec<EntityEdge> = rows.iter().map(|row| EntityEdge {
+        id: row.get("id"),
+        source_node_id: row.get("source_node_id"),
+        target_node_id: row.get("target_node_id"),
+        entity_type: row.get("entity_type"),
+        entity_name: row.get("entity_name"),
+        relation_type: row.get("relation_type"),
+        confidence: row.get("confidence"),
+        extracted_at: row.get("extracted_at"),
+    }).collect();
+
+    Ok(Json(edges))
+}
+
+#[derive(Deserialize)]
+pub struct EntitySearchParams {
+    entity_type: Option<String>,
+    relation: Option<String>,
+    limit: Option<usize>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct EntityEdge {
+    id: Uuid,
+    source_node_id: Uuid,
+    target_node_id: Option<Uuid>,
+    entity_type: String,
+    entity_name: String,
+    relation_type: String,
+    confidence: f64,
+    extracted_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
 #[cfg(test)]
 mod chunking_tests {
     use super::chunk_into_rounds;

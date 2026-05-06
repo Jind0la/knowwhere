@@ -259,7 +259,8 @@ async fn run() -> anyhow::Result<()> {
         .route("/governance/policy", post(routes::update_governance_policy))
         // -- Webhook routes --
         .route("/webhooks/frigate", post(routes::webhook_frigate))
-        .route("/webhooks/homeassistant", post(routes::webhook_homeassistant));
+        .route("/webhooks/homeassistant", post(routes::webhook_homeassistant))
+        .route("/entities", get(routes::entity_search));
 
     #[cfg(feature = "postgres-storage")]
     let protected = protected
