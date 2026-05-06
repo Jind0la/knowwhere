@@ -62,6 +62,8 @@ When an agent asks "why did we decide X three months ago?", other memory systems
 | **Hermes Plugin** | ✅ MemoryProvider: per-turn crash-safe storage, safe prefetch, provenance metadata |
 | **Cross-Modal** | ✅ EmbeddingRouter: CLIP/Whisper/Sensor via Ollama |
 | **Cross-Encoder** | ✅ bge-reranker-v2-m3 via ONNX (feature: reranker) |
+| **Entity Search** | ✅ GET /entities — entity_edges table with model/tool/project tracking |
+| **Decision Extraction** | ✅ Structured claims with decision_what/decision_why metadata |
 | **Webhooks** | ✅ Frigate + HomeAssistant webhook endpoints |
 
 ---
