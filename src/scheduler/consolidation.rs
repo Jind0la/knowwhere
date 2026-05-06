@@ -22,7 +22,9 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 /// - "decided" followed by action description
 fn is_decision_content(content: &str) -> bool {
     let lower = content.to_lowercase();
-    lower.contains("decision:")
+    // "decision" catches: "Decision: use X", "Die decision war", "The decision was",
+    // "a decision to", etc. No colon required — the summarizer uses mixed DE/EN patterns.
+    lower.contains("decision")
         || lower.contains("decided")
         || lower.contains("entscheidung")
         || lower.contains("entschieden")
