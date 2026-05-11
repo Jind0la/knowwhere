@@ -126,6 +126,11 @@ fn consolidation_metadata(
     if let Some(turn_index) = source.metadata.get("turn_index").cloned() {
         metadata.insert("source_turn_range".to_string(), turn_index);
     }
+    // Issue #3: Also copy claim_index (preferred over turn_index) for
+    // downstream consumers that use the newer naming convention.
+    if let Some(claim_index) = source.metadata.get("claim_index").cloned() {
+        metadata.insert("source_claim_range".to_string(), claim_index);
+    }
     metadata
 }
 

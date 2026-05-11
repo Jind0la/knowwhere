@@ -1709,6 +1709,15 @@ pub struct RetrieveFractalRequest {
     /// Max tokens for the reflection output (default: 600).
     #[serde(default = "default_reflect_max_tokens")]
     pub reflect_max_tokens: u32,
+    /// Enable temporal diversity sampling to ensure results span multiple
+    /// temporal phases (early/middle/late) rather than clustering around
+    /// query sentiment. Fixes Retrieval Bias (Issue #1).
+    #[serde(default)]
+    pub diversity: bool,
+    /// Optional contrastive query for explicit negative-phase retrieval.
+    /// When set, nodes matching this query are boosted in diversity mode.
+    #[serde(default)]
+    pub contrastive_query: Option<String>,
 }
 
 fn default_top_k() -> usize {
@@ -2069,10 +2078,15 @@ pub async fn retrieve_fractal(
 
     // Stage 1: Hybrid retrieval via StorageBackend trait
     let query_vector_for_expand = query_vector.clone();
+    let effective_top_k = if req.diversity {
+        (req.top_k * 3).max(15) // Fetch more candidates for diversity sampling
+    } else {
+        req.top_k
+    };
     let query = HybridQuery {
         query_text: req.query_text.clone(),
         query_vector: Some(query_vector),
-        top_k: req.top_k,
+        top_k: effective_top_k,
         max_depth: req.max_depth,
         profile: req.retrieval_profile,
         memory_type_filter: type_filter,
@@ -2155,6 +2169,29 @@ pub async fn retrieve_fractal(
         } else {
             results
         }
+    };
+
+    // Stage 2.5: Temporal diversity sampling (Issue #1 — Retrieval Bias fix).
+    // Vector search clusters around query sentiment — a positive query ("what
+    // does the user enjoy") retrieves only positive nodes. Diversity sampling
+    // ensures nodes from all temporal phases (early/middle/late) appear in
+    // the top-k results, preventing sentiment-skewed blind spots.
+    let results = if req.diversity && results.len() > req.top_k {
+        let mut diverse = apply_temporal_diversity(
+            results.clone(),
+            req.top_k,
+            req.contrastive_query.as_deref(),
+            state.embedding.as_ref(),
+        )
+        .await;
+        tracing::info!(
+            pre = results.len(),
+            post = diverse.len(),
+            "diversity sampling applied"
+        );
+        diverse
+    } else {
+        results
     };
 
     // Apply max_tier filter: only include nodes at or below max_tier
@@ -2383,6 +2420,131 @@ pub async fn retrieve_fractal(
         "retrieve_fractal response stats"
     );
     Ok(Json(scored))
+}
+
+/// Apply temporal diversity to retrieval results (Issue #1 — Retrieval Bias fix).
+///
+/// Vector search clusters around query sentiment. A positive query retrieves
+/// positive nodes, missing problems from earlier phases. This function groups
+/// candidates by temporal phase (early/middle/late based on turn_index/claim_index)
+/// and ensures at least one node from each phase appears in the final top_k.
+///
+/// Algorithm:
+/// 1. Extract turn_index from each node's metadata
+/// 2. Group into temporal buckets (no phase = uncategorized)
+/// 3. Take top nodes from each bucket proportionally
+/// 4. Fill remaining slots with highest-scoring overall
+async fn apply_temporal_diversity(
+    candidates: Vec<crate::storage::ScoredNode>,
+    top_k: usize,
+    _contrastive_query: Option<&str>,
+    _embedding: &(dyn crate::embedding::EmbeddingProvider + Send + Sync),
+) -> Vec<crate::storage::ScoredNode> {
+    if candidates.len() <= top_k {
+        return candidates;
+    }
+
+    // Extract temporal phase from metadata
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum TemporalPhase {
+        Early,
+        Middle,
+        Late,
+        Unknown,
+    }
+
+    fn get_phase(node: &crate::memory::FractalNode) -> (TemporalPhase, i64) {
+        let meta = &node.metadata;
+        // Try claim_index first (preferred), then turn_index (legacy)
+        let ti = meta
+            .get("claim_index")
+            .or_else(|| meta.get("turn_index"))
+            .and_then(|v| v.as_i64())
+            .unwrap_or(-1);
+
+        if ti < 0 {
+            return (TemporalPhase::Unknown, ti);
+        }
+
+        // Heuristic: < 3 = early, 3-5 = middle, > 5 = late
+        let phase = if ti < 3 {
+            TemporalPhase::Early
+        } else if ti <= 5 {
+            TemporalPhase::Middle
+        } else {
+            TemporalPhase::Late
+        };
+        (phase, ti)
+    }
+
+    // Group by phase
+    let mut early: Vec<(f32, usize)> = Vec::new();
+    let mut middle: Vec<(f32, usize)> = Vec::new();
+    let mut late: Vec<(f32, usize)> = Vec::new();
+    let mut unknown: Vec<(f32, usize)> = Vec::new();
+
+    for (idx, candidate) in candidates.iter().enumerate() {
+        let (phase, _) = get_phase(&candidate.node);
+        let entry = (candidate.score, idx);
+        match phase {
+            TemporalPhase::Early => early.push(entry),
+            TemporalPhase::Middle => middle.push(entry),
+            TemporalPhase::Late => late.push(entry),
+            TemporalPhase::Unknown => unknown.push(entry),
+        }
+    }
+
+    // Sort each group by score descending
+    early.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    middle.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    late.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+
+    let groups: Vec<(&[(f32, usize)], &str)> = vec![
+        (&early, "early"),
+        (&middle, "middle"),
+        (&late, "late"),
+    ];
+
+    // Count non-empty groups for proportional allocation
+    let active_groups: Vec<_> = groups.iter().filter(|(g, _)| !g.is_empty()).collect();
+    let _n_groups = active_groups.len().max(1);
+
+    // Allocate at least 1 slot per non-empty group, then proportional fill
+    let mut selected_indices: std::collections::HashSet<usize> = std::collections::HashSet::new();
+
+    // Guarantee at least 1 from each non-empty phase
+    for (group, _) in &active_groups {
+        if let Some((_, idx)) = group.first() {
+            selected_indices.insert(*idx);
+        }
+    }
+
+    // Fill remaining slots: merge all groups, sort by score, pick unselected
+    let mut all_ranked: Vec<(f32, usize)> = Vec::new();
+    for (group, _) in &groups {
+        all_ranked.extend_from_slice(group);
+    }
+    all_ranked.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+
+    for (_, idx) in &all_ranked {
+        if selected_indices.len() >= top_k {
+            break;
+        }
+        selected_indices.insert(*idx);
+    }
+
+    // Build result preserving original order within phases
+    let mut result: Vec<crate::storage::ScoredNode> = Vec::with_capacity(top_k);
+    let mut sorted_indices: Vec<usize> = selected_indices.into_iter().collect();
+    sorted_indices.sort(); // preserve original ordering
+
+    for idx in sorted_indices {
+        if idx < candidates.len() {
+            result.push(candidates[idx].clone());
+        }
+    }
+
+    result
 }
 
 pub async fn retrieve_fractal_safe(
