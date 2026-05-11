@@ -125,6 +125,8 @@ pub struct HybridQuery {
     pub profile: RetrievalProfile,
     /// Optional filter by memory type (e.g. "decision" for architectural decisions only).
     pub memory_type_filter: Option<crate::memory::types::MemoryType>,
+    /// Optional filter by user_id in metadata — scopes retrieval to a single persona.
+    pub user_id: Option<String>,
 }
 
 impl HybridQuery {
@@ -137,6 +139,7 @@ impl HybridQuery {
             max_depth: 0,
             profile: RetrievalProfile::FullFidelity,
             memory_type_filter: None,
+            user_id: None,
         }
     }
 
@@ -149,6 +152,7 @@ impl HybridQuery {
             max_depth,
             profile: RetrievalProfile::FullFidelity,
             memory_type_filter: None,
+            user_id: None,
         }
     }
 
@@ -166,6 +170,7 @@ impl HybridQuery {
             max_depth,
             profile: RetrievalProfile::FullFidelity,
             memory_type_filter: None,
+            user_id: None,
         }
     }
 
@@ -192,6 +197,12 @@ impl HybridQuery {
     /// Attach a memory type filter (e.g. Decision) to this query.
     pub fn with_memory_type(mut self, mt: crate::memory::types::MemoryType) -> Self {
         self.memory_type_filter = Some(mt);
+        self
+    }
+
+    /// Scope retrieval to a single persona by user_id.
+    pub fn with_user_id(mut self, user_id: impl Into<String>) -> Self {
+        self.user_id = Some(user_id.into());
         self
     }
 }

@@ -192,6 +192,15 @@ impl StorageBackend for MemoryStore {
                 // memory_type_filter: keep only nodes matching the requested type
                 query.memory_type_filter.map_or(true, |mt| node.memory_type == mt)
             })
+            .filter(|(_, node)| {
+                // user_id filter: scope retrieval to a single persona's claims
+                query.user_id.as_ref().map_or(true, |uid| {
+                    node.metadata
+                        .get("user_id")
+                        .and_then(|v| v.as_str())
+                        .map_or(true, |v| v == uid.as_str())
+                })
+            })
             .map(|(score, node)| query.profile.score_node(score, node))
             .collect();
         weighted.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(Ordering::Equal));
@@ -212,9 +221,18 @@ impl StorageBackend for MemoryStore {
                 None,
             )
             .await;
-        // fractal retrieve returns raw nodes (no score) — use 1.0 as default
+        // fractal retrieve returns raw nodes (no score) — use 1.0 as default,
+        // filtered by user_id if specified
         Ok(nodes
             .into_iter()
+            .filter(|node| {
+                query.user_id.as_ref().map_or(true, |uid| {
+                    node.metadata
+                        .get("user_id")
+                        .and_then(|v| v.as_str())
+                        .map_or(true, |v| v == uid.as_str())
+                })
+            })
             .map(|node| ScoredNode {
                 id: node.id,
                 score: 1.0,

@@ -1718,6 +1718,9 @@ pub struct RetrieveFractalRequest {
     /// When set, nodes matching this query are boosted in diversity mode.
     #[serde(default)]
     pub contrastive_query: Option<String>,
+    /// Optional user_id filter — scopes retrieval to a single persona's claims.
+    #[serde(default)]
+    pub user_id: Option<String>,
 }
 
 fn default_top_k() -> usize {
@@ -2090,6 +2093,7 @@ pub async fn retrieve_fractal(
         max_depth: req.max_depth,
         profile: req.retrieval_profile,
         memory_type_filter: type_filter,
+        user_id: req.user_id.clone(),
     };
     let results = state.store.hybrid_retrieve(&query).await.map_err(|e| {
         tracing::error!("hybrid_retrieve failed: {}", e);
@@ -2171,33 +2175,40 @@ pub async fn retrieve_fractal(
         }
     };
 
-    // Stage 2.5: Temporal diversity sampling (Issue #1 — Retrieval Bias fix).
-    // Vector search clusters around query sentiment — a positive query ("what
-    // does the user enjoy") retrieves only positive nodes. Diversity sampling
-    // ensures nodes from all temporal phases (early/middle/late) appear in
-    // the top-k results, preventing sentiment-skewed blind spots.
-    let results = if req.diversity && results.len() > req.top_k {
-        let mut diverse = apply_temporal_diversity(
-            results.clone(),
-            req.top_k,
-            req.contrastive_query.as_deref(),
-            state.embedding.as_ref(),
-        )
-        .await;
-        tracing::info!(
-            pre = results.len(),
-            post = diverse.len(),
-            "diversity sampling applied"
-        );
-        diverse
-    } else {
-        results
-    };
+    // Stage 2.5: Temporal diversity + contrastive retrieval.
+    let mut final_results = results;
+    if req.diversity {
+        // Run contrastive query if provided, to surface negative/change claims
+        if let Some(cq_text) = req.contrastive_query.as_deref() {
+            if !cq_text.trim().is_empty() {
+                if let Ok(cq_vector) = state.embedding.embed(cq_text).await {
+                    let cq_query = HybridQuery {
+                        query_text: Some(cq_text.to_string()),
+                        query_vector: Some(cq_vector),
+                        top_k: req.top_k,
+                        max_depth: 0,
+                        profile: req.retrieval_profile,
+                        memory_type_filter: type_filter,
+                        user_id: req.user_id.clone(),
+                    };
+                    if let Ok(extra) = state.store.hybrid_retrieve(&cq_query).await {
+                        tracing::info!(contrastive = extra.len(), "contrastive results");
+                        final_results.extend(extra);
+                    }
+                }
+            }
+        }
+        let pre_len = final_results.len();
+        if final_results.len() > req.top_k {
+            final_results = apply_temporal_diversity(final_results, req.top_k, None, state.embedding.as_ref()).await;
+            tracing::info!(pre = pre_len, post = final_results.len(), "diversity applied");
+        }
+    }
 
     // Apply max_tier filter: only include nodes at or below max_tier
     let max_tier_filter = max_tier;
     let results: Vec<crate::storage::ScoredNode> = if let Some(max_t) = max_tier_filter {
-        results
+        final_results
             .into_iter()
             .filter(|s| {
                 // Higher ordinal = lower tier (Raw=2, Overview=1, Summary=0)
@@ -2206,7 +2217,7 @@ pub async fn retrieve_fractal(
             })
             .collect()
     } else {
-        results
+        final_results
     };
 
     let results: Vec<crate::storage::ScoredNode> = results
@@ -4314,6 +4325,7 @@ pub async fn namespace_search(
         max_depth: 3,
         profile: RetrievalProfile::UserFacing,
         memory_type_filter: None,
+        user_id: None,
     };
     let all_results = state.store.hybrid_retrieve(&query).await.map_err(|e| {
         (
