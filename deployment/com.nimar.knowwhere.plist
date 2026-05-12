@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.nimar.knowwhere</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/nimarfranklinmac/knowwhere/target/release/knowwhere-server</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/nimarfranklinmac/knowwhere</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>KNOWWHERE_API_KEY</key>
+        <string>kw_testkey_12345</string>
+        <key>OLLAMA_SUMMARIZER_MODEL</key>
+        <string>qwen2.5:3b</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/nimarfranklinmac/knowwhere/logs/server.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/nimarfranklinmac/knowwhere/logs/server.error.log</string>
+</dict>
+</plist>
