@@ -81,7 +81,7 @@ Some(l1_content.clone()), // Clone before move
 ### Fix 4: Server Configuration
 
 ```bash
-KNOWWHERE_MIN_ROUND_CHARS=2000  # Sessions up to 2000 chars stored as single nodes
+# KNOWWHERE_MIN_ROUND_CHARS=2000  # War temporär (jetzt entfernt, Code default 80)
 OLLAMA_SUMMARIZER_MODEL=qwen2.5:3b  # ~17s summarization vs ~24s with llama3.2
 ```
 
