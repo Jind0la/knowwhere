@@ -205,15 +205,14 @@ pub(crate) fn source_context_block(
         .unwrap_or("(no content)");
     let excerpt = if preference {
         truncate_chars(content, 16_000)
-    } else {
-        let max_lines = if aggregation {
-            32
-        } else if temporal {
-            8
-        } else {
-            4
-        };
+    } else if aggregation || temporal {
+        let max_lines = if aggregation { 32 } else { 8 };
         relevant_lines(question, content, temporal, max_lines).join("\n")
+    } else {
+        // For standard queries: the node was already selected by vector similarity.
+        // Trust that relevance signal — don't re-filter with keyword matching.
+        // Just truncate to a reasonable context window.
+        truncate_chars(content, 2_000)
     };
     let mut block = String::new();
     if let Some(session_id) = source_session_id(&source.node) {
@@ -256,7 +255,7 @@ fn qa_max_output_tokens(question: &str, question_type: Option<&str>) -> u32 {
     if is_aggregation_question(question, question_type) {
         return 120;
     }
-    40
+    320
 }
 
 fn qa_prompt(
@@ -270,6 +269,7 @@ fn qa_prompt(
     let aggregation = is_aggregation_question(question, question_type);
     let mut prompt = String::new();
     prompt.push_str("Answer the user question using only the provided memory context.\n");
+    prompt.push_str("CRITICAL: Do NOT show your reasoning or thinking process. Output ONLY the final answer.\n");
     prompt.push_str("Rules:\n");
     prompt.push_str("- Return only the final answer, no bullets and no source list.\n");
     if !preference {
@@ -314,7 +314,30 @@ fn qa_prompt(
     prompt
 }
 
-pub(crate) async fn openai_qa_answer(
+pub(crate) async fn qa_answer(
+    message: &str,
+    question_type: Option<&str>,
+    question_date: Option<&str>,
+    contexts: &[String],
+) -> anyhow::Result<String> {
+    let provider = std::env::var("KNOWWHERE_QA_PROVIDER")
+        .unwrap_or_else(|_| "kimi".to_string())
+        .to_ascii_lowercase();
+
+    match provider.as_str() {
+        "kimi" | "moonshot" => qa_answer_kimi(message, question_type, question_date, contexts).await,
+        "openai" => qa_answer_openai(message, question_type, question_date, contexts).await,
+        other => {
+            tracing::warn!(
+                provider = other,
+                "unknown KNOWWHERE_QA_PROVIDER, falling back to kimi"
+            );
+            qa_answer_kimi(message, question_type, question_date, contexts).await
+        }
+    }
+}
+
+async fn qa_answer_openai(
     message: &str,
     question_type: Option<&str>,
     question_date: Option<&str>,
@@ -345,16 +368,97 @@ pub(crate) async fn openai_qa_answer(
         .error_for_status()?
         .json()
         .await?;
-    let answer = response
+    let answer = extract_answer_content(&response);
+    tracing::info!(provider = "openai", model = %model, "qa answer generated");
+    Ok(answer)
+}
+
+async fn qa_answer_kimi(
+    message: &str,
+    question_type: Option<&str>,
+    question_date: Option<&str>,
+    contexts: &[String],
+) -> anyhow::Result<String> {
+    let api_key = std::env::var("MOONSHOT_API_KEY")
+        .map_err(|_| anyhow::anyhow!("MOONSHOT_API_KEY not set"))?;
+    let model = std::env::var("KNOWWHERE_CHAT_MODEL").unwrap_or_else(|_| "kimi-k2.6".to_string());
+    let max_tokens = qa_max_output_tokens(message, question_type);
+    let timeout_secs: u64 = std::env::var("KNOWWHERE_QA_TIMEOUT_SECS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(30);
+    let payload = serde_json::json!({
+        "model": model,
+        "messages": [{"role":"user","content": qa_prompt(message, question_type, question_date, contexts)}],
+        "temperature": 1.0,
+        "max_tokens": max_tokens
+    });
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(timeout_secs))
+        .build()?;
+    let response: serde_json::Value = client
+        .post("https://api.moonshot.ai/v1/chat/completions")
+        .bearer_auth(api_key)
+        .json(&payload)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let answer = extract_answer_content(&response);
+    tracing::info!(provider = "kimi", model = %model, "qa answer generated");
+    Ok(answer)
+}
+
+fn extract_answer_content(response: &serde_json::Value) -> String {
+    let choice = response
         .get("choices")
-        .and_then(|v| v.get(0))
+        .and_then(|v| v.get(0));
+
+    // Try content first, then reasoning_content (Kimi K2.6 puts thinking there)
+    let content = choice
         .and_then(|v| v.get("message"))
         .and_then(|v| v.get("content"))
         .and_then(Value::as_str)
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty());
+
+    if let Some(c) = content {
+        return c.to_string();
+    }
+
+    // Fallback: Kimi K2.6 may put the answer in reasoning_content when tokens run out
+    let reasoning = choice
+        .and_then(|v| v.get("message"))
+        .and_then(|v| v.get("reasoning_content"))
+        .and_then(Value::as_str)
         .unwrap_or("I don't know")
-        .trim()
-        .to_string();
-    Ok(answer)
+        .trim();
+
+    // Extract the final conclusion from reasoning (last sentence often has the answer)
+    if reasoning.len() > 200 {
+        // Try to find the answer in the last paragraph
+        if let Some(last_para) = reasoning.rsplit("\n\n").next() {
+            if last_para.len() > 10 {
+                return last_para.trim().to_string();
+            }
+        }
+        // Take last 200 chars as fallback
+        reasoning[reasoning.len().saturating_sub(200)..].trim().to_string()
+    } else {
+        reasoning.to_string()
+    }
+}
+
+/// Legacy alias — calls qa_answer with kimi provider.
+#[deprecated(note = "use qa_answer() instead")]
+pub(crate) async fn openai_qa_answer(
+    message: &str,
+    question_type: Option<&str>,
+    question_date: Option<&str>,
+    contexts: &[String],
+) -> anyhow::Result<String> {
+    qa_answer_openai(message, question_type, question_date, contexts).await
 }
 
 #[cfg(test)]
@@ -554,6 +658,6 @@ mod qa_tests {
 
     #[test]
     fn qa_max_output_tokens_default() {
-        assert_eq!(qa_max_output_tokens("What?", Some("single-session")), 40);
+        assert_eq!(qa_max_output_tokens("What?", Some("single-session")), 320);
     }
 }

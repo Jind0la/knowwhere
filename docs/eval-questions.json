@@ -1,0 +1,62 @@
+[
+  {
+    "id": "q1",
+    "question": "What database does KnowWhere use?",
+    "ground_truth": "PostgreSQL with pgvector extension",
+    "keywords": ["postgresql", "pgvector"]
+  },
+  {
+    "id": "q2",
+    "question": "What programming language is KnowWhere written in?",
+    "ground_truth": "Rust (edition 2021) with the Axum 0.8 web framework",
+    "keywords": ["rust", "axum"]
+  },
+  {
+    "id": "q3",
+    "question": "What embedding model does KnowWhere use?",
+    "ground_truth": "snowflake-arctic-embed2 via Ollama, producing 768-dimensional embeddings",
+    "keywords": ["snowflake-arctic-embed2", "768"]
+  },
+  {
+    "id": "q4",
+    "question": "How does KnowWhere's hybrid retrieval work?",
+    "ground_truth": "Reciprocal Rank Fusion (RRF) with k=60 combining cosine similarity vector search and BM25 text search",
+    "keywords": ["reciprocal rank fusion", "rrf", "bm25", "cosine"]
+  },
+  {
+    "id": "q5",
+    "question": "What are KnowWhere's three memory tiers?",
+    "ground_truth": "L0 (Hot, 7d TTL, full precision), L1 (Warm, 30d TTL, BM25-clustered), L2 (Cold, 90d TTL, VLM-summarized)",
+    "keywords": ["l0", "l1", "l2", "7d", "30d", "90d"]
+  },
+  {
+    "id": "q6",
+    "question": "What is KnowWhere's pointer-first architecture?",
+    "ground_truth": "Every stored item is a pointer to information, not the information itself. Makes memories compressible, referenceable, and replaceable over time.",
+    "keywords": ["pointer", "compressible", "referenceable"]
+  },
+  {
+    "id": "q7",
+    "question": "What are KnowWhere's main API endpoints?",
+    "ground_truth": "POST /register, /login, /refresh for auth; POST /store_session, /store_external, /retrieve_fractal for memory; GET /health for status",
+    "keywords": ["store_session", "retrieve_fractal", "health"]
+  },
+  {
+    "id": "q8",
+    "question": "What is KnowWhere's consolidation pipeline?",
+    "ground_truth": "L2 is summarized via VLM to L1, L1 is clustered via BM25 to L0. ConsolidationScheduler runs every hour (3600s).",
+    "keywords": ["consolidation", "vlm", "bm25", "l1", "l0"]
+  },
+  {
+    "id": "q9",
+    "question": "What is KnowWhere's current version and license?",
+    "ground_truth": "Version 0.5.0, MIT license",
+    "keywords": ["0.5.0", "mit"]
+  },
+  {
+    "id": "q10",
+    "question": "What benchmark methodology does KnowWhere use?",
+    "ground_truth": "AMB-Standard (agentmemorybenchmark.ai) with Golden Queries achieving Recall@5 of 0.917 and MRR of 0.917",
+    "keywords": ["amb", "recall@5", "0.917"]
+  }
+]

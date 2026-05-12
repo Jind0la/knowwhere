@@ -1,0 +1,88 @@
+{
+  "results": [
+    {
+      "id": "q1",
+      "question": "What database does KnowWhere use?",
+      "answer": "Ich antworte aus deinem aktuellen Memory-Kontext:\n1. KnowWhere uses PostgreSQL with pgvector extension as its primary database for vector storage and metadata.\n2. KnowWhere is version 0.5.0, written in Rust edition 2021. Package name: knowwhere-server. License: MIT.\n3. KnowWhere stores decisions, semantic memories, and episodic sessions with automatic type-tagging.\n4. KnowWhere's server listens on port 3737 by default and uses Bearer token authentication.\n5. KnowWhere is built in Rust using the Axum 0.8 web framework with Tokio async runtime.",
+      "keywords_matched": 2,
+      "score": "correct",
+      "ground_truth": "PostgreSQL with pgvector extension"
+    },
+    {
+      "id": "q2",
+      "question": "What programming language is KnowWhere written in?",
+      "answer": "Ich antworte aus deinem aktuellen Memory-Kontext:\n1. KnowWhere is version 0.5.0, written in Rust edition 2021. Package name: knowwhere-server. License: MIT.\n2. KnowWhere is built in Rust using the Axum 0.8 web framework with Tokio async runtime.\n3. KnowWhere is an institutional memory system \u2014 it stores technical decisions, architecture decisions, bug fixes, and code knowledge. It is NOT a personalization system.\n4. KnowWhere stores decisions, semantic memories, and episodic sessions with automatic type-tagging.",
+      "keywords_matched": 2,
+      "score": "correct",
+      "ground_truth": "Rust (edition 2021) with the Axum 0.8 web framework"
+    },
+    {
+      "id": "q3",
+      "question": "What embedding model does KnowWhere use?",
+      "answer": "Ich antworte aus deinem aktuellen Memory-Kontext:\n1. KnowWhere uses Ollama with snowflake-arctic-embed2 model producing 768-dimensional embeddings.\n2. KnowWhere is version 0.5.0, written in Rust edition 2021. Package name: knowwhere-server. License: MIT.\n3. KnowWhere retrieval latency: P50 ~300ms (with Cross-Encoder active), P95 ~500ms.\n4. KnowWhere supports the Agent Memory Benchmark (AMB) via the omb Python toolkit for standardized evaluation.\n5. KnowWhere stores decisions, semantic memories, and episodic sessions with automatic type-tagging.",
+      "keywords_matched": 2,
+      "score": "correct",
+      "ground_truth": "snowflake-arctic-embed2 via Ollama, producing 768-dimensional embeddings"
+    },
+    {
+      "id": "q4",
+      "question": "How does KnowWhere's hybrid retrieval work?",
+      "answer": "Ich antworte aus deinem aktuellen Memory-Kontext:\n1. KnowWhere's hybrid retrieval combines cosine similarity vector search with BM25 via Reciprocal Rank Fusion (RRF k=60).\n2. KnowWhere retrieval latency: P50 ~300ms (with Cross-Encoder active), P95 ~500ms.\n3. KnowWhere's server listens on port 3737 by default and uses Bearer token authentication.\n4. KnowWhere stores decisions, semantic memories, and episodic sessions with automatic type-tagging.\n5. KnowWhere is version 0.5.0, written in Rust edition 2021. Package name: knowwhere-server. License: MIT.",
+      "keywords_matched": 4,
+      "score": "correct",
+      "ground_truth": "Reciprocal Rank Fusion (RRF) with k=60 combining cosine similarity vector search and BM25 text search"
+    },
+    {
+      "id": "q5",
+      "question": "What are KnowWhere's three memory tiers?",
+      "answer": "Ich antworte aus deinem aktuellen Memory-Kontext:\n1. KnowWhere hat drei Memory-Tiers: L0 (Hot, 7d TTL, Full Precision), L1 (Warm, 30d TTL, BM25-clustered), L2 (Cold, 90d TTL, VLM-summarized).\n2. KnowWhere follows a pointer-first fractal memory architecture with L0\u2192L1\u2192L2 consolidation tiers.\n3. KnowWhere's server listens on port 3737 by default and uses Bearer token authentication.\n4. KnowWhere stores decisions, semantic memories, and episodic sessions with automatic type-tagging.\n5. KnowWhere Golden Queries (n=12): Recall@5 = 0.917, Recall@1 = 1.000, Decision-Purity@5 = 0.733, MRR = 0.917, avg Decision-Nodes/Query = 3.67.",
+      "keywords_matched": 6,
+      "score": "correct",
+      "ground_truth": "L0 (Hot, 7d TTL, full precision), L1 (Warm, 30d TTL, BM25-clustered), L2 (Cold, 90d TTL, VLM-summarized)"
+    },
+    {
+      "id": "q6",
+      "question": "What is KnowWhere's pointer-first architecture?",
+      "answer": "Ich antworte aus deinem aktuellen Memory-Kontext:\n1. KnowWhere follows a pointer-first fractal memory architecture with L0\u2192L1\u2192L2 consolidation tiers.\n2. KnowWhere ist ein Pointer-First fractal memory service f\u00fcr AI Agents. Jedes gespeicherte Item ist ein Pointer auf Information, nicht die Information selbst.\n3. KnowWhere's server listens on port 3737 by default and uses Bearer token authentication.\n4. KnowWhere is an institutional memory system \u2014 it stores technical decisions, architecture decisions, bug fixes, and code knowledge. It is NOT a personalization system.\n5. KnowWhere's hybrid retrieval combines cosine similarity vector search with BM25 via Reciprocal Rank Fusion (RRF k=60).",
+      "keywords_matched": 1,
+      "score": "partial",
+      "ground_truth": "Every stored item is a pointer to information, not the information itself. Makes memories compressible, referenceable, and replaceable over time."
+    },
+    {
+      "id": "q7",
+      "question": "What are KnowWhere's main API endpoints?",
+      "answer": "Ich antworte aus deinem aktuellen Memory-Kontext:\n1. KnowWhere API Endpoints: POST /register, POST /login, POST /refresh (Auth). POST /embed, POST /store_session, POST /store_external, GET /retrieve/{id}, POST /retrieve_fractal (Prot...\n2. KnowWhere Known Limitations: L2\u2192L1\u2192L0 consolidation broken without cloud API keys, cross-tier dedup unimplemented, pointer fingerprinting geplant aber nicht implementiert, /me endp...\n3. KnowWhere's server listens on port 3737 by default and uses Bearer token authentication.\n4. KnowWhere Admin Endpoints: GET /self-healing/stats, GET /energy/low, POST /energy/decay/apply, POST /energy/compress, GET /deduplication/candidates, POST /deduplication/run, GET /c...\n5. KnowWhere is version 0.5.0, written in Rust edition 2021. Package name: knowwhere-server. License: MIT.",
+      "keywords_matched": 2,
+      "score": "correct",
+      "ground_truth": "POST /register, /login, /refresh for auth; POST /store_session, /store_external, /retrieve_fractal for memory; GET /health for status"
+    },
+    {
+      "id": "q8",
+      "question": "What is KnowWhere's consolidation pipeline?",
+      "answer": "Ich antworte aus deinem aktuellen Memory-Kontext:\n1. KnowWhere's Consolidation Pipeline: L2 wird via VLM summarization zu L1 verdichtet, L1 via BM25 clustering zu L0. ConsolidationScheduler l\u00e4uft st\u00fcndlich.\n2. KnowWhere's server listens on port 3737 by default and uses Bearer token authentication.\n3. KnowWhere follows a pointer-first fractal memory architecture with L0\u2192L1\u2192L2 consolidation tiers.\n4. KnowWhere's hybrid retrieval combines cosine similarity vector search with BM25 via Reciprocal Rank Fusion (RRF k=60).\n5. KnowWhere Known Limitations: L2\u2192L1\u2192L0 consolidation broken without cloud API keys, cross-tier dedup unimplemented, pointer fingerprinting geplant aber nicht implementiert, /me endp...",
+      "keywords_matched": 5,
+      "score": "correct",
+      "ground_truth": "L2 is summarized via VLM to L1, L1 is clustered via BM25 to L0. ConsolidationScheduler runs every hour (3600s)."
+    },
+    {
+      "id": "q9",
+      "question": "What is KnowWhere's current version and license?",
+      "answer": "Ich antworte aus deinem aktuellen Memory-Kontext:\n1. KnowWhere is version 0.5.0, written in Rust edition 2021. Package name: knowwhere-server. License: MIT.\n2. KnowWhere's server listens on port 3737 by default and uses Bearer token authentication.\n3. KnowWhere is built in Rust using the Axum 0.8 web framework with Tokio async runtime.\n4. KnowWhere stores decisions, semantic memories, and episodic sessions with automatic type-tagging.",
+      "keywords_matched": 2,
+      "score": "correct",
+      "ground_truth": "Version 0.5.0, MIT license"
+    },
+    {
+      "id": "q10",
+      "question": "What benchmark methodology does KnowWhere use?",
+      "answer": "Ich antworte aus deinem aktuellen Memory-Kontext:\n1. KnowWhere v0.5 AMB Benchmark results: 37.5% accuracy on technical queries using OpenAI gpt-4.1-nano judge. Stronger judge (GPT-4o, Claude) would score higher.\n2. KnowWhere supports the Agent Memory Benchmark (AMB) via the omb Python toolkit for standardized evaluation.\n3. KnowWhere is version 0.5.0, written in Rust edition 2021. Package name: knowwhere-server. License: MIT.\n4. KnowWhere stores decisions, semantic memories, and episodic sessions with automatic type-tagging.\n5. KnowWhere retrieval latency: P50 ~300ms (with Cross-Encoder active), P95 ~500ms.",
+      "keywords_matched": 1,
+      "score": "partial",
+      "ground_truth": "AMB-Standard (agentmemorybenchmark.ai) with Golden Queries achieving Recall@5 of 0.917 and MRR of 0.917"
+    }
+  ],
+  "correct": 8,
+  "partial": 2,
+  "wrong": 0,
+  "score": 9.0
+}

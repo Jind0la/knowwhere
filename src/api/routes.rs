@@ -37,7 +37,7 @@ mod vlm_webhooks;
 pub use vlm_webhooks::*;
 
 use crate::api::subconscious_qa::{
-    is_multi_session_type, is_temporal_question, openai_qa_answer, qa_context_limit,
+    is_multi_session_type, is_temporal_question, openai_qa_answer, qa_answer, qa_context_limit,
     source_context_block, source_timestamp,
 };
 
@@ -1995,7 +1995,7 @@ pub async fn subconscious_chat(
                 source_context_block(&req.message, req.question_type.as_deref(), temporal, entry)
             })
             .collect();
-        match openai_qa_answer(
+        match qa_answer(
             &req.message,
             req.question_type.as_deref(),
             req.question_date.as_deref(),
