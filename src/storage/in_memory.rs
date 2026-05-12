@@ -955,7 +955,7 @@ impl MemoryStore {
         #[cfg(feature = "postgres-storage")]
         let total_candidates = vector_ids.len() + bm25_results.len();
 
-        let fused = Self::rrf_fuse(&vector_ids, &bm25_results, 60.0);
+        let fused = Self::rrf_fuse(&vector_ids, &bm25_results, 5.0);
 
         let nodes = self.nodes.read().await;
         let results: Vec<_> = fused
