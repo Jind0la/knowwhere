@@ -193,13 +193,14 @@ impl StorageBackend for MemoryStore {
                 query.memory_type_filter.map_or(true, |mt| node.memory_type == mt)
             })
             .filter(|(_, node)| {
-                // user_id filter: scope retrieval to a single persona's claims
-                query.user_id.as_ref().map_or(true, |uid| {
-                    node.metadata
-                        .get("user_id")
-                        .and_then(|v| v.as_str())
-                        .map_or(true, |v| v == uid.as_str())
-                })
+                // user_id filter: scope retrieval to a single persona's claims.
+                // When user_id is NOT set: only return nodes without a user_id (global scope).
+                // When user_id IS set: return matching nodes AND nodes without user_id (global).
+                let node_uid = node.metadata.get("user_id").and_then(|v| v.as_str());
+                match &query.user_id {
+                    None => node_uid.is_none(),
+                    Some(uid) => node_uid.map_or(true, |v| v == uid.as_str()),
+                }
             })
             .map(|(score, node)| query.profile.score_node(score, node))
             .collect();
@@ -226,12 +227,12 @@ impl StorageBackend for MemoryStore {
         Ok(nodes
             .into_iter()
             .filter(|node| {
-                query.user_id.as_ref().map_or(true, |uid| {
-                    node.metadata
-                        .get("user_id")
-                        .and_then(|v| v.as_str())
-                        .map_or(true, |v| v == uid.as_str())
-                })
+                // user_id filter: same logic as hybrid_retrieve above
+                let node_uid = node.metadata.get("user_id").and_then(|v| v.as_str());
+                match &query.user_id {
+                    None => node_uid.is_none(),
+                    Some(uid) => node_uid.map_or(true, |v| v == uid.as_str()),
+                }
             })
             .map(|node| ScoredNode {
                 id: node.id,

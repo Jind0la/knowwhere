@@ -1,0 +1,30 @@
+{
+  "_meta": {
+    "description": "Before-fix response: old binary WITHOUT user_id filter, 0 KnowWhere nodes",
+    "timestamp": "2026-05-12T09:10:00Z",
+    "query": "What database does KnowWhere use?",
+    "server_state": "14,950 nodes \u2014 100% PersonaMem benchmark data",
+    "result": "GARBAGE \u2014 PersonaMem preferences returned instead of KnowWhere knowledge"
+  },
+  "top_results": [
+    {
+      "score": 0.024590163,
+      "snippet": "The user believes understanding the structure of research papers would help her identify key points more efficiently.",
+      "user_id": "357073b65588cc3017575f7f4dde34dac5d5e0cd376ac2fc1fb693f216e0878b",
+      "memory_type": "decision"
+    },
+    {
+      "score": 0.024590163,
+      "snippet": "The user does not want improperly indented code.",
+      "user_id": "87fcbc7f2659effa29e8588b521c937634a53fcc516ee1ca85eeddfe8190708a",
+      "memory_type": "decision"
+    },
+    {
+      "score": 0.024193548,
+      "snippet": "The user's name is Leilani Hayes.",
+      "user_id": "87fcbc7f2659effa29e8588b521c937634a53fcc516ee1ca85eeddfe8190708a",
+      "memory_type": "decision"
+    }
+  ],
+  "analysis": "Zero KnowWhere knowledge returned. The query 'What database does KnowWhere use?' matched PersonaMem claims about code formatting preferences and user names because the vector space was 100% contaminated with benchmark data from 30+ fake users."
+}

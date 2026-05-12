@@ -1769,6 +1769,9 @@ pub struct SubconsciousChatRequest {
     pub question_date: Option<String>,
     #[serde(default = "default_answer_mode")]
     pub answer_mode: String,
+    /// Optional user_id filter — scopes retrieval to a single persona's claims.
+    #[serde(default)]
+    pub user_id: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -1919,13 +1922,16 @@ pub async fn subconscious_chat(
     let query_vector = embed_query(&*state.embedding, &req.message)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let query = HybridQuery::hybrid(
+    let mut query = HybridQuery::hybrid(
         req.message.clone(),
         query_vector,
         qa_limit.saturating_mul(2),
         req.max_depth.clamp(1, 6),
     )
     .with_profile(req.retrieval_profile);
+    if let Some(ref uid) = req.user_id {
+        query = query.with_user_id(uid.clone());
+    }
     let results = state
         .store
         .hybrid_retrieve(&query)

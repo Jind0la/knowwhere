@@ -1,0 +1,94 @@
+{
+  "_meta": {
+    "description": "After-fix response: new binary WITH user_id filter, global-only scoping, KnowWhere nodes inserted",
+    "timestamp": "2026-05-12T09:50:00Z",
+    "query": "What database does KnowWhere use?",
+    "server_state": "14,952 PersonaMem nodes + 8 global KnowWhere nodes + 5 knowwhere-system nodes"
+  },
+  "test_1_no_userid_global_scope": {
+    "total_results": 7,
+    "personamem_leaks": 0,
+    "results": [
+      {
+        "score": 0.05619048,
+        "content": "KnowWhere uses PostgreSQL with pgvector extension as its primary database for vector storage and metadata.",
+        "user_id": null
+      },
+      {
+        "score": 0.05446154,
+        "content": "KnowWhere stores decisions, semantic memories, and episodic sessions with automatic type-tagging.",
+        "user_id": null
+      },
+      {
+        "score": 0.052470356,
+        "content": "KnowWhere uses Ollama with snowflake-arctic-embed2 model producing 768-dimensional embeddings.",
+        "user_id": null
+      },
+      {
+        "score": 0.052470356,
+        "content": "KnowWhere is built in Rust using the Axum 0.8 web framework with Tokio async runtime.",
+        "user_id": null
+      },
+      {
+        "score": 0.052058823,
+        "content": "KnowWhere follows a pointer-first fractal memory architecture with L0\u2192L1\u2192L2 consolidation tiers.",
+        "user_id": null
+      },
+      {
+        "score": 0.051001243,
+        "content": "KnowWhere supports the Agent Memory Benchmark (AMB) via the omb Python toolkit for standardized evaluation.",
+        "user_id": null
+      },
+      {
+        "score": 0.02765625,
+        "content": "KnowWhere's server listens on port 3737 by default and uses Bearer token authentication.",
+        "user_id": null
+      }
+    ]
+  },
+  "test_2_with_userid": {
+    "total_results": 8,
+    "results": [
+      {
+        "score": 0.057564776,
+        "content": "KnowWhere uses PostgreSQL with pgvector extension as its primary database.",
+        "user_id": "knowwhere-system"
+      },
+      {
+        "score": 0.057564776,
+        "content": "KnowWhere uses PostgreSQL with pgvector extension as its primary database.",
+        "user_id": "knowwhere-system"
+      },
+      {
+        "score": 0.05619048,
+        "content": "KnowWhere uses PostgreSQL with pgvector extension as its primary database for vector storage and metadata.",
+        "user_id": null
+      },
+      {
+        "score": 0.05446154,
+        "content": "KnowWhere stores decisions, semantic memories, and episodic sessions with automatic type-tagging.",
+        "user_id": null
+      },
+      {
+        "score": 0.052847594,
+        "content": "KnowWhere is built in Rust using the Axum 0.8 web framework with Tokio async runtime.",
+        "user_id": null
+      },
+      {
+        "score": 0.052470356,
+        "content": "KnowWhere uses Ollama with snowflake-arctic-embed2 model producing 768-dimensional embeddings.",
+        "user_id": null
+      },
+      {
+        "score": 0.051681586,
+        "content": "KnowWhere follows a pointer-first fractal memory architecture with L0\u2192L1\u2192L2 consolidation tiers.",
+        "user_id": null
+      },
+      {
+        "score": 0.051001243,
+        "content": "KnowWhere supports the Agent Memory Benchmark (AMB) via the omb Python toolkit for standardized evaluation.",
+        "user_id": null
+      }
+    ]
+  }
+}
