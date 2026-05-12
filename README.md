@@ -31,16 +31,18 @@ When an agent asks "why did we decide X three months ago?", other memory systems
 > **Verdict: The Core Loop works.** The 25% AMB accuracy was caused by a single misconfigured parameter (RRF k=60), not a structural flaw. With k=5, retrieval produces 7.9× better score separation and 4/5 queries correct on Rank 1.
 
 | Component | Status | Details |
-|---|---|---|
+|---|---|---|---|
 | Ingestion (Documents) | ✅ Working | Chunk → Embed → Store pipeline intact |
 | Ingestion (Conversations) | ✅ Working | Session turns stored as L0 with provenance |
 | Retrieval (RRF k=5) | ✅ Working | Scores 0.10–0.44 with 60% separation |
-| Scoring (Multipliers) | ⚠️ Biased | Decision 1.5× vs Episodic 0.85× = 76% penalty for conversations |
-| AMB Benchmark | ⏳ Pending | Needs multiplier neutralization + rerun |
-| Consolidation | ⏳ Untested | Requires cloud API keys |
+| Scoring (Multipliers) | ✅ Neutralized | All types 1.0× — fair scoring verified |
+| AMB Benchmark | ⏳ Pending | Core Loop proven, needs end-to-end rerun |
+| Consolidation | ✅ Active | Self-hosted Ollama (qwen2.5:3b), L0→L1→L2 chains |
+| Fractal Hierarchy | ✅ Verified | Document P@3 0.73, Conversation P@3 0.87 |
 
 📊 **Full analysis:** [`docs/ARCHITECTURE-ANALYSIS.md`](docs/ARCHITECTURE-ANALYSIS.md) — complete diagnosis + recommendations  
-🔬 **Pipeline trace:** [`docs/SIGNAL-TRACE.md`](docs/SIGNAL-TRACE.md) — mathematical analysis of all stages
+🔬 **Pipeline trace:** [`docs/SIGNAL-TRACE.md`](docs/SIGNAL-TRACE.md) — mathematical analysis of all stages  
+🏗️ **Consolidation report:** [`docs/CONSOLIDATION-REPORT.md`](docs/CONSOLIDATION-REPORT.md) — Fractal Hierarchy Activation
 
 ---
 

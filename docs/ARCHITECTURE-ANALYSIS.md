@@ -101,7 +101,37 @@ Datenmodell klären: Entscheiden ob Konversationen als kohärente Turns oder ato
 
 - [`docs/ARCHITECTURE-ANALYSIS.md`](./ARCHITECTURE-ANALYSIS.md) — Dieses Dokument. Komplette Diagnose + Empfehlung.
 - [`docs/SIGNAL-TRACE.md`](./SIGNAL-TRACE.md) — Mathematische Analyse aller Pipeline-Stages + Live-Verification.
+- [`docs/CONSOLIDATION-REPORT.md`](./CONSOLIDATION-REPORT.md) — Fractal Hierarchy Activation Report (2026-05-12).
 - `src/storage/in_memory.rs:958` — RRF k=60 → k=5 (gepatcht, Debug-Binary läuft)
+
+---
+
+## Fractal Hierarchy Activation (2026-05-12)
+
+Nach dem Core-Loop-Proof wurde die Consolidation-Pipeline aktiviert. Vorher: 0 Consolidation-Jobs, L1-Content war Raw-JSON, Sessions wurden in 80-Char-Chunks atomisiert. Nachher:
+
+| Metrik | Vorher | Nachher |
+|---|---|---|
+| Consolidation | Deaktiviert (Cloud-Keys needed) | ✅ Self-Hosted via Ollama (qwen2.5:3b) |
+| L1 Content | `{"summary":"...", "claims":[...]}` (Raw JSON) | ✅ Clean narrative summary |
+| Session-Ingestion | Chunked in 80-Char-Fragmente | ✅ Full-content raw nodes (≥500 chars) |
+| Fractal Hierarchy | 0 L0→L1→L2 Ketten | ✅ Bidirektionale parent/children links |
+| Fractal Zoom | Ungetestet | ✅ Navigable chain: L0 → L1 → L2 |
+| Document P@3 | 0.33 | **0.73** (2.2×) |
+| Conversation P@3 | 0.27 | **0.87** (3.2×) |
+
+**Code-Fixes in `src/scheduler/consolidation.rs`:**
+1. L1-Content: Parse JSON vor Node-Creation → sauberes Narrativ
+2. L0-Input: Summarisiere Narrativ statt Raw-JSON
+3. Borrow-Check: Clone vor Move in FractalNode
+
+**Server-Konfiguration:**
+```bash
+KNOWWHERE_MIN_ROUND_CHARS=2000  # Verhindert Session-Chunking
+OLLAMA_SUMMARIZER_MODEL=qwen2.5:3b  # ~17s vs ~24s mit llama3.2
+```
+
+**Vollständiger Report:** [`docs/CONSOLIDATION-REPORT.md`](./CONSOLIDATION-REPORT.md)
 
 ## Kernfrage (beantwortet)
 

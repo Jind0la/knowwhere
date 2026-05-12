@@ -58,7 +58,7 @@ impl LocalSummarizer {
             .unwrap_or_else(|_| "llama3.2".to_string());
         
         let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
+            .timeout(std::time::Duration::from_secs(120))
             .build()?;
         
         // Verify Ollama is reachable
@@ -109,10 +109,10 @@ impl LocalSummarizer {
         // Forces the LLM to name decisions explicitly so embedding
         // similarity search finds queries like "why did we kill Docker?"
         let prompt = format!(
-            "Summarize in ONE sentence (≤20 words). \
-             If any decisions were made, state the decision AND the reason. \
-             Otherwise state the single most important fact. \
-             Include the word 'decision' or 'decided' if a choice was made. \
+            "Summarize in ONE sentence (≤25 words). \
+             State what was decided OR what the current status is. \
+             Use words like 'decision', 'decided', 'status', 'working', 'broken', or 'pending'. \
+             Include specific names, versions, or metrics if present. \
              No preamble.\n\n{}",
             text
         );

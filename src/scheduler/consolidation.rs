@@ -182,6 +182,10 @@ pub struct ConsolidationScheduler {
     /// Set to true while a run is in progress; subsequent
     /// trigger_if_needed() calls return immediately.
     is_running: AtomicBool,
+    /// Lifetime metrics for DreamStatus monitoring.
+    pub candidates_found_total: Arc<AtomicU64>,
+    pub enqueued_total: Arc<AtomicU64>,
+    pub failed_total: Arc<AtomicU64>,
 }
 
 impl ConsolidationScheduler {
@@ -213,6 +217,9 @@ impl ConsolidationScheduler {
             last_enqueued: Arc::new(RwLock::new(0)),
             cycle_count: Arc::new(AtomicU64::new(0)),
             is_running: AtomicBool::new(false),
+            candidates_found_total: Arc::new(AtomicU64::new(0)),
+            enqueued_total: Arc::new(AtomicU64::new(0)),
+            failed_total: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -324,6 +331,9 @@ impl ConsolidationScheduler {
             "force_run: starting full consolidation"
         );
 
+        self.candidates_found_total
+            .fetch_add(candidates.len() as u64, Ordering::Relaxed);
+
         let mut enqueued = 0;
         let mut failed = 0;
 
@@ -380,6 +390,10 @@ impl ConsolidationScheduler {
         *self.last_run.write().await = Some(Instant::now());
 
         let elapsed = start.elapsed().as_millis() as u64;
+        self.enqueued_total
+            .fetch_add(enqueued as u64, Ordering::Relaxed);
+        self.failed_total
+            .fetch_add(failed as u64, Ordering::Relaxed);
         tracing::info!(
             enqueued,
             failed,
@@ -450,6 +464,9 @@ impl ConsolidationScheduler {
             vlm_available = self.vlm_worker.is_some(),
             "ConsolidationScheduler: found candidates"
         );
+
+        self.candidates_found_total
+            .fetch_add(candidates.len() as u64, Ordering::Relaxed);
 
         let mut enqueued = 0;
         let mut failed = 0;
@@ -522,6 +539,10 @@ impl ConsolidationScheduler {
 
         *self.last_enqueued.write().await = enqueued;
         *self.last_run.write().await = Some(Instant::now());
+        self.enqueued_total
+            .fetch_add(enqueued as u64, Ordering::Relaxed);
+        self.failed_total
+            .fetch_add(failed as u64, Ordering::Relaxed);
 
         tracing::info!(
             enqueued,
@@ -549,14 +570,52 @@ impl ConsolidationScheduler {
             anyhow::bail!("node {} has empty content", node_id);
         }
 
-        // Generate L1 overview via LocalSummarizer
-        let summary = self
-            .local_summarizer
-            .summarize_for_tier(&content, ContextTier::Overview)
-            .await?;
+        // Generate L1 overview via LocalSummarizer with retry for transient failures
+        // (Ollama cold-start, temporary unavailability)
+        let summary = {
+            let mut last_err = None;
+            let mut summary = None;
+            for attempt in 0..2 {
+                match self
+                    .local_summarizer
+                    .summarize_for_tier(&content, ContextTier::Overview)
+                    .await
+                {
+                    Ok(s) => {
+                        summary = Some(s);
+                        break;
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            attempt,
+                            node_id = %node_id,
+                            error = %e,
+                            "LocalSummarizer attempt failed"
+                        );
+                        last_err = Some(e);
+                        if attempt == 0 {
+                            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                        }
+                    }
+                }
+            }
+            summary.ok_or_else(|| last_err.unwrap_or_else(|| anyhow::anyhow!("summarization failed")))?
+        };
+
+        // Parse the JSON output to extract narrative summary and claims BEFORE
+        // creating L1 node — the L1 content must be the clean narrative, not raw JSON.
+        let consolidation_output =
+            crate::summarizer::ConsolidationOutput::from_summary_text(&summary.text);
+        let narrative_summary = consolidation_output.summary.clone();
 
         // Step 1: Create L1 (Overview) node with embedding
-        let l1_content = summary.text.clone();
+        // Use the parsed narrative summary, not the raw JSON response
+        let l1_content = if narrative_summary.is_empty() {
+            // Fallback: if parsing failed, use the raw text (stripped)
+            summary.text.clone()
+        } else {
+            narrative_summary
+        };
         let l1_embedding = self.embed_text(&l1_content).await?;
         let l1_type = if is_decision_content(&l1_content) {
             MemoryType::Decision
@@ -565,7 +624,7 @@ impl ConsolidationScheduler {
         };
 
         let mut l1_node = FractalNode::new_typed(
-            Some(l1_content),
+            Some(l1_content.clone()),
             None,
             l1_embedding,
             consolidation_metadata(
@@ -599,13 +658,9 @@ impl ConsolidationScheduler {
             .update(&l1_id, UpdateOperation::AddChildTierId(node_id))
             .await?;
 
-        // Step 4a: Extract structured claims from summary text.
-        // New JSON Schema format (May 2026): Ollama produces valid JSON with
-        // {"summary": "...", "claims": [{"claim": "...", "reason": "..."}]}
-        // Falls back to legacy ---CLAIMS--- text parsing for older output.
-        let consolidation = crate::summarizer::ConsolidationOutput::from_summary_text(&summary.text);
-        let claims = &consolidation.claims;
-        let narrative_summary = &consolidation.summary;
+        // Step 4a: Extract structured claims from the already-parsed consolidation output.
+        // (Parsed above before L1 node creation to use clean narrative summary.)
+        let claims = &consolidation_output.claims;
         let mut claim_node_ids = Vec::new();
         for claim in claims {
             let claim_text = &claim.claim;
@@ -674,10 +729,10 @@ impl ConsolidationScheduler {
             );
         }
 
-        // Step 5: Generate L0 (Summary) from L1 content
+        // Step 5: Generate L0 (Summary) from the clean narrative summary (not raw JSON)
         let l0_summary = self
             .local_summarizer
-            .summarize_for_tier(&summary.text, ContextTier::Summary)
+            .summarize_for_tier(&l1_content, ContextTier::Summary)
             .await?;
 
         let l0_content = l0_summary.text.clone();
@@ -890,6 +945,15 @@ impl ConsolidationScheduler {
     /// Get the last run timestamp.
     pub async fn last_run(&self) -> Option<Instant> {
         *self.last_run.read().await
+    }
+
+    /// Populate a DreamStatus with this scheduler's lifetime metrics.
+    pub fn populate_dream_status(&self, status: &mut crate::memory::dream::DreamStatus) {
+        use std::sync::atomic::Ordering;
+        status.consolidation_candidates_found =
+            self.candidates_found_total.load(Ordering::Relaxed);
+        status.consolidation_enqueued = self.enqueued_total.load(Ordering::Relaxed);
+        status.consolidation_failed = self.failed_total.load(Ordering::Relaxed);
     }
 }
 

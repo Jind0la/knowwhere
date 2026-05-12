@@ -1268,11 +1268,55 @@ async fn store_session_json(
         all_ids.push(id);
     }
 
-    let primary_id = all_ids.first().copied().ok_or((
-        StatusCode::INTERNAL_SERVER_ERROR,
-        "no chunks stored".to_string(),
-    ))?;
-    tracing::info!(%primary_id, ?memory_type, chunks = chunk_count, "session node stored (batch-embedded)");
+    // ── Gap 1 Fix: Always store a full-content raw node for consolidation ──
+    // The chunked nodes above are for fine-grained retrieval. This raw node
+    // stores the complete turn content, making it a valid consolidation candidate
+    // (content > 500 chars, context_tier=Raw, importance≥3).
+    let raw_vector = embed_document(&*state.embedding, &req.content)
+        .await
+        .unwrap_or_default();
+    let mut raw_metadata = req.metadata.clone();
+    if let Some(ref sid) = req.session_id {
+        raw_metadata.insert("session_id".to_string(), Value::String(sid.clone()));
+    }
+    if let Some(ti) = req.turn_index {
+        raw_metadata.insert("turn_index".to_string(), Value::Number(ti.into()));
+    }
+    raw_metadata.insert(
+        "is_full_content".to_string(),
+        Value::Bool(true),
+    );
+    raw_metadata.insert(
+        "chunk_ids".to_string(),
+        Value::Array(all_ids.iter().map(|id| Value::String(id.to_string())).collect()),
+    );
+    normalize_node_metadata(memory_type, source, &mut raw_metadata);
+
+    let mut raw_node = FractalNode::new_typed(
+        Some(req.content.clone()),
+        None,
+        raw_vector,
+        raw_metadata,
+        memory_type,
+        MemorySource::Conversation,
+    );
+    raw_node.context_tier = ContextTier::Raw;
+    raw_node.importance = req.importance.unwrap_or(5).clamp(3, 10); // Always ≥3 for consolidation
+    if let Some(sens) = req.sensitivity {
+        raw_node.sensitivity = sens;
+    }
+
+    let raw_id = state
+        .store
+        .insert(raw_node)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let mut all_ids_with_raw = all_ids.clone();
+    all_ids_with_raw.push(raw_id);
+    let primary_id = raw_id; // Return the raw node as primary
+
+    tracing::info!(%primary_id, raw_id = %raw_id, ?memory_type, chunks = chunk_count, "session node stored (batch-embedded + raw node)");
     // Event-driven consolidation
     if let Some(ref sched) = state.consolidation {
         sched.trigger_if_needed().await;
@@ -1282,8 +1326,8 @@ async fn store_session_json(
         StatusCode::CREATED,
         Json(StoreNodeResponse {
             id: primary_id,
-            message: format!("session node created ({chunk_count} chunks)"),
-            chunk_ids: Some(all_ids),
+            message: format!("session node created ({chunk_count} chunks + raw node)"),
+            chunk_ids: Some(all_ids_with_raw),
         }),
     ))
 }
@@ -1495,17 +1539,102 @@ pub async fn store_session_batch(
             session_ids.push(id);
         }
 
-        let primary_id = session_ids.first().copied().ok_or((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "no chunks stored for session".to_string(),
-        ))?;
-        tracing::info!(%primary_id, s_idx, ?memory_type, chunks = chunk_count, "session node stored (batch)");
+        // ── Gap 1 Fix (batch): Store full-content raw node for consolidation ──
+        let raw_vector = embed_document(&*state.embedding, &session.content)
+            .await
+            .unwrap_or_default();
+        let mut raw_metadata = session.metadata.clone();
+        if let Some(ref sid) = session.session_id {
+            raw_metadata.insert("session_id".to_string(), Value::String(sid.clone()));
+        }
+        if let Some(ti) = session.turn_index {
+            raw_metadata.insert("turn_index".to_string(), Value::Number(ti.into()));
+        }
+        raw_metadata.insert("is_full_content".to_string(), Value::Bool(true));
+        raw_metadata.insert(
+            "chunk_ids".to_string(),
+            Value::Array(session_ids.iter().map(|id| Value::String(id.to_string())).collect()),
+        );
+        normalize_node_metadata(memory_type, source, &mut raw_metadata);
+        let mut raw_node = FractalNode::new_typed(
+            Some(session.content.clone()),
+            None,
+            raw_vector,
+            raw_metadata,
+            memory_type,
+            MemorySource::Conversation,
+        );
+        raw_node.context_tier = ContextTier::Raw;
+        raw_node.importance = session.importance.unwrap_or(5).clamp(3, 10);
+        if let Some(sens) = session.sensitivity {
+            raw_node.sensitivity = sens;
+        }
+        let raw_id = state
+            .store
+            .insert(raw_node)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        session_ids.push(raw_id);
+
+        let primary_id = raw_id; // Return raw node as primary
+
+        tracing::info!(%primary_id, s_idx, ?memory_type, chunks = chunk_count, "session node stored (batch + raw node)");
 
         all_responses.push(StoreNodeResponse {
             id: primary_id,
             message: format!("session node created ({} chunks)", chunk_count),
             chunk_ids: Some(session_ids),
         });
+    }
+
+    // ── Gap 5 Fix: Session-Overview-Node for lossless sessions ──
+    // Creates a single node that links to all turn raw nodes, enabling
+    // fractal zoom from session → individual turns. Consolidation will
+    // generate L0 summary from this overview.
+    if sessions.len() > 1 {
+        let all_turn_ids: Vec<Uuid> = all_responses.iter().map(|r| r.id).collect();
+        let session_content = sessions
+            .iter()
+            .enumerate()
+            .map(|(i, s)| format!("Turn {}: {}", i, &s.content[..s.content.len().min(200)]))
+            .collect::<Vec<_>>()
+            .join("\n\n");
+
+        let session_vector = embed_document(&*state.embedding, &session_content)
+            .await
+            .unwrap_or_default();
+
+        let mut session_metadata = sessions[0].metadata.clone();
+        session_metadata.insert("is_session_overview".to_string(), Value::Bool(true));
+        session_metadata.insert(
+            "turn_count".to_string(),
+            Value::Number(sessions.len().into()),
+        );
+
+        let mut session_node = FractalNode::new_typed(
+            Some(session_content),
+            None,
+            session_vector,
+            session_metadata,
+            MemoryType::Episodic,
+            MemorySource::Conversation,
+        );
+        session_node.context_tier = ContextTier::Overview;
+        session_node.children_tier_ids = all_turn_ids.clone();
+        session_node.importance = 6; // Higher than individual turns — session is important
+
+        match state.store.insert(session_node).await {
+            Ok(session_id) => {
+                tracing::info!(
+                    %session_id,
+                    turn_count = sessions.len(),
+                    "session overview node created"
+                );
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "failed to create session overview node (non-fatal)");
+            }
+        }
     }
 
     // Event-driven consolidation after batch store
@@ -3027,6 +3156,7 @@ pub async fn dream_status(State(state): State<AppState>) -> Json<DreamStatus> {
     let mut status = state.dream.status().await;
     if let Some(ref scheduler) = state.consolidation {
         status.cycle_count = scheduler.cycle_count();
+        scheduler.populate_dream_status(&mut status);
     }
     Json(status)
 }

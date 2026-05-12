@@ -67,6 +67,13 @@ pub struct DreamStatus {
     pub last_run: Option<DateTime<Utc>>,
     /// Number of consolidation scheduler cycles completed.
     pub cycle_count: u64,
+    /// ConsolidationScheduler metrics (populated when scheduler is active).
+    #[serde(default)]
+    pub consolidation_candidates_found: u64,
+    #[serde(default)]
+    pub consolidation_enqueued: u64,
+    #[serde(default)]
+    pub consolidation_failed: u64,
 }
 
 impl Default for DreamStatus {
@@ -78,6 +85,9 @@ impl Default for DreamStatus {
             consolidations_run: 0,
             last_run: None,
             cycle_count: 0,
+            consolidation_candidates_found: 0,
+            consolidation_enqueued: 0,
+            consolidation_failed: 0,
         }
     }
 }
