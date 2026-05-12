@@ -39,10 +39,14 @@ When an agent asks "why did we decide X three months ago?", other memory systems
 | AMB Benchmark | ⏳ Pending | Core Loop proven, needs end-to-end rerun |
 | Consolidation | ✅ Active | Self-hosted Ollama (qwen2.5:3b), L0→L1→L2 chains |
 | Fractal Hierarchy | ✅ Verified | Document P@3 0.73, Conversation P@3 0.87 |
+| Embedding Model | ⚠️ Upgrade needed | Current: `nomic-embed-text-v2-moe` (512-token truncation). **Recommended: `nomic-embed-text` v1.5** (8192 context, better retrieval, same 768d). See [Model Evaluation](docs/MODEL-EVALUATION.md) |
+
+> **⚠️ Before AMB Benchmark:** Switch embedding model to `nomic-embed-text` (v1.5) and run `POST /nodes/reembed_all`. The current `v2-moe` silently truncates all content beyond ~500 chars — this degrades retrieval quality for document-length nodes.
 
 📊 **Full analysis:** [`docs/ARCHITECTURE-ANALYSIS.md`](docs/ARCHITECTURE-ANALYSIS.md) — complete diagnosis + recommendations  
 🔬 **Pipeline trace:** [`docs/SIGNAL-TRACE.md`](docs/SIGNAL-TRACE.md) — mathematical analysis of all stages  
-🏗️ **Consolidation report:** [`docs/CONSOLIDATION-REPORT.md`](docs/CONSOLIDATION-REPORT.md) — Fractal Hierarchy Activation
+🏗️ **Consolidation report:** [`docs/CONSOLIDATION-REPORT.md`](docs/CONSOLIDATION-REPORT.md) — Fractal Hierarchy Activation  
+🧪 **Model evaluation:** [`docs/MODEL-EVALUATION.md`](docs/MODEL-EVALUATION.md) — Embedding & summarization model benchmarks
 
 ---
 
