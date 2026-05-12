@@ -80,9 +80,19 @@ Datenmodell klären: Entscheiden ob Konversationen als kohärente Turns oder ato
 | Score Range | 0.050–0.058 | 0.097–0.443 |
 | Score Separation Rank 0→5 | 7.6% | 60% |
 | Score Ratio (best/worst) | 1.1× | 4.6× |
-| AMB Accuracy | 25% | ⏳ (rerun pending) |
+| AMB Accuracy | 25% | ⏳ (rerun pending — needs PersonaMem features disabled) |
 | Retrieval Latenz P50 | ~180ms | ~180ms (unverändert) |
 | Nodes | 14.979 | 15.017 |
+
+### Precision@3 (mit RRF k=5, Decision-Multipliers aktiv)
+
+| Test | Precision@3 | Details |
+|---|---|---|
+| Document-Chunk | **0.40** | 2/5 queries: FractalNode-Fields (3/3), Pitch (1/3 partial). Self-Healing, PRD-Problem, Principles missed (Decision-Atoms outscores) |
+| Conversation-Turn | **0.20** | 3/5 queries hatten 1/3 relevant. User-Fragen retrievable, Assistant-Antworten + Build-Command nicht in Top-3 (teils nicht ingested, teils ausgescored) |
+| Combined | **0.30** | Begrenzt durch Decision-Multiplier-Bias (1.5×) und unvollständige Conversation-Ingestion |
+
+**Wichtig:** Diese Zahlen sind mit aktiven Decision-Multipliers (1.5×). Die Erwartung ist dass Precision@3 nach Neutralisierung der Multiplier (alle 1.0) deutlich steigt — Document-Chunks und Conversation-Turns werden dann nicht mehr systematisch ausgescored.
 
 ## Dokumente im Repo
 
