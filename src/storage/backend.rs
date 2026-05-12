@@ -60,14 +60,8 @@ impl RetrievalProfile {
         tier * explicit * mtype
     }
 
-    fn memory_type_multiplier(self, node: &FractalNode) -> f32 {
-        use crate::memory::types::MemoryType;
-        match node.memory_type {
-            MemoryType::Decision => 1.5,    // Structured claims are the most valuable facts
-            MemoryType::Procedural => 1.2,  // How-to knowledge is high-value
-            MemoryType::Episodic => 0.85,   // Conversation chatter is less valuable
-            _ => 1.0,
-        }
+    fn memory_type_multiplier(self, _node: &FractalNode) -> f32 {
+        1.0 // Neutralized for Reduce-to-Core test (2026-05-12)
     }
 
     fn explicit_weight(self, node: &FractalNode) -> f32 {
@@ -77,18 +71,8 @@ impl RetrievalProfile {
         node.explicit_trust_weight().unwrap_or(1.0).clamp(0.1, 2.0)
     }
 
-    fn tier_multiplier(self, trust_tier: &str) -> f32 {
-        match (self, trust_tier) {
-            (RetrievalProfile::UserFacing, FractalNode::TRUST_PRIMARY) => 1.18,
-            (RetrievalProfile::UserFacing, FractalNode::TRUST_REFERENCE) => 1.0,
-            (RetrievalProfile::UserFacing, FractalNode::TRUST_DERIVED) => 0.88,
-            (RetrievalProfile::UserFacing, FractalNode::TRUST_VOLATILE) => 0.72,
-            (RetrievalProfile::AgentDebug, FractalNode::TRUST_PRIMARY) => 1.05,
-            (RetrievalProfile::AgentDebug, FractalNode::TRUST_REFERENCE) => 1.0,
-            (RetrievalProfile::AgentDebug, FractalNode::TRUST_DERIVED) => 0.96,
-            (RetrievalProfile::AgentDebug, FractalNode::TRUST_VOLATILE) => 0.84,
-            _ => 1.0,
-        }
+    fn tier_multiplier(self, _trust_tier: &str) -> f32 {
+        1.0 // Neutralized for Reduce-to-Core test (2026-05-12)
     }
 
     pub fn score_debug(self, base_score: f32, node: &FractalNode) -> ScoreDebug {

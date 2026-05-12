@@ -84,15 +84,18 @@ Datenmodell klären: Entscheiden ob Konversationen als kohärente Turns oder ato
 | Retrieval Latenz P50 | ~180ms | ~180ms (unverändert) |
 | Nodes | 14.979 | 15.017 |
 
-### Precision@3 (mit RRF k=5, Decision-Multipliers aktiv)
+### Precision@3 (mit RRF k=5, Multiplier neutralisiert)
 
-| Test | Precision@3 | Details |
-|---|---|---|
-| Document-Chunk | **0.40** | 2/5 queries: FractalNode-Fields (3/3), Pitch (1/3 partial). Self-Healing, PRD-Problem, Principles missed (Decision-Atoms outscores) |
-| Conversation-Turn | **0.20** | 3/5 queries hatten 1/3 relevant. User-Fragen retrievable, Assistant-Antworten + Build-Command nicht in Top-3 (teils nicht ingested, teils ausgescored) |
-| Combined | **0.30** | Begrenzt durch Decision-Multiplier-Bias (1.5×) und unvollständige Conversation-Ingestion |
+| Test | Vorher (Multipliers) | Nachher (Neutral) | Erkenntnis |
+|---|---|---|---|
+| Document-Chunk | 0.40 | **0.33** | Q1 (Pitch) schlägt fehl, Q5 ("Problem") matcht Konversation statt PRD. Multiplier-Entfernung hilft nicht — semantisches Matching ist der Flaschenhals. |
+| Conversation-Turn | 0.20 | **0.27** | Q3 (Trust Tiers) verbessert auf 0.67. Q4 (Build-Command) scheitert an Consolidation-Claims mit höherer semantischer Dichte. |
+| Combined | 0.30 | **0.30** | Keine signifikante Änderung. **Der limitierende Faktor ist Datenqualität und semantisches Matching, nicht das Scoring.** |
 
-**Wichtig:** Diese Zahlen sind mit aktiven Decision-Multipliers (1.5×). Die Erwartung ist dass Precision@3 nach Neutralisierung der Multiplier (alle 1.0) deutlich steigt — Document-Chunks und Conversation-Turns werden dann nicht mehr systematisch ausgescored.
+**Wichtige Erkenntnis:** Die Hypothese "Multiplier-Bias killt Precision" wurde widerlegt. Mit RRF k=5 ist die Score-Separation stark genug (60%), dass Multiplier die relative Sortierung nicht verzerren. Die wahren Limiter sind:
+1. **Semantische Dichte:** Ein-Satz-Decision-Claims ("cargo test --features postgres-storage") schlagen verbose Konversationsturns ("OK, ich rebuild dann mal. Welchen Befehl?") — nicht wegen Scoring, sondern wegen Embedding-Qualität
+2. **Query-Daten-Mismatch:** "Problem" matcht "Hey ich hab ein Problem" stärker als "Informationsverlust durch Extraktion"
+3. **Chunking-Strategie:** Document-Chunks sind zu groß/unspezifisch für präzises Retrieval
 
 ## Dokumente im Repo
 
