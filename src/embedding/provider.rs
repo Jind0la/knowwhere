@@ -265,7 +265,7 @@ impl LocalOllamaProvider {
         let base_url =
             std::env::var("OLLAMA_URL").unwrap_or_else(|_| "http://localhost:11434".into());
         let model =
-            std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "nomic-embed-text-v2-moe".into());
+            std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "nomic-embed-text".into());
         Self {
             client: reqwest::Client::new(),
             base_url,

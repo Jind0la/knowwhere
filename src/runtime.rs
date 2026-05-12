@@ -77,7 +77,7 @@ pub async fn init_store() -> anyhow::Result<Arc<dyn StorageBackend>> {
 pub const EMBEDDING_PROVIDER_ENV: &str = "KNOWWHERE_EMBEDDING_PROVIDER";
 
 fn local_ollama_provider_with_log(reason: &'static str) -> Arc<dyn EmbeddingProvider> {
-    let model = std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "nomic-embed-text-v2-moe".into());
+    let model = std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "nomic-embed-text".into());
     tracing::info!(model, %reason, "embedding provider: local Ollama");
     Arc::new(LocalOllamaProvider::new())
 }
