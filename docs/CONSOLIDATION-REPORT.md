@@ -14,7 +14,7 @@ The KnowWhere consolidation pipeline was successfully activated with self-hosted
 2. **Duplicate Parse Removal**: Reuse parsed `ConsolidationOutput` instead of parsing twice
 3. **Borrow-after-move Fix**: Clone `l1_content` before moving into FractalNode
 
-The server was restarted with `KNOWWHERE_MIN_ROUND_CHARS=2000` to prevent session chunking and `OLLAMA_SUMMARIZER_MODEL=qwen2.5:3b` for faster summarization (~17s vs ~24s with llama3.2).
+The server was temporarily run with `KNOWWHERE_MIN_ROUND_CHARS=2000` (now removed — code defaults to 80) during the consolidation test, using `OLLAMA_SUMMARIZER_MODEL=qwen2.5:3b` for faster summarization (~17s vs ~24s with llama3.2).
 
 ---
 
@@ -179,9 +179,9 @@ Two queries remain below target:
 - `scripts/diagnose_consolidation.py`: Consolidation diagnostic script
 - `docs/CONSOLIDATION-REPORT.md`: This document
 
-### Environment Variables
-- `KNOWWHERE_MIN_ROUND_CHARS`: 80 → 2000 (prevent session chunking)
-- `OLLAMA_SUMMARIZER_MODEL`: llama3.2 → qwen2.5:3b (faster summarization)
+### Environment Variables (historical — no longer actively set)
+- `KNOWWHERE_MIN_ROUND_CHARS`: 80 → 2000 (was used temporarily during Goal 003; now code uses default 80)
+- `OLLAMA_SUMMARIZER_MODEL`: llama3.2 → qwen2.5:3b (faster summarization, still active)
 
 ---
 

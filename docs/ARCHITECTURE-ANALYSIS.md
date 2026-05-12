@@ -125,9 +125,9 @@ Nach dem Core-Loop-Proof wurde die Consolidation-Pipeline aktiviert. Vorher: 0 C
 2. L0-Input: Summarisiere Narrativ statt Raw-JSON
 3. Borrow-Check: Clone vor Move in FractalNode
 
-**Server-Konfiguration:**
+**Server-Konfiguration (während Goal 003):**
 ```bash
-KNOWWHERE_MIN_ROUND_CHARS=2000  # Verhindert Session-Chunking
+# KNOWWHERE_MIN_ROUND_CHARS=2000 war temporär gesetzt (jetzt entfernt — Code nutzt default 80)
 OLLAMA_SUMMARIZER_MODEL=qwen2.5:3b  # ~17s vs ~24s mit llama3.2
 ```
 
