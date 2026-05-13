@@ -21,7 +21,7 @@ use crate::embedding::{embed_document, embed_document_batch, embed_query, Embedd
 use crate::memory::dream::DreamStatus;
 #[cfg(feature = "postgres-storage")]
 use crate::memory::skills::CreateSkillResponse;
-use crate::memory::types::{ContextTier, MemorySource, MemoryType, Sensitivity};
+use crate::memory::types::{ContextTier, MemorySource, MemoryStatus, MemoryType, Sensitivity};
 use crate::memory::{
     DreamMode, Event, EventStore, FractalNode, GovernancePolicy, GovernanceValidator,
     InMemoryEventStore,
@@ -77,6 +77,23 @@ pub struct ScoredNode {
     pub governance_passed: Option<bool>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub governance_issues: Vec<crate::memory::governance::ValidationIssue>,
+    // -- Fractal Hierarchy fields (populated from FractalNode) --
+    /// Context tier: raw (L0), summary (L1), or overview (L2).
+    /// Omitted from serialization when Raw (the default for 96%+ of nodes) to save bytes.
+    #[serde(default)]
+    pub context_tier: ContextTier,
+    /// ID of the parent tier node (e.g. raw node → its summary).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_tier_id: Option<Uuid>,
+    /// IDs of child tier nodes (reverse of parent_tier_id).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub children_tier_ids: Vec<Uuid>,
+    /// Lifecycle status (active, stale, archived, etc.).
+    #[serde(default)]
+    pub status: MemoryStatus,
+    /// Importance score 1–10.
+    #[serde(default)]
+    pub importance: i32,
 }
 
 impl ScoredNode {
@@ -131,6 +148,11 @@ impl ScoredNode {
             sensitivity: None,
             governance_passed: None,
             governance_issues: vec![],
+            context_tier: n.context_tier,
+            parent_tier_id: n.parent_tier_id,
+            children_tier_ids: n.children_tier_ids,
+            status: n.status,
+            importance: n.importance,
         }
     }
 
@@ -1753,6 +1775,27 @@ pub async fn store_external(
         node.multimodal = Some(mm);
     }
 
+    // ── Dedup: skip if node with same external_id already exists ──
+    if let Some(ref meta) = node.metadata.get("external_id") {
+        if let Some(external_id) = meta.as_str() {
+            if let Some(existing_id) = state.store.find_by_external_id(external_id).await {
+                tracing::info!(
+                    %existing_id,
+                    external_id,
+                    "store_external: duplicate skipped (external_id already exists)"
+                );
+                return Ok((
+                    StatusCode::OK,
+                    Json(StoreNodeResponse {
+                        id: existing_id,
+                        message: "duplicate skipped — external_id already exists".to_string(),
+                        chunk_ids: None,
+                    }),
+                ));
+            }
+        }
+    }
+
     let id = state
         .store
         .insert(node)
@@ -2194,7 +2237,7 @@ pub async fn retrieve_fractal(
                     ));
                 }
                 tracing::info!(query_text = %text, "embedding query text");
-                state.embedding.embed(text).await.map_err(|e| {
+                embed_query(&*state.embedding, text).await.map_err(|e| {
                     tracing::error!("embedding failed: {}", e);
                     (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
                 })?
@@ -2316,7 +2359,7 @@ pub async fn retrieve_fractal(
         // Run contrastive query if provided, to surface negative/change claims
         if let Some(cq_text) = req.contrastive_query.as_deref() {
             if !cq_text.trim().is_empty() {
-                if let Ok(cq_vector) = state.embedding.embed(cq_text).await {
+                if let Ok(cq_vector) = embed_query(&*state.embedding, cq_text).await {
                     let cq_query = HybridQuery {
                         query_text: Some(cq_text.to_string()),
                         query_vector: Some(cq_vector),
@@ -2539,6 +2582,11 @@ pub async fn retrieve_fractal(
                             sensitivity: Some(Sensitivity::Normal),
                             governance_passed: Some(true),
                             governance_issues: vec![],
+                            context_tier: ContextTier::Raw,
+                            parent_tier_id: None,
+                            children_tier_ids: vec![],
+                            status: MemoryStatus::Active,
+                            importance: 5,
                         };
                         let mut with_reflection = vec![reflection_node];
                         with_reflection.extend(scored);
@@ -2972,6 +3020,95 @@ pub async fn batch_delete_nodes(
         "batch delete complete"
     );
     Ok(Json(BatchDeleteResponse { deleted, not_found }))
+}
+
+// -- Deduplicate by external_id --
+
+#[derive(Serialize, ToSchema)]
+pub struct DedupResponse {
+    pub total_nodes: usize,
+    pub groups: usize,
+    pub duplicates_removed: usize,
+    pub errors: usize,
+}
+
+#[utoipa::path(
+    post,
+    path = "/nodes/deduplicate",
+    tag = "memory",
+    responses(
+        (status = 200, description = "Deduplication complete", body = DedupResponse)
+    )
+)]
+pub async fn deduplicate_nodes(
+    State(state): State<AppState>,
+) -> Result<Json<DedupResponse>, (StatusCode, String)> {
+    let all = state
+        .store
+        .list_all()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let total = all.len();
+
+    // Group by external_id
+    let mut by_eid: std::collections::HashMap<String, Vec<(Uuid, chrono::DateTime<chrono::Utc>)>> =
+        std::collections::HashMap::new();
+    for node in &all {
+        if let Some(eid) = node
+            .metadata
+            .get("external_id")
+            .and_then(|v| v.as_str())
+        {
+            by_eid
+                .entry(eid.to_string())
+                .or_default()
+                .push((node.id, node.created_at));
+        }
+    }
+
+    let groups = by_eid.len();
+    let mut to_delete = Vec::new();
+
+    for (_eid, mut nodes) in by_eid {
+        if nodes.len() > 1 {
+            nodes.sort_by_key(|(_, ts)| *ts);
+            // Keep first (oldest), delete rest
+            for (id, _) in &nodes[1..] {
+                to_delete.push(id.to_string());
+            }
+        }
+    }
+
+    let dup_count = to_delete.len();
+    let mut removed = 0usize;
+    let mut errors = 0usize;
+
+    for id_str in &to_delete {
+        match Uuid::parse_str(id_str) {
+            Ok(id) => match state.store.delete(&id).await {
+                Ok(true) => removed += 1,
+                _ => errors += 1,
+            },
+            Err(_) => errors += 1,
+        }
+    }
+
+    tracing::info!(
+        total,
+        groups,
+        duplicates = dup_count,
+        removed,
+        errors,
+        "deduplicate complete"
+    );
+
+    Ok(Json(DedupResponse {
+        total_nodes: total,
+        groups,
+        duplicates_removed: removed,
+        errors,
+    }))
 }
 
 // -- Purge Dummy Nodes --

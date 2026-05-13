@@ -416,7 +416,9 @@ mod batch_tests {
 
     #[async_trait]
     impl EmbeddingProvider for MockProvider {
-        async fn embed(&self, _text: &str) -> Result<Vec<f32>> {
+        async fn embed(&self, text: &str) -> Result<Vec<f32>> {
+            let mut calls = self.calls.lock().unwrap();
+            calls.push(vec![text.to_string()]);
             Ok(vec![1.0])
         }
 
@@ -467,6 +469,22 @@ mod batch_tests {
         assert_eq!(results.len(), 1);
         let calls = provider.calls.lock().unwrap();
         assert!(calls[0][0].starts_with("search_query: "));
+    }
+
+    /// Regression: ensure embed_query() single-call prepends query_prefix.
+    /// Bug: retrieve_fractal used state.embedding.embed(text) (no prefix),
+    ///      collapsing scores from ~0.83 to ~0.03 for asymmetric models.
+    #[tokio::test]
+    async fn test_embed_query_single_with_prefix() {
+        let provider = MockProvider::new(vec![vec![vec![1.0, 0.0, 0.0, 0.0]]]);
+        let _result = embed_query(&provider, "query text").await.unwrap();
+        let calls = provider.calls.lock().unwrap();
+        assert!(!calls.is_empty(), "embed() should have been called via embed_query");
+        assert!(
+            calls[0][0].starts_with("search_query: "),
+            "embed_query() must prepend 'search_query: ' prefix. Raw text was: '{}'",
+            calls[0][0]
+        );
     }
 
     #[tokio::test]

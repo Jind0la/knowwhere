@@ -2,6 +2,17 @@
 
 All notable changes to KnowWhere are documented in this file.
 
+## [Unreleased] — 2026-05-12
+
+### Added
+- **Fractal Hierarchy in API Response:** `POST /retrieve_fractal` now includes `context_tier`, `parent_tier_id`, `children_tier_ids`, `status`, and `importance` in every `ScoredNode`. Enables API consumers (AMB adapter, Hermes plugin) to distinguish L1 summaries from L0 raw nodes and traverse the fractal hierarchy. Previously only `GET /retrieve/{id}` exposed these fields.
+
+### Fixed
+- **BUG-016: Vector Retrieval Score Collapse (CRITICAL):** `retrieve_fractal()` was embedding query text with raw `state.embedding.embed(text)` instead of `embed_query()` — missing the `"search_query: "` prefix required by asymmetric embedding models (nomic-embed-text, snowflake-arctic-embed2). All retrieval scores collapsed from ~0.83 to ~0.03 (random noise level). Fixed at both query embedding (L2240) and contrastive query embedding (L2362). Added regression test `test_embed_query_single_with_prefix`. Full root cause analysis in BUG-TRACKING.md.
+
+### Changed
+- **Consolidation Content Threshold:** `find_candidates()`, `pending_count()`, `should_compact()`, `force_run()` lowered minimum content length from 500 → 100 chars to catch claim/document chunks.
+
 ## [0.5.0] — 2026-05-05
 
 ### Added
