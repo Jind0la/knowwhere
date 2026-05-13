@@ -2098,7 +2098,8 @@ pub async fn subconscious_chat(
     } else {
         top_k
     };
-    let query_vector = embed_query(&*state.embedding, &req.message)
+    let cleaned_message = clean_for_embedding(&req.message);
+    let query_vector = embed_query(&*state.embedding, &cleaned_message)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let mut query = HybridQuery::hybrid(
@@ -2243,8 +2244,9 @@ pub async fn retrieve_fractal(
                         "query_text must not be empty".into(),
                     ));
                 }
-                tracing::info!(query_text = %text, "embedding query text");
-                embed_query(&*state.embedding, text).await.map_err(|e| {
+                let cleaned = clean_for_embedding(text);
+                tracing::info!(query_text = %text, cleaned_len = cleaned.len(), "embedding query text");
+                embed_query(&*state.embedding, &cleaned).await.map_err(|e| {
                     tracing::error!("embedding failed: {}", e);
                     (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
                 })?
