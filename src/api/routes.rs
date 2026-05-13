@@ -1679,6 +1679,11 @@ pub async fn store_session_batch(
 #[derive(Deserialize, ToSchema)]
 pub struct StoreExternalRequest {
     pub pointer: String,
+    /// Content text for embedding (if different from pointer).
+    /// When provided, the vector is computed from this content,
+    /// not the pointer URI. Falls back to pointer if absent.
+    #[serde(default)]
+    pub content: Option<String>,
     #[serde(default)]
     pub vector: Option<Vec<f32>>,
     #[serde(default)]
@@ -1725,12 +1730,14 @@ pub async fn store_external(
     let vector = match req.vector {
         Some(v) if !v.is_empty() => v,
         _ => {
+            // Embed content if provided, otherwise fall back to pointer
+            let text_to_embed = req.content.as_deref().filter(|s| !s.trim().is_empty()).unwrap_or(&req.pointer);
             if let Some(ref mm) = req.multimodal {
                 let emb = mm.embedding();
                 if !emb.is_empty() {
                     emb.to_vec()
                 } else {
-                    embed_document(&*state.embedding, &req.pointer)
+                    embed_document(&*state.embedding, text_to_embed)
                         .await
                         .map_err(|e| {
                             (
@@ -1740,7 +1747,7 @@ pub async fn store_external(
                         })?
                 }
             } else {
-                embed_document(&*state.embedding, &req.pointer)
+                embed_document(&*state.embedding, text_to_embed)
                     .await
                     .map_err(|e| {
                         (
@@ -1758,7 +1765,7 @@ pub async fn store_external(
     let mut metadata = req.metadata;
     normalize_node_metadata(memory_type, source, &mut metadata);
     let mut node = FractalNode::new_typed(
-        None,
+        req.content.clone(),
         Some(req.pointer.clone()),
         vector,
         metadata,
