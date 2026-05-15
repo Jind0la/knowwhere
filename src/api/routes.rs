@@ -1900,6 +1900,9 @@ pub struct RetrieveFractalRequest {
     /// Optional user_id filter — scopes retrieval to a single persona's claims.
     #[serde(default)]
     pub user_id: Option<String>,
+    /// Enable multi-query expansion (2-3 reformulations, RRF-fused results).
+    #[serde(default)]
+    pub multi_query: bool,
 }
 
 fn default_top_k() -> usize {
@@ -2281,6 +2284,7 @@ pub async fn retrieve_fractal(
         profile: req.retrieval_profile,
         memory_type_filter: type_filter,
         user_id: req.user_id.clone(),
+        multi_query: req.multi_query,
     };
     let results = state.store.hybrid_retrieve(&query).await.map_err(|e| {
         tracing::error!("hybrid_retrieve failed: {}", e);
@@ -2377,6 +2381,7 @@ pub async fn retrieve_fractal(
                         profile: req.retrieval_profile,
                         memory_type_filter: type_filter,
                         user_id: req.user_id.clone(),
+                        multi_query: false,
                     };
                     if let Ok(extra) = state.store.hybrid_retrieve(&cq_query).await {
                         tracing::info!(contrastive = extra.len(), "contrastive results");

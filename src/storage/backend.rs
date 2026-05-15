@@ -111,6 +111,8 @@ pub struct HybridQuery {
     pub memory_type_filter: Option<crate::memory::types::MemoryType>,
     /// Optional filter by user_id in metadata — scopes retrieval to a single persona.
     pub user_id: Option<String>,
+    /// Enable multi-query expansion (2-3 reformulations, RRF-fused).
+    pub multi_query: bool,
 }
 
 impl HybridQuery {
@@ -124,6 +126,7 @@ impl HybridQuery {
             profile: RetrievalProfile::FullFidelity,
             memory_type_filter: None,
             user_id: None,
+            multi_query: false,
         }
     }
 
@@ -137,6 +140,7 @@ impl HybridQuery {
             profile: RetrievalProfile::FullFidelity,
             memory_type_filter: None,
             user_id: None,
+            multi_query: false,
         }
     }
 
@@ -155,6 +159,7 @@ impl HybridQuery {
             profile: RetrievalProfile::FullFidelity,
             memory_type_filter: None,
             user_id: None,
+            multi_query: false,
         }
     }
 
@@ -187,6 +192,12 @@ impl HybridQuery {
     /// Scope retrieval to a single persona by user_id.
     pub fn with_user_id(mut self, user_id: impl Into<String>) -> Self {
         self.user_id = Some(user_id.into());
+        self
+    }
+
+    /// Enable multi-query expansion.
+    pub fn with_multi_query(mut self) -> Self {
+        self.multi_query = true;
         self
     }
 }
