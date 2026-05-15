@@ -2269,27 +2269,93 @@ pub async fn retrieve_fractal(
     let type_filter = parse_memory_type_filter(req.memory_type_filter.as_ref())?;
     let query_intent = parse_query_intent(req.query_intent.as_ref(), req.query_text.as_ref());
 
-    // Stage 1: Hybrid retrieval via StorageBackend trait
+    // Stage 1: Hybrid retrieval (with optional multi-query expansion)
     let query_vector_for_expand = query_vector.clone();
     let effective_top_k = if req.diversity {
-        (req.top_k * 3).max(15) // Fetch more candidates for diversity sampling
+        (req.top_k * 3).max(15)
     } else {
         req.top_k
     };
-    let query = HybridQuery {
-        query_text: req.query_text.clone(),
-        query_vector: Some(query_vector),
-        top_k: effective_top_k,
-        max_depth: req.max_depth,
-        profile: req.retrieval_profile,
-        memory_type_filter: type_filter,
-        user_id: req.user_id.clone(),
-        multi_query: req.multi_query,
+
+    let results = if req.multi_query {
+        // Multi-Query: expand into 2-3 reformulations, retrieve each, RRF-fuse
+        let query_text = req.query_text.clone().unwrap_or_default();
+        let expansions = crate::retrieval::query_expansion::expand_query(&query_text);
+        let mut all_scored: Vec<crate::storage::ScoredNode> = Vec::new();
+
+        for (i, expanded_text) in expansions.iter().enumerate() {
+            let expanded_vector = if expanded_text == &query_text {
+                query_vector.clone()
+            } else {
+                let cleaned = clean_for_embedding(expanded_text);
+                embed_query(&*state.embedding, &cleaned).await.map_err(|e| {
+                    tracing::error!("embed query expansion {i} failed: {e}");
+                    (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+                })?
+            };
+
+            let q = HybridQuery {
+                query_text: Some(expanded_text.clone()),
+                query_vector: Some(expanded_vector),
+                top_k: effective_top_k,
+                max_depth: req.max_depth,
+                profile: req.retrieval_profile,
+                memory_type_filter: type_filter,
+                user_id: req.user_id.clone(),
+                multi_query: false, // prevent recursion
+            };
+
+            let r = state.store.hybrid_retrieve(&q).await.map_err(|e| {
+                tracing::error!("hybrid_retrieve (multi-query {i}) failed: {e}");
+                (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+            })?;
+            tracing::debug!(expansion=i, count=r.len(), query=%expanded_text, "multi-query result");
+            all_scored.extend(r);
+        }
+
+        // RRF-fuse all expansion results
+        let mut scores: std::collections::HashMap<Uuid, f32> = std::collections::HashMap::new();
+        for (rank, node) in all_scored.iter().enumerate() {
+            *scores.entry(node.id).or_default() += 1.0 / (5.0 + rank as f32 + 1.0);
+        }
+        let mut fused: Vec<(Uuid, f32)> = scores.into_iter().collect();
+        fused.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        let all_nodes = state.store.list_all().await.map_err(|e| {
+            (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+        })?;
+        let by_id: std::collections::HashMap<Uuid, FractalNode> =
+            all_nodes.into_iter().map(|n| (n.id, n)).collect();
+        let mut seen = std::collections::HashSet::new();
+        let mut merged: Vec<crate::storage::ScoredNode> = Vec::new();
+        for (id, score) in fused {
+            if seen.insert(id) {
+                if let Some(node) = by_id.get(&id).cloned() {
+                    merged.push(req.retrieval_profile.score_node(score, node));
+                }
+            }
+        }
+        // Keep as backend::ScoredNode for downstream processing
+        // (expand_fractal, reranker, governance all expect backend type)
+        merged
+    } else {
+        // Single-query: unchanged path
+        let query = HybridQuery {
+            query_text: req.query_text.clone(),
+            query_vector: Some(query_vector),
+            top_k: effective_top_k,
+            max_depth: req.max_depth,
+            profile: req.retrieval_profile,
+            memory_type_filter: type_filter,
+            user_id: req.user_id.clone(),
+            multi_query: false,
+        };
+        let r = state.store.hybrid_retrieve(&query).await.map_err(|e| {
+            tracing::error!("hybrid_retrieve failed: {e}");
+            (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+        })?;
+        r
     };
-    let results = state.store.hybrid_retrieve(&query).await.map_err(|e| {
-        tracing::error!("hybrid_retrieve failed: {}", e);
-        (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
-    })?;
 
     // Stage 1.5: Expand flat results via fractal zoom (children_tier_ids).
     // Uses the query vector to compute child similarity, prunes branches
