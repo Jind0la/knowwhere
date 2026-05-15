@@ -320,6 +320,12 @@ pub trait StorageBackend: Send + Sync {
     /// Retrieve a node by ID.
     async fn get(&self, id: &Uuid) -> anyhow::Result<Option<FractalNode>>;
 
+    /// Check if a node with the given external_id already exists.
+    /// Returns the existing node's UUID if found.
+    async fn find_by_external_id(&self, _external_id: &str) -> Option<Uuid> {
+        None // Default: no dedup (overridden by MemoryStore)
+    }
+
     /// Delete a node by ID. Returns true if a node was deleted.
     async fn delete(&self, id: &Uuid) -> anyhow::Result<bool>;
 

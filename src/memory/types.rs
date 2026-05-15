@@ -370,6 +370,12 @@ pub enum ContextTier {
 }
 
 impl ContextTier {
+    /// Returns true if this is the default Raw tier — used for serde skip_serializing_if
+    /// to omit the field from API responses when it's the common case (saves bytes).
+    pub fn is_raw(&self) -> bool {
+        matches!(self, ContextTier::Raw)
+    }
+
     /// Human-readable label.
     pub fn label(&self) -> &'static str {
         match self {

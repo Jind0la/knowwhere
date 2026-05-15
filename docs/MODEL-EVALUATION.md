@@ -134,3 +134,45 @@ The 10× speed advantage of llama3.2 is irrelevant — consolidation runs asynch
 - `/tmp/embedding_results.json` — Truncation test results
 - `/tmp/retrieval_quality.json` — Retrieval quality comparison
 - `/tmp/summarization_results.json` — Summarization quality comparison
+
+---
+
+## 5. Re-Embedding Results (2026-05-12)
+
+### Execution
+
+| Metric | Value |
+|--------|-------|
+| **New model** | `nomic-embed-text` v1.5 (8192 context) |
+| **Old model** | `nomic-embed-text-v2-moe` (512 context, truncation bug) |
+| **Re-embedded** | 15,448 nodes |
+| **Failed** | 0 |
+| **Server** | Port 3737, debug build |
+| **Total nodes** | 15,450 (after re-embed + roadmap doc ingest) |
+
+### Retrieval Quality (Post Re-Embed, RRF k=5)
+
+Content-based P@3 using keyword relevance matching:
+
+| Query | P@3 | Status |
+|-------|-----|--------|
+| `doc_roadmap` — "What is the KnowWhere roadmap?" | 3/3 = 1.00 | ✓ |
+| `doc_state` — "What is the current state?" | 3/3 = 1.00 | ✓ |
+| `doc_arch` — "Explain the architecture" | 3/3 = 1.00 | ✓ |
+| `conv_decision` — "What decisions were made?" | 1/3 = 0.33 | ⚠ |
+| `conv_session` — "What happened in the session?" | 0/3 = 0.00 | ✗ |
+| `doc_truncation` — "Does KnowWhere truncate?" | 0/3 = 0.00 | ✗ |
+
+**Note:** RRF scores (0.10–0.21 range) are NOT comparable to cosine similarity scores (0.50–0.80 range) from earlier benchmarks. The scoring system changed from direct cosine similarity to RRF k=5 normalized scoring when moving from raw embedding queries to the `/retrieve_fractal` API endpoint.
+
+### Roadmap Document
+
+A dedicated semantic/document node was ingested with `POST /store_external`:
+- **ID:** `1437db41-b5eb-4636-9fd0-2d07202d38e7`
+- **Content:** Three-phase roadmap with keywords
+- **Retrieval:** Rank 2 for keyword-heavy queries, not in top 5 for natural-language queries (known embedding-density limitation — claim nodes with exact phrase matches score higher via BM25)
+
+### Files
+
+- `/tmp/retrieval_final_v15.json` — Final retrieval results post re-embed
+- `/tmp/retrieval_quality_reembedded.json` — Comparison data

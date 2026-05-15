@@ -160,45 +160,61 @@ async fn run() -> anyhow::Result<()> {
     let trajectory_pool = runtime::init_trajectory_pool().await;
 
     // -- VLM Background Worker (4-stage fallback: GPT-5-nano → GPT-4o-mini → Grok-4-fast → Ollama) --
-    let vlm_config = VlmConfig::from_env();
-    let (vlm_worker, _vlm_join) = if vlm_config.is_configured() {
-        let (h, j) = VlmWorker::spawn(store.clone(), embedding.clone(), vlm_config);
-        tracing::info!("VLM summarization worker started (OPENAI_API_KEY, GROK_API_KEY, or OLLAMA_VLM_MODEL detected)");
-        (Some(h), Some(j))
-    } else {
-        tracing::warn!("no OPENAI_API_KEY, GROK_API_KEY, or OLLAMA_VLM_MODEL found — VLM summarization disabled");
-        (None, None)
-    };
+    #[cfg(feature = "summarizer")]
+    let vlm_worker: Option<crate::vlm::VlmWorkerHandle>;
+    #[cfg(feature = "summarizer")]
+    let _vlm_join: Option<tokio::task::JoinHandle<()>>;
+    #[cfg(feature = "summarizer")]
+    {
+        let vlm_config = VlmConfig::from_env();
+        let (w, j) = if vlm_config.is_configured() {
+            let (h, jh) = VlmWorker::spawn(store.clone(), embedding.clone(), vlm_config);
+            tracing::info!("VLM summarization worker started (OPENAI_API_KEY, GROK_API_KEY, or OLLAMA_VLM_MODEL detected)");
+            (Some(h), Some(jh))
+        } else {
+            tracing::warn!("no OPENAI_API_KEY, GROK_API_KEY, or OLLAMA_VLM_MODEL found — VLM summarization disabled");
+            (None, None)
+        };
+        vlm_worker = w;
+        _vlm_join = j;
+    }
+    #[cfg(not(feature = "summarizer"))]
+    let vlm_worker: Option<knowwhere_server::vlm::VlmWorkerHandle> = None;
 
     // -- Dream Mode Background Schedulers --
-    let scheduler_config = SchedulerConfig::from_env();
+    #[cfg(feature = "summarizer")]
     let consolidation_scheduler: Option<Arc<ConsolidationScheduler>>;
-    if scheduler_config.is_enabled() {
-        // ConsolidationScheduler: periodically compacts L2 nodes via LocalSummarizer
-        let consolidation = ConsolidationScheduler::new(
-            store.clone(),
-            vlm_worker.clone(),
-            embedding.clone(),
-            scheduler_config.clone(),
-        );
-        let (scheduler, _) = consolidation.start_safety_net();
-        consolidation_scheduler = Some(scheduler);
-
-        // AuditScheduler: periodically applies energy decay, deduplication, conflict detection
-        #[cfg(feature = "postgres-storage")]
-        let audit = AuditScheduler::new(
-            store.clone(),
-            trajectory_pool.clone(),
-            scheduler_config.clone(),
-        );
-        #[cfg(not(feature = "postgres-storage"))]
-        let audit = AuditScheduler::new(store.clone(), scheduler_config.clone());
-        audit.spawn();
-
-        tracing::info!("Dream Mode scheduler started");
-    } else {
-        consolidation_scheduler = None;
-        tracing::info!("Dream Mode scheduler disabled (DREAM_ENABLED=false)");
+    #[cfg(not(feature = "summarizer"))]
+    let consolidation_scheduler: Option<Arc<ConsolidationScheduler>> = None;
+    
+    #[cfg(feature = "summarizer")]
+    {
+        let scheduler_config = SchedulerConfig::from_env();
+        if scheduler_config.is_enabled() {
+            let consolidation = ConsolidationScheduler::new(
+                store.clone(),
+                vlm_worker.clone(),
+                embedding.clone(),
+                scheduler_config.clone(),
+            );
+            let (scheduler, _) = consolidation.start_safety_net();
+            consolidation_scheduler = Some(scheduler);
+            
+            #[cfg(feature = "postgres-storage")]
+            let audit = AuditScheduler::new(
+                store.clone(),
+                trajectory_pool.clone(),
+                scheduler_config.clone(),
+            );
+            #[cfg(not(feature = "postgres-storage"))]
+            let audit = AuditScheduler::new(store.clone(), scheduler_config.clone());
+            audit.spawn();
+            
+            tracing::info!("Dream Mode scheduler started");
+        } else {
+            consolidation_scheduler = None;
+            tracing::info!("Dream Mode scheduler disabled (DREAM_ENABLED=false)");
+        }
     }
 
     let state = routes::AppState {
@@ -247,6 +263,7 @@ async fn run() -> anyhow::Result<()> {
         .route("/maintenance/repair_embeddings", post(routes::repair_embeddings))
         .route("/nodes/{id}", delete(routes::delete_node))
         .route("/nodes/batch_delete", post(routes::batch_delete_nodes))
+        .route("/nodes/deduplicate", post(routes::deduplicate_nodes))
         .route("/dream/status", get(routes::dream_status))
         .route("/consolidation/force", post(routes::force_consolidation))
         // -- VLM Summarization Worker (3-stage fallback) --

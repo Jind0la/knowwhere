@@ -144,7 +144,14 @@ pub struct MemoryStore {
     bm25_corpus: Arc<RwLock<Vec<(Uuid, String)>>>,
     bm25_cache: Arc<Mutex<Option<CachedBm25>>>,
     bm25_dirty: Arc<Mutex<bool>>,
+    // Matryoshka coarse index (256d truncated embeddings)
+    coarse_index: Arc<Mutex<Option<SendableIndex>>>,
+    coarse_dimension: Arc<Mutex<Option<usize>>>,
+    coarse_uuid_to_key: Arc<RwLock<HashMap<Uuid, u64>>>,
+    coarse_key_to_uuid: Arc<RwLock<HashMap<u64, Uuid>>>,
 }
+
+const COARSE_DIM: usize = 256;
 
 #[async_trait::async_trait]
 impl StorageBackend for MemoryStore {
@@ -154,6 +161,10 @@ impl StorageBackend for MemoryStore {
 
     async fn get(&self, id: &Uuid) -> anyhow::Result<Option<FractalNode>> {
         self.get(id).await
+    }
+
+    async fn find_by_external_id(&self, external_id: &str) -> Option<Uuid> {
+        self.find_by_external_id(external_id).await
     }
 
     async fn delete(&self, id: &Uuid) -> anyhow::Result<bool> {
@@ -399,6 +410,10 @@ impl MemoryStore {
             bm25_corpus: Arc::new(RwLock::new(Vec::new())),
             bm25_cache: Arc::new(Mutex::new(None)),
             bm25_dirty: Arc::new(Mutex::new(true)),
+            coarse_index: Arc::new(Mutex::new(None)),
+            coarse_dimension: Arc::new(Mutex::new(None)),
+            coarse_uuid_to_key: Arc::new(RwLock::new(HashMap::new())),
+            coarse_key_to_uuid: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -418,6 +433,10 @@ impl MemoryStore {
             bm25_corpus: Arc::new(RwLock::new(Vec::new())),
             bm25_cache: Arc::new(Mutex::new(None)),
             bm25_dirty: Arc::new(Mutex::new(true)),
+            coarse_index: Arc::new(Mutex::new(None)),
+            coarse_dimension: Arc::new(Mutex::new(None)),
+            coarse_uuid_to_key: Arc::new(RwLock::new(HashMap::new())),
+            coarse_key_to_uuid: Arc::new(RwLock::new(HashMap::new())),
         };
 
         let state_path = dir.join("state.json");
@@ -587,6 +606,57 @@ impl MemoryStore {
         Ok(())
     }
 
+    fn ensure_coarse_index(&self, dimension: usize, extra: usize) -> Result<()> {
+        let mut guard = self
+            .coarse_index
+            .lock()
+            .map_err(|_| anyhow::anyhow!("coarse index mutex poisoned"))?;
+        let mut dim_guard = self
+            .coarse_dimension
+            .lock()
+            .map_err(|_| anyhow::anyhow!("coarse dimension mutex poisoned"))?;
+
+        let need_rebuild = match *dim_guard {
+            None => true,
+            Some(d) if d != dimension => true,
+            _ => guard.is_none(),
+        };
+
+        if need_rebuild {
+            let index = SendableIndex::new(&index_options(dimension))?;
+            index.reserve((1024 + extra).max(1024))?;
+            *guard = Some(index);
+            *dim_guard = Some(dimension);
+            tracing::info!(dimension, "coarse usearch index initialized");
+        } else if let Some(ref index) = *guard {
+            let needed = index.0.size().saturating_add(extra);
+            if needed > index.0.capacity() {
+                index.reserve(needed)?;
+            }
+        }
+        Ok(())
+    }
+
+    async fn coarse_search(&self, vector: &[f32], count: usize) -> Vec<Uuid> {
+        let guard = match self.coarse_index.lock() {
+            Ok(g) => g,
+            Err(_) => return vec![],
+        };
+        let index = match guard.as_ref() {
+            Some(i) => i,
+            None => return vec![],
+        };
+        let matches = match index.0.search(vector, count) {
+            Ok(m) => m.keys,
+            Err(e) => {
+                tracing::warn!("coarse search error: {e}");
+                return vec![];
+            }
+        };
+        let key_to_uuid = self.coarse_key_to_uuid.read().await;
+        matches.iter().filter_map(|k| key_to_uuid.get(k).copied()).collect()
+    }
+
     fn index_key(
         &self,
         id: Uuid,
@@ -632,6 +702,7 @@ impl MemoryStore {
         let id = node.id;
 
         if !node.vector.is_empty() {
+            // Fine index (768d)
             self.ensure_index(node.vector.len(), 1)?;
             let key = self.next_key.fetch_add(1, AtomicOrdering::Relaxed);
 
@@ -660,6 +731,36 @@ impl MemoryStore {
             if indexed {
                 self.uuid_to_key.write().await.insert(id, key);
                 self.key_to_uuid.write().await.insert(key, id);
+            }
+
+            // Coarse index (256d truncated)
+            if node.vector.len() >= COARSE_DIM {
+                let coarse_vec: Vec<f32> = node.vector[..COARSE_DIM].to_vec();
+                self.ensure_coarse_index(COARSE_DIM, 1)?;
+                let coarse_key = self.next_key.fetch_add(1, AtomicOrdering::Relaxed);
+
+                let coarse_indexed = {
+                    let guard = self
+                        .coarse_index
+                        .lock()
+                        .map_err(|_| anyhow::anyhow!("coarse index mutex poisoned"))?;
+                    if let Some(ref index) = *guard {
+                        match index.add(coarse_key, &coarse_vec) {
+                            Ok(()) => true,
+                            Err(e) => {
+                                tracing::warn!(%id, "skipping coarse index: {e}");
+                                false
+                            }
+                        }
+                    } else {
+                        false
+                    }
+                };
+
+                if coarse_indexed {
+                    self.coarse_uuid_to_key.write().await.insert(id, coarse_key);
+                    self.coarse_key_to_uuid.write().await.insert(coarse_key, id);
+                }
             }
         }
 
@@ -698,6 +799,22 @@ impl MemoryStore {
 
     pub async fn get(&self, id: &Uuid) -> Result<Option<FractalNode>> {
         Ok(self.nodes.read().await.get(id).cloned())
+    }
+
+    /// Check if a node with the given external_id already exists.
+    /// Returns the existing node's UUID if found.
+    pub async fn find_by_external_id(&self, external_id: &str) -> Option<Uuid> {
+        let nodes = self.nodes.read().await;
+        for (id, node) in nodes.iter() {
+            if let Some(ref meta) = node.metadata.get("external_id") {
+                if let Some(eid) = meta.as_str() {
+                    if eid == external_id {
+                        return Some(*id);
+                    }
+                }
+            }
+        }
+        None
     }
 
     pub async fn delete(&self, id: &Uuid) -> Result<bool> {

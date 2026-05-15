@@ -105,14 +105,13 @@ impl LocalSummarizer {
     /// Uses deterministic generation (temperature=0, seed=42).
     /// Target: ~20-50 tokens, single sentence.
     pub async fn summarize(&self, text: &str) -> Result<String> {
-        // Prompt optimized for Decision-Retrieval:
-        // Forces the LLM to name decisions explicitly so embedding
-        // similarity search finds queries like "why did we kill Docker?"
+        // Prompt optimized for Fact & Preference Extraction:
+        // Extracts key facts, preferences, and changes so embedding
+        // similarity search finds queries like "what does the user enjoy?"
         let prompt = format!(
             "Summarize in ONE sentence (≤25 words). \
-             State what was decided OR what the current status is. \
-             Use words like 'decision', 'decided', 'status', 'working', 'broken', or 'pending'. \
-             Include specific names, versions, or metrics if present. \
+             State the key fact, preference, or change mentioned. \
+             Be specific: include names, activities, or concrete details. \
              No preamble.\n\n{}",
             text
         );
@@ -193,8 +192,8 @@ impl LocalSummarizer {
                     "items": {
                         "type": "object",
                         "properties": {
-                            "claim": {"type": "string", "description": "What was decided, realized, or established"},
-                            "reason": {"type": "string", "description": "Why — rationale, evidence, constraint, or trade-off"}
+                            "claim": {"type": "string", "description": "Key fact, preference, or change stated in the conversation"},
+                            "reason": {"type": "string", "description": "Supporting context — who, when, why, or what changed"}
                         },
                         "required": ["claim", "reason"]
                     },
@@ -205,28 +204,25 @@ impl LocalSummarizer {
         });
 
         let prompt = format!(
-            "Find decisions in this conversation. \
-             A real decision has: (a) a clear choice between options, \
-             (b) stated reasons with concrete evidence (numbers, benchmarks, \
-             error logs, comparisons, or explicit trade-offs). \
-             Return ONLY claims that meet both criteria.\n\n\
+            "Extract key facts, preferences, and changes from this conversation. \
+             Include: (a) what someone enjoys or dislikes, \
+             (b) specific activities, people, or places mentioned, \
+             (c) changes over time (used to / no longer / now). \
+             Return ONLY facts grounded in the text.\n\n\
              Return a JSON object with:\n\
              - \"summary\": 2-3 sentence narrative summary\n\
              - \"claims\": array of {{\"claim\", \"reason\"}} objects\n\n\
-             For each valid claim:\n\
-             - \"claim\": what was chosen — name exact technologies, versions, \
-               file paths, or actions\n\
-             - \"reason\": why — cite specific evidence from the text \
-               (metrics, benchmarks, constraints, or comparisons)\n\n\
-             Skip observations, status updates, facts without decisions, \
-             and general discussion.\n\n{}",
+             For each claim:\n\
+             - \"claim\": what was stated — be specific (names, activities, details)\n\
+             - \"reason\": supporting context — who, when, or what changed\n\n\
+             Skip greetings, meta-commentary, and conversational fluff.\n\n{}",
             text
         );
         
         let body = json!({
             "model": self.model,
             "messages": [
-                {"role": "system", "content": "You extract decisions from technical discussions. Every claim must cite specific evidence from the text — numbers, benchmarks, error messages, or explicit comparisons. If you cannot cite evidence, omit the claim. Quality over quantity. Empty claims array is better than vague claims."},
+                {"role": "system", "content": "You extract key facts and preferences from conversations. Every claim must cite specific details from the text — names, activities, changes. If the text contains no substantive facts, return an empty claims array. Quality over quantity."},
                 {"role": "user", "content": prompt}
             ],
             "stream": false,

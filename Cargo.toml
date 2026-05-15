@@ -51,7 +51,7 @@ ndarray = { version = "0.17", optional = true }
 # Feature flag allows disabling if Ollama not available
 
 [features]
-default = ["summarizer"]
+default = []
 # Enable PostgreSQL-backed storage layer (requires DATABASE_URL env var at runtime)
 postgres-storage = []
 

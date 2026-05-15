@@ -264,6 +264,10 @@ impl ConsolidationScheduler {
             Err(_) => return (0, 0),
         };
         let total = all_nodes.len();
+        let min_content_len: usize = std::env::var("KNOWWHERE_CONSOLIDATION_MIN_CONTENT_LEN")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(100);
         let candidates = all_nodes
             .iter()
             .filter(|n| {
@@ -271,7 +275,8 @@ impl ConsolidationScheduler {
                     && n.parent_tier_id.is_none()
                     && n.status == MemoryStatus::Active
                     && n.importance >= 3
-                    && n.content.as_ref().map(|c| c.len() > 500).unwrap_or(false)
+                    && (n.content.as_ref().map(|c| c.len() >= min_content_len).unwrap_or(false)
+                        || n.original_pointer.as_ref().map(|p| p.len() >= min_content_len).unwrap_or(false))
             })
             .count();
         (candidates, total)
@@ -312,7 +317,12 @@ impl ConsolidationScheduler {
                 continue;
             }
             let content_len = node.content.as_ref().map(|c| c.len()).unwrap_or(0);
-            if content_len <= 500 {
+            let pointer_len = node.original_pointer.as_ref().map(|p| p.len()).unwrap_or(0);
+            let min_content_len: usize = std::env::var("KNOWWHERE_CONSOLIDATION_MIN_CONTENT_LEN")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(100);
+            if content_len < min_content_len && pointer_len < min_content_len {
                 continue;
             }
             candidates.push((node.id, node.created_at));
@@ -565,7 +575,9 @@ impl ConsolidationScheduler {
             None => anyhow::bail!("node {} not found", node_id),
         };
 
-        let content = node.content.clone().unwrap_or_default();
+        let content = node.content.clone()
+            .or_else(|| node.original_pointer.clone())
+            .unwrap_or_default();
         if content.is_empty() {
             anyhow::bail!("node {} has empty content", node_id);
         }
@@ -853,9 +865,14 @@ impl ConsolidationScheduler {
                 continue;
             }
 
-            // Only compact nodes with substantial content (> 500 chars)
+            // Only compact nodes with substantial content (> 100 chars)
             let content_len = node.content.as_ref().map(|c| c.len()).unwrap_or(0);
-            if content_len <= 500 {
+            let pointer_len = node.original_pointer.as_ref().map(|p| p.len()).unwrap_or(0);
+            let min_content_len: usize = std::env::var("KNOWWHERE_CONSOLIDATION_MIN_CONTENT_LEN")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(100);
+            if content_len < min_content_len && pointer_len < min_content_len {
                 continue;
             }
 
@@ -911,7 +928,8 @@ impl ConsolidationScheduler {
                     && n.parent_tier_id.is_none()
                     && n.status == MemoryStatus::Active
                     && n.importance >= 3
-                    && n.content.as_ref().map(|c| c.len() > 500).unwrap_or(false)
+                    && (n.content.as_ref().map(|c| c.len() > 100).unwrap_or(false)
+                        || n.original_pointer.as_ref().map(|p| p.len() > 100).unwrap_or(false))
             })
             .count();
 
