@@ -89,6 +89,7 @@ impl RetrievalProfile {
         ScoredNode {
             id: node.id,
             score: debug.final_score(),
+            distribution_scores: None,
             debug: Some(debug),
             node,
         }
@@ -113,6 +114,11 @@ pub struct HybridQuery {
     pub user_id: Option<String>,
     /// Enable multi-query expansion (2-3 reformulations, RRF-fused).
     pub multi_query: bool,
+    /// Temporal recency boost factor (0.0–0.20).
+    /// When set, nodes with scores close to each other (within recency_boost * 0.5)
+    /// receive a recency bonus proportional to how recent they are relative to
+    /// the newest node in the result set.
+    pub recency_boost: Option<f32>,
 }
 
 impl HybridQuery {
@@ -127,6 +133,7 @@ impl HybridQuery {
             memory_type_filter: None,
             user_id: None,
             multi_query: false,
+            recency_boost: None,
         }
     }
 
@@ -141,6 +148,7 @@ impl HybridQuery {
             memory_type_filter: None,
             user_id: None,
             multi_query: false,
+            recency_boost: None,
         }
     }
 
@@ -160,6 +168,7 @@ impl HybridQuery {
             memory_type_filter: None,
             user_id: None,
             multi_query: false,
+            recency_boost: None,
         }
     }
 
@@ -198,6 +207,14 @@ impl HybridQuery {
     /// Enable multi-query expansion.
     pub fn with_multi_query(mut self) -> Self {
         self.multi_query = true;
+        self
+    }
+
+    /// Apply a temporal recency boost to close-scoring results.
+    /// `factor` should be in range 0.0–0.20. Higher values boost
+    /// more recent memories more aggressively.
+    pub fn with_recency_boost(mut self, factor: f32) -> Self {
+        self.recency_boost = Some(factor.clamp(0.0, 0.20));
         self
     }
 }
@@ -273,6 +290,9 @@ impl UpdateOperation {
 pub struct ScoredNode {
     pub id: Uuid,
     pub score: f32,
+    /// Softmax-normalized probability distribution over the entire result set.
+    /// Only populated when distributional scoring is enabled (hybrid_retrieve with RRF).
+    pub distribution_scores: Option<Vec<f32>>,
     pub debug: Option<ScoreDebug>,
     pub node: FractalNode,
 }
@@ -297,6 +317,7 @@ impl ScoredNode {
         Self {
             id: node.id,
             score,
+            distribution_scores: None,
             debug: None,
             node,
         }
@@ -307,6 +328,7 @@ impl ScoredNode {
         Self {
             id: node.id,
             score: 1.0,
+            distribution_scores: None,
             debug: None,
             node,
         }

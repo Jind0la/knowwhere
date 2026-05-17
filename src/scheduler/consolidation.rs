@@ -124,12 +124,23 @@ fn consolidation_metadata(
         );
     }
     if let Some(turn_index) = source.metadata.get("turn_index").cloned() {
-        metadata.insert("source_turn_range".to_string(), turn_index);
+        // Phase 1: Store as turn_range {\"min\": N, \"max\": N} instead of
+        // a single turn_index value. For single-source consolidation,
+        // min == max. Multi-source consolidation can expand the range.
+        let turn_range = serde_json::json!({
+            "min": turn_index,
+            "max": turn_index,
+        });
+        metadata.insert("turn_range".to_string(), turn_range);
     }
     // Issue #3: Also copy claim_index (preferred over turn_index) for
     // downstream consumers that use the newer naming convention.
     if let Some(claim_index) = source.metadata.get("claim_index").cloned() {
-        metadata.insert("source_claim_range".to_string(), claim_index);
+        let claim_range = serde_json::json!({
+            "min": claim_index,
+            "max": claim_index,
+        });
+        metadata.insert("claim_range".to_string(), claim_range);
     }
     metadata
 }

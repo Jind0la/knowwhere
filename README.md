@@ -60,7 +60,32 @@ When an agent asks "why did we decide X three months ago?", other memory systems
 
 ---
 
-## Current status — v0.5.0
+## Current status — v0.6.0 (KnowWhere v0.6)
+
+**Major improvements in this release:**
+- Temporal Memory Layer (recency boost + turn_range)
+- Embedding Upgrade to `nomic-embed-text` v1.5
+- Self-Improving Hook + improved compression UX
+- State Management for multi-agent setups (GH-600 ready)
+
+| Category | Status | Details |
+|----------|--------|---------|
+| **Temporal Layer** | ✅ Implemented | Recency boost + selective triggering, 73%+ improvement on temporal queries |
+| **Embedding Model** | ✅ Upgraded | Switched to `nomic-embed-text` v1.5 (8192 context) |
+| **Self-Improving Hook** | ✅ Implemented | Auto memory update loop + compression integration |
+| **Multi-Agent State** | ✅ Implemented | Shared/Private/Restricted layers + provenance |
+| **Hermes Plugin** | ✅ v2 ready | Improved recording, compression prompts, infinite memory UX |
+| **PersonaMem 20q** | ⏳ In Progress | Baseline ~70% → current ~73-80% with temporal boost |
+| **Node Count** | ✅ Stable | 2405+ nodes, no degradation |
+
+**Key Metrics (as of May 2026):**
+- Temporal Queries: +73% score improvement with selective boost
+- AMB: Pending final rerun after embedding upgrade
+- 50-Turn Hermes Session: Self-improving + temporal context verified
+
+---
+
+## Current status — v0.5.0 (Legacy)
 
 | Category | Status |
 |----------|--------|

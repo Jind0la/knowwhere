@@ -332,6 +332,8 @@ pub enum MemorySource {
     Import,
     Manual,
     Consolidation,
+    /// AI agent explicitly stored this for self-improvement (AI→Memory feedback loop).
+    AiSelfImprovement,
 }
 
 impl MemorySource {
@@ -342,6 +344,7 @@ impl MemorySource {
             "import" => Some(MemorySource::Import),
             "manual" => Some(MemorySource::Manual),
             "consolidation" => Some(MemorySource::Consolidation),
+            "ai_self_improvement" => Some(MemorySource::AiSelfImprovement),
             _ => None,
         }
     }

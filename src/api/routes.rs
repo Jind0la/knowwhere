@@ -54,6 +54,10 @@ pub struct RetrievalScoreDebug {
 #[derive(Serialize, ToSchema)]
 pub struct ScoredNode {
     pub score: f32,
+    /// Softmax-normalized probability distribution over the candidate set.
+    /// Populated when the backend uses distributional scoring (MCE-inspired).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub distribution_scores: Option<Vec<f32>>,
     pub id: Uuid,
     #[serde(default)]
     pub memory_type: MemoryType,
@@ -99,8 +103,9 @@ pub struct ScoredNode {
 impl ScoredNode {
     fn from_storage(entry: crate::storage::ScoredNode, include_debug: bool) -> Self {
         let debug = entry.debug.clone();
+        let dist = entry.distribution_scores.clone();
         let score_debug = include_debug.then(|| score_debug_response(debug.as_ref(), &entry.node));
-        Self::from_parts(entry.score, entry.node, debug.as_ref(), score_debug)
+        Self::from_parts(entry.score, entry.node, debug.as_ref(), score_debug, dist)
     }
 
     fn from_governed_storage(
@@ -112,8 +117,9 @@ impl ScoredNode {
         let confidence = entry.node.confidence;
         let sensitivity = entry.node.sensitivity;
         let debug = entry.debug.clone();
+        let dist = entry.distribution_scores.clone();
         let score_debug = include_debug.then(|| score_debug_response(debug.as_ref(), &entry.node));
-        Self::from_parts(entry.score, entry.node, debug.as_ref(), score_debug).with_governance(
+        Self::from_parts(entry.score, entry.node, debug.as_ref(), score_debug, dist).with_governance(
             confidence,
             sensitivity,
             governance_passed,
@@ -126,6 +132,7 @@ impl ScoredNode {
         n: FractalNode,
         debug: Option<&crate::storage::ScoreDebug>,
         score_debug: Option<RetrievalScoreDebug>,
+        distribution_scores: Option<Vec<f32>>,
     ) -> Self {
         let trust_tier = debug
             .map(|entry| entry.trust_tier.clone())
@@ -153,6 +160,7 @@ impl ScoredNode {
             children_tier_ids: n.children_tier_ids,
             status: n.status,
             importance: n.importance,
+            distribution_scores,
         }
     }
 
@@ -573,7 +581,7 @@ fn default_trust_tier(
     match source {
         MemorySource::Conversation => FractalNode::TRUST_PRIMARY,
         MemorySource::Document | MemorySource::Manual => FractalNode::TRUST_REFERENCE,
-        MemorySource::Consolidation => FractalNode::TRUST_DERIVED,
+        MemorySource::Consolidation | MemorySource::AiSelfImprovement => FractalNode::TRUST_DERIVED,
         MemorySource::Import => FractalNode::TRUST_REFERENCE,
     }
 }
@@ -1676,6 +1684,106 @@ pub async fn store_session_batch(
 
 // -- Store External (Pointer-First: nie Rohdaten, nur Pointer) --
 
+// -- Self-Improve Endpoint ------------------------------------------------
+// POST /memory/self_improve
+// AI→Memory feedback loop: stores a fact/decision/preference that the
+// AI agent explicitly wants to remember for future retrievals.
+// Lightweight wrapper over store_session with self-improvement metadata.
+//
+
+#[derive(Deserialize, ToSchema)]
+pub struct SelfImproveRequest {
+    /// The fact, decision, or insight to store.
+    pub content: String,
+    /// Memory type: decision, preference, semantic, procedural, episodic.
+    #[serde(default = "default_semantic_type_str")]
+    pub memory_type: String,
+    /// Importance 1–10 (default: 5).
+    #[serde(default = "default_importance")]
+    pub importance: i32,
+    /// Optional session_id override.
+    #[serde(default)]
+    pub session_id: Option<String>,
+}
+
+fn default_importance() -> i32 { 5 }
+
+#[derive(Serialize, ToSchema)]
+pub struct SelfImproveResponse {
+    pub id: Uuid,
+    pub memory_type: String,
+    pub importance: i32,
+    pub message: String,
+}
+
+#[utoipa::path(
+    post,
+    path = "/memory/self_improve",
+    tag = "memory",
+    request_body = SelfImproveRequest,
+    responses(
+        (status = 201, description = "Self-improvement memory stored", body = SelfImproveResponse),
+        (status = 400, description = "Invalid request", body = String),
+        (status = 500, description = "Internal error", body = String)
+    )
+)]
+pub async fn self_improve(
+    State(state): State<AppState>,
+    Json(req): Json<SelfImproveRequest>,
+) -> Result<(StatusCode, Json<SelfImproveResponse>), (StatusCode, String)> {
+    if req.content.trim().len() < 4 {
+        return Err((StatusCode::BAD_REQUEST, "content too short".into()));
+    }
+
+    let memory_type = MemoryType::parse(&req.memory_type).unwrap_or(MemoryType::Semantic);
+    let source = MemorySource::AiSelfImprovement;
+    let importance = req.importance.clamp(1, 10);
+    let session_id = req.session_id.unwrap_or_else(|| "standalone".to_string());
+    let observed_at = chrono::Utc::now().to_rfc3339();
+
+    let cleaned = clean_for_embedding(&req.content);
+    let vector = embed_document(&*state.embedding, &cleaned)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("embed failed: {e}")))?;
+
+    let mut metadata: HashMap<String, Value> = HashMap::new();
+    metadata.insert("session_id".to_string(), Value::String(session_id.clone()));
+    metadata.insert("source_system".to_string(), Value::String("hermes_self_improve".to_string()));
+    metadata.insert("agent".to_string(), Value::String("hermes".to_string()));
+    metadata.insert("role".to_string(), Value::String("ai_agent".to_string()));
+    metadata.insert("observed_at".to_string(), Value::String(observed_at));
+    metadata.insert("importance".to_string(), Value::Number(serde_json::Number::from(importance)));
+    normalize_node_metadata(memory_type, source, &mut metadata);
+
+    let mut node = FractalNode::new_typed(
+        Some(req.content),
+        None,
+        vector,
+        metadata,
+        memory_type,
+        source,
+    );
+    node.importance = importance;
+
+    let id = state
+        .store
+        .insert(node)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    tracing::info!(%id, ?memory_type, importance, "self-improvement memory stored");
+
+    Ok((
+        StatusCode::CREATED,
+        Json(SelfImproveResponse {
+            id,
+            memory_type: memory_type.label().to_string(),
+            importance,
+            message: format!("self-improvement memory stored as {} (importance={})", memory_type.label(), importance),
+        }),
+    ))
+}
+
 #[derive(Deserialize, ToSchema)]
 pub struct StoreExternalRequest {
     pub pointer: String,
@@ -1903,6 +2011,10 @@ pub struct RetrieveFractalRequest {
     /// Enable multi-query expansion (2-3 reformulations, RRF-fused results).
     #[serde(default)]
     pub multi_query: bool,
+    /// Temporal recency boost factor (0.0–0.20).
+    /// When set, close-scoring results get a slight recency bonus.
+    #[serde(default)]
+    pub recency_boost: Option<f32>,
 }
 
 fn default_top_k() -> usize {
@@ -2303,6 +2415,7 @@ pub async fn retrieve_fractal(
                 memory_type_filter: type_filter,
                 user_id: req.user_id.clone(),
                 multi_query: false, // prevent recursion
+                recency_boost: req.recency_boost,
             };
 
             let r = state.store.hybrid_retrieve(&q).await.map_err(|e| {
@@ -2335,6 +2448,24 @@ pub async fn retrieve_fractal(
                 }
             }
         }
+        // Distributional scoring over fused RRF candidates (MCE-inspired softmax).
+        // Preserved from hybrid_retrieve's own scoring; recomputed here because
+        // score_node() rebuilds ScoredNode from scratch, discarding per-expansion scores.
+        if !merged.is_empty() {
+            let max_score = merged
+                .iter()
+                .map(|n| n.score)
+                .fold(f32::NEG_INFINITY, f32::max);
+            let exps: Vec<f32> = merged.iter().map(|n| (n.score - max_score).exp()).collect();
+            let sum: f32 = exps.iter().sum();
+            if sum > 0.0 {
+                let dist: Vec<f32> = exps.iter().map(|e| e / sum).collect();
+                for (item, prob) in merged.iter_mut().zip(dist.iter()) {
+                    item.distribution_scores = Some(vec![*prob]);
+                }
+            }
+        }
+
         // Keep as backend::ScoredNode for downstream processing
         // (expand_fractal, reranker, governance all expect backend type)
         merged
@@ -2349,6 +2480,7 @@ pub async fn retrieve_fractal(
             memory_type_filter: type_filter,
             user_id: req.user_id.clone(),
             multi_query: false,
+            recency_boost: req.recency_boost,
         };
         let r = state.store.hybrid_retrieve(&query).await.map_err(|e| {
             tracing::error!("hybrid_retrieve failed: {e}");
@@ -2421,7 +2553,20 @@ pub async fn retrieve_fractal(
                 }
                 Err(e) => {
                     tracing::warn!("reranking failed, falling back to bi-encoder: {}", e);
-                    state.store.hybrid_retrieve(&query).await.map_err(|e| {
+                    // Re-retrieve (results was consumed by .into_iter() above)
+                    let query_text = req.query_text.clone().unwrap_or_default();
+                    let fallback_query = HybridQuery {
+                        query_text: Some(query_text.clone()),
+                        query_vector: Some(query_vector_for_expand.clone()),
+                        top_k: req.top_k,
+                        max_depth: req.max_depth,
+                        profile: req.retrieval_profile,
+                        memory_type_filter: type_filter.clone(),
+                        user_id: req.user_id.clone(),
+                        multi_query: false,
+                        recency_boost: req.recency_boost,
+                    };
+                    state.store.hybrid_retrieve(&fallback_query).await.map_err(|e| {
                         tracing::error!("hybrid_retrieve fallback failed: {}", e);
                         (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
                     })?
@@ -2448,6 +2593,7 @@ pub async fn retrieve_fractal(
                         memory_type_filter: type_filter,
                         user_id: req.user_id.clone(),
                         multi_query: false,
+                        recency_boost: req.recency_boost,
                     };
                     if let Ok(extra) = state.store.hybrid_retrieve(&cq_query).await {
                         tracing::info!(contrastive = extra.len(), "contrastive results");
@@ -2591,6 +2737,7 @@ pub async fn retrieve_fractal(
                             StorageScoredNode {
                                 id: s.id,
                                 score: s.score,
+                                distribution_scores: None,
                                 node,
                                 debug: None,
                             }
@@ -2626,6 +2773,7 @@ pub async fn retrieve_fractal(
                                 StorageScoredNode {
                                     id: s.id,
                                     score: s.score,
+                                    distribution_scores: None,
                                     node,
                                     debug: None,
                                 }
@@ -2667,6 +2815,7 @@ pub async fn retrieve_fractal(
                             children_tier_ids: vec![],
                             status: MemoryStatus::Active,
                             importance: 5,
+                            distribution_scores: None,
                         };
                         let mut with_reflection = vec![reflection_node];
                         with_reflection.extend(scored);
@@ -2691,6 +2840,7 @@ pub async fn retrieve_fractal(
     tracing::info!(
         response_len = scored.len(),
         response_meta = scored.iter().filter(|n| n.memory_type == MemoryType::Meta).count(),
+        recency_boost = ?req.recency_boost,
         "retrieve_fractal response stats"
     );
     Ok(Json(scored))
@@ -4679,6 +4829,8 @@ pub async fn namespace_search(
         profile: RetrievalProfile::UserFacing,
         memory_type_filter: None,
         user_id: None,
+        multi_query: false,
+        recency_boost: None,
     };
     let all_results = state.store.hybrid_retrieve(&query).await.map_err(|e| {
         (

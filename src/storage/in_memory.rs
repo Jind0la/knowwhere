@@ -7,6 +7,7 @@ use std::time::Instant;
 
 use anyhow::Result;
 use bm25::{Embedder, EmbedderBuilder, Language, Scorer};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use usearch::{new_index, Index, IndexOptions, MetricKind, ScalarKind};
@@ -129,6 +130,16 @@ struct PersistedState {
     /// Persisted BM25 corpus — rebuilt on startup if missing.
     /// Fixes MED-003: BM25 index for external nodes survives restart.
     bm25_corpus: Vec<(Uuid, String)>,
+    /// Coarse 256d index mappings (survives restart).
+    #[serde(default)]
+    coarse_uuid_to_key: HashMap<Uuid, u64>,
+    #[serde(default)]
+    coarse_key_to_uuid: HashMap<u64, Uuid>,
+    /// Ultra-coarse 64d index mappings (survives restart, TST cascade).
+    #[serde(default)]
+    ultra_coarse_uuid_to_key: HashMap<Uuid, u64>,
+    #[serde(default)]
+    ultra_coarse_key_to_uuid: HashMap<u64, Uuid>,
 }
 
 #[derive(Clone)]
@@ -149,9 +160,15 @@ pub struct MemoryStore {
     coarse_dimension: Arc<Mutex<Option<usize>>>,
     coarse_uuid_to_key: Arc<RwLock<HashMap<Uuid, u64>>>,
     coarse_key_to_uuid: Arc<RwLock<HashMap<u64, Uuid>>>,
+    // Matryoshka ultra-coarse index (64d truncated embeddings, TST-inspired)
+    ultra_coarse_index: Arc<Mutex<Option<SendableIndex>>>,
+    ultra_coarse_dimension: Arc<Mutex<Option<usize>>>,
+    ultra_coarse_uuid_to_key: Arc<RwLock<HashMap<Uuid, u64>>>,
+    ultra_coarse_key_to_uuid: Arc<RwLock<HashMap<u64, Uuid>>>,
 }
 
 const COARSE_DIM: usize = 256;
+const ULTRA_COARSE_DIM: usize = 64;
 
 #[async_trait::async_trait]
 impl StorageBackend for MemoryStore {
@@ -189,6 +206,7 @@ impl StorageBackend for MemoryStore {
                 vector,
                 fetch_k,
                 query.max_depth,
+                query.recency_boost,
                 #[cfg(feature = "postgres-storage")]
                 None,
             )
@@ -205,17 +223,55 @@ impl StorageBackend for MemoryStore {
             })
             .filter(|(_, node)| {
                 // user_id filter: scope retrieval to a single persona's claims.
-                // When user_id is NOT set: only return nodes without a user_id (global scope).
+                // When user_id is NOT set: return ALL nodes (permissive default).
+                //   To scope to global-only, pass an explicit user_id="" or use
+                //   the strict-user-id feature gate.
                 // When user_id IS set: return matching nodes AND nodes without user_id (global).
                 let node_uid = node.metadata.get("user_id").and_then(|v| v.as_str());
                 match &query.user_id {
-                    None => node_uid.is_none(),
+                    None => true,
                     Some(uid) => node_uid.map_or(true, |v| v == uid.as_str()),
                 }
             })
             .map(|(score, node)| query.profile.score_node(score, node))
             .collect();
-        weighted.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(Ordering::Equal));
+        // Sort by score descending, with deterministic tiebreaker on trust tier.
+        // When multipliers are neutralized, equal scores must still produce
+        // stable ordering per the trust hierarchy: primary > reference > derived > volatile.
+        weighted.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(Ordering::Equal)
+                .then_with(|| {
+                    let tier_ord = |n: &ScoredNode| match n.node.trust_tier() {
+                        "primary" => 0u8,
+                        "reference" => 1,
+                        "derived" => 2,
+                        "volatile" => 3,
+                        _ => 4,
+                    };
+                    tier_ord(a).cmp(&tier_ord(b))
+                })
+        });
+
+        // Distributional scoring: softmax-normalize scores into a proper probability
+        // distribution over the candidate set (TST-MCE-inspired: distribution over
+        // candidates, not discrete top-k).
+        if !weighted.is_empty() {
+            let max_score = weighted
+                .iter()
+                .map(|n| n.score)
+                .fold(f32::NEG_INFINITY, f32::max);
+            let exps: Vec<f32> = weighted.iter().map(|n| (n.score - max_score).exp()).collect();
+            let sum: f32 = exps.iter().sum();
+            if sum > 0.0 {
+                let dist: Vec<f32> = exps.iter().map(|e| e / sum).collect();
+                for (item, prob) in weighted.iter_mut().zip(dist.iter()) {
+                    item.distribution_scores = Some(vec![*prob]);
+                }
+            }
+        }
+
         weighted.truncate(query.top_k);
         Ok(weighted)
     }
@@ -238,16 +294,17 @@ impl StorageBackend for MemoryStore {
         Ok(nodes
             .into_iter()
             .filter(|node| {
-                // user_id filter: same logic as hybrid_retrieve above
+                // user_id filter: scoped to single persona. None = permissive (all nodes).
                 let node_uid = node.metadata.get("user_id").and_then(|v| v.as_str());
                 match &query.user_id {
-                    None => node_uid.is_none(),
+                    None => true,
                     Some(uid) => node_uid.map_or(true, |v| v == uid.as_str()),
                 }
             })
             .map(|node| ScoredNode {
                 id: node.id,
                 score: 1.0,
+                distribution_scores: None,
                 debug: None,
                 node,
             })
@@ -363,6 +420,7 @@ impl StorageBackend for MemoryStore {
                         expanded.push(ScoredNode {
                             id: parent.id,
                             score: parent_sim,
+                            distribution_scores: None,
                             debug: None,
                             node: parent.clone(),
                         });
@@ -414,6 +472,10 @@ impl MemoryStore {
             coarse_dimension: Arc::new(Mutex::new(None)),
             coarse_uuid_to_key: Arc::new(RwLock::new(HashMap::new())),
             coarse_key_to_uuid: Arc::new(RwLock::new(HashMap::new())),
+            ultra_coarse_index: Arc::new(Mutex::new(None)),
+            ultra_coarse_dimension: Arc::new(Mutex::new(None)),
+            ultra_coarse_uuid_to_key: Arc::new(RwLock::new(HashMap::new())),
+            ultra_coarse_key_to_uuid: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -437,6 +499,10 @@ impl MemoryStore {
             coarse_dimension: Arc::new(Mutex::new(None)),
             coarse_uuid_to_key: Arc::new(RwLock::new(HashMap::new())),
             coarse_key_to_uuid: Arc::new(RwLock::new(HashMap::new())),
+            ultra_coarse_index: Arc::new(Mutex::new(None)),
+            ultra_coarse_dimension: Arc::new(Mutex::new(None)),
+            ultra_coarse_uuid_to_key: Arc::new(RwLock::new(HashMap::new())),
+            ultra_coarse_key_to_uuid: Arc::new(RwLock::new(HashMap::new())),
         };
 
         let state_path = dir.join("state.json");
@@ -483,6 +549,66 @@ impl MemoryStore {
                 *self.index_dimension.lock().unwrap() = Some(dim);
                 tracing::info!(dim, skipped, "usearch index rebuilt from persisted state");
             }
+        }
+
+        // Rebuild coarse 256d index from persisted mappings
+        {
+            let coarse_uuids = state.coarse_uuid_to_key.clone();
+            if !coarse_uuids.is_empty() {
+                let coarse_dim = COARSE_DIM;
+                if let Ok(coarse_idx) = SendableIndex::new(&index_options(coarse_dim)) {
+                    let cap = coarse_uuids.len().max(1024);
+                    let _ = coarse_idx.reserve(cap);
+                    let mut coarse_skipped = 0usize;
+                    for (&uuid, &key) in &coarse_uuids {
+                        if let Some(node) = state.nodes.get(&uuid) {
+                            if node.vector.len() >= coarse_dim {
+                                let vec: Vec<f32> = node.vector[..coarse_dim].to_vec();
+                                if let Err(e) = coarse_idx.add(key, &vec) {
+                                    tracing::warn!(%uuid, "coarse index rebuild skip: {e}");
+                                }
+                            } else {
+                                coarse_skipped += 1;
+                            }
+                        }
+                    }
+                    *self.coarse_index.lock().unwrap() = Some(coarse_idx);
+                    *self.coarse_dimension.lock().unwrap() = Some(coarse_dim);
+                    tracing::info!(coarse_dim, coarse_skipped, "coarse usearch index rebuilt from persisted state");
+                }
+            }
+            self.coarse_uuid_to_key = Arc::new(RwLock::new(state.coarse_uuid_to_key));
+            self.coarse_key_to_uuid = Arc::new(RwLock::new(state.coarse_key_to_uuid));
+        }
+
+        // Rebuild ultra-coarse 64d index from persisted mappings
+        {
+            let ultra_uuids = state.ultra_coarse_uuid_to_key.clone();
+            if !ultra_uuids.is_empty() {
+                let ultra_dim = ULTRA_COARSE_DIM;
+                if let Ok(ultra_idx) = SendableIndex::new(&index_options(ultra_dim)) {
+                    let cap = ultra_uuids.len().max(1024);
+                    let _ = ultra_idx.reserve(cap);
+                    let mut ultra_skipped = 0usize;
+                    for (&uuid, &key) in &ultra_uuids {
+                        if let Some(node) = state.nodes.get(&uuid) {
+                            if node.vector.len() >= ultra_dim {
+                                let vec: Vec<f32> = node.vector[..ultra_dim].to_vec();
+                                if let Err(e) = ultra_idx.add(key, &vec) {
+                                    tracing::warn!(%uuid, "ultra-coarse index rebuild skip: {e}");
+                                }
+                            } else {
+                                ultra_skipped += 1;
+                            }
+                        }
+                    }
+                    *self.ultra_coarse_index.lock().unwrap() = Some(ultra_idx);
+                    *self.ultra_coarse_dimension.lock().unwrap() = Some(ultra_dim);
+                    tracing::info!(ultra_dim, ultra_skipped, "ultra-coarse usearch index rebuilt from persisted state");
+                }
+            }
+            self.ultra_coarse_uuid_to_key = Arc::new(RwLock::new(state.ultra_coarse_uuid_to_key));
+            self.ultra_coarse_key_to_uuid = Arc::new(RwLock::new(state.ultra_coarse_key_to_uuid));
         }
 
         // Load persisted BM25 corpus directly — survives restart for external nodes.
@@ -532,6 +658,10 @@ impl MemoryStore {
             key_to_uuid: self.key_to_uuid.read().await.clone(),
             next_key: self.next_key.load(AtomicOrdering::Relaxed),
             bm25_corpus: self.bm25_corpus.read().await.clone(),
+            coarse_uuid_to_key: self.coarse_uuid_to_key.read().await.clone(),
+            coarse_key_to_uuid: self.coarse_key_to_uuid.read().await.clone(),
+            ultra_coarse_uuid_to_key: self.ultra_coarse_uuid_to_key.read().await.clone(),
+            ultra_coarse_key_to_uuid: self.ultra_coarse_key_to_uuid.read().await.clone(),
         };
 
         let tmp_path = dir.join("state.json.tmp");
@@ -637,24 +767,79 @@ impl MemoryStore {
         Ok(())
     }
 
-    async fn coarse_search(&self, vector: &[f32], count: usize) -> Vec<Uuid> {
-        let guard = match self.coarse_index.lock() {
-            Ok(g) => g,
-            Err(_) => return vec![],
+    fn ensure_ultra_coarse_index(&self, dimension: usize, extra: usize) -> Result<()> {
+        let mut guard = self
+            .ultra_coarse_index
+            .lock()
+            .map_err(|_| anyhow::anyhow!("ultra-coarse index mutex poisoned"))?;
+        let mut dim_guard = self
+            .ultra_coarse_dimension
+            .lock()
+            .map_err(|_| anyhow::anyhow!("ultra-coarse dimension mutex poisoned"))?;
+
+        let need_rebuild = match *dim_guard {
+            None => true,
+            Some(d) if d != dimension => true,
+            _ => guard.is_none(),
         };
-        let index = match guard.as_ref() {
-            Some(i) => i,
-            None => return vec![],
-        };
-        let matches = match index.0.search(vector, count) {
-            Ok(m) => m.keys,
-            Err(e) => {
-                tracing::warn!("coarse search error: {e}");
-                return vec![];
+
+        if need_rebuild {
+            let index = SendableIndex::new(&index_options(dimension))?;
+            index.reserve((1024 + extra).max(1024))?;
+            *guard = Some(index);
+            *dim_guard = Some(dimension);
+            tracing::info!(dimension, "ultra-coarse usearch index initialized");
+        } else if let Some(ref index) = *guard {
+            let needed = index.0.size().saturating_add(extra);
+            if needed > index.0.capacity() {
+                index.reserve(needed)?;
             }
-        };
+        }
+        Ok(())
+    }
+
+    async fn coarse_search(&self, vector: &[f32], count: usize) -> Vec<Uuid> {
+        let match_keys: Vec<u64> = {
+            let guard = match self.coarse_index.lock() {
+                Ok(g) => g,
+                Err(_) => return vec![],
+            };
+            let index = match guard.as_ref() {
+                Some(i) => i,
+                None => return vec![],
+            };
+            match index.0.search(vector, count) {
+                Ok(m) => m.keys,
+                Err(e) => {
+                    tracing::warn!("coarse search error: {e}");
+                    return vec![];
+                }
+            }
+        }; // guard dropped — no MutexGuard across .await
         let key_to_uuid = self.coarse_key_to_uuid.read().await;
-        matches.iter().filter_map(|k| key_to_uuid.get(k).copied()).collect()
+        match_keys.iter().filter_map(|k| key_to_uuid.get(k).copied()).collect()
+    }
+
+    async fn ultra_coarse_search(&self, vector: &[f32], count: usize) -> Vec<Uuid> {
+        let match_keys: Vec<u64> = {
+            let guard = match self.ultra_coarse_index.lock() {
+                Ok(g) => g,
+                Err(_) => return vec![],
+            };
+            let index = match guard.as_ref() {
+                Some(i) => i,
+                None => return vec![],
+            };
+            match index.0.search(vector, count) {
+                Ok(m) => m.keys,
+                Err(e) => {
+                    tracing::warn!("ultra-coarse search error: {e}");
+                    return vec![];
+                }
+            }
+        }; // guard dropped — no MutexGuard across .await
+        let key_to_uuid = self.ultra_coarse_key_to_uuid.read().await;
+        match_keys.iter().filter_map(|k| key_to_uuid.get(k).copied()).collect()
     }
 
     fn index_key(
@@ -760,6 +945,36 @@ impl MemoryStore {
                 if coarse_indexed {
                     self.coarse_uuid_to_key.write().await.insert(id, coarse_key);
                     self.coarse_key_to_uuid.write().await.insert(coarse_key, id);
+                }
+            }
+
+            // Ultra-coarse index (64d truncated, TST-inspired 3-level cascade)
+            if node.vector.len() >= ULTRA_COARSE_DIM {
+                let ultra_vec: Vec<f32> = node.vector[..ULTRA_COARSE_DIM].to_vec();
+                self.ensure_ultra_coarse_index(ULTRA_COARSE_DIM, 1)?;
+                let ultra_key = self.next_key.fetch_add(1, AtomicOrdering::Relaxed);
+
+                let ultra_indexed = {
+                    let guard = self
+                        .ultra_coarse_index
+                        .lock()
+                        .map_err(|_| anyhow::anyhow!("ultra-coarse index mutex poisoned"))?;
+                    if let Some(ref index) = *guard {
+                        match index.add(ultra_key, &ultra_vec) {
+                            Ok(()) => true,
+                            Err(e) => {
+                                tracing::warn!(%id, "skipping ultra-coarse index: {e}");
+                                false
+                            }
+                        }
+                    } else {
+                        false
+                    }
+                };
+
+                if ultra_indexed {
+                    self.ultra_coarse_uuid_to_key.write().await.insert(id, ultra_key);
+                    self.ultra_coarse_key_to_uuid.write().await.insert(ultra_key, id);
                 }
             }
         }
@@ -983,12 +1198,63 @@ impl MemoryStore {
         }
     }
 
+    /// Apply temporal recency boost to close-scoring results.
+    ///
+    /// When `recency_boost` is set, nodes whose semantic/RRF scores are within
+    /// `recency_boost * 0.5` of the max score receive a recency bonus.
+    /// The bonus is proportional to how recent each node is relative to
+    /// the newest node in the result set. Results are re-sorted after boosting.
+    fn apply_temporal_boost(results: &mut [(f32, FractalNode)], recency_boost: f32) -> usize {
+        let mut boosted = 0usize;
+        if results.is_empty() {
+            return boosted;
+        }
+        let newest = results.iter().map(|(_, n)| n.created_at).max();
+        let Some(newest) = newest else { return boosted };
+
+        let oldest = results
+            .iter()
+            .map(|(_, n)| n.created_at)
+            .min()
+            .unwrap_or(newest);
+        let time_range = (newest - oldest).num_seconds() as f32;
+        if time_range < 1.0 {
+            return boosted; // All roughly same age — no meaningful recency gradient
+        }
+
+        let max_score = results
+            .iter()
+            .map(|(s, _)| *s)
+            .fold(f32::NEG_INFINITY, f32::max);
+        let closeness_threshold = recency_boost * 0.5;
+
+        for (score, node) in results.iter_mut() {
+            if (max_score - *score).abs() <= closeness_threshold {
+                let age_seconds = (newest - node.created_at).num_seconds() as f32;
+                let recency_factor = 1.0 - (age_seconds / time_range).clamp(0.0, 1.0);
+                *score += recency_boost * recency_factor;
+                boosted += 1;
+            }
+        }
+
+        results.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(Ordering::Equal));
+        tracing::info!(
+            boosted,
+            total = results.len(),
+            boost_factor = recency_boost,
+            time_range_s = time_range,
+            "temporal_boost applied"
+        );
+        boosted
+    }
+
     pub async fn hybrid_retrieve<'a>(
         &self,
         query_text: Option<&str>,
         query_vector: &[f32],
         top_k: usize,
         max_depth: usize,
+        recency_boost: Option<f32>,
         #[cfg(feature = "postgres-storage")] trajectory_store: Option<
             &'a crate::storage::TrajectoryStore<'_>,
         >,
@@ -1066,6 +1332,11 @@ impl MemoryStore {
                     Self::boost_energy_for_retrieval(ts.pool(), &top_k_ids, 20).await;
                 }
             }
+            // Temporal recency boost: give edge to more-recent memories when scores are close
+            let mut results = results;
+            if let Some(boost) = recency_boost {
+                let _boosted = Self::apply_temporal_boost(&mut results, boost);
+            }
             return results;
         }
 
@@ -1107,6 +1378,12 @@ impl MemoryStore {
             Self::boost_energy_for_retrieval(ts.pool(), &top_k_ids, 20).await;
         }
 
+        // Temporal recency boost: give edge to more-recent memories when scores are close
+        let mut results = results;
+        if let Some(boost) = recency_boost {
+            let _boosted = Self::apply_temporal_boost(&mut results, boost);
+        }
+
         results
     }
 
@@ -1131,6 +1408,62 @@ impl MemoryStore {
             .unwrap_or(false);
 
         if node_count >= USEARCH_THRESHOLD && has_index && !query_vector.is_empty() {
+            // ── 3-Level Cascade (TST-inspired): 64d → 256d → 768d ──
+            // Step 1: Ultra-coarse 64d filter — cheap, eliminates ~95% of space
+            let mut candidate_uuids: Vec<Uuid> = if query_vector.len() >= ULTRA_COARSE_DIM {
+                let ultra_vec = &query_vector[..ULTRA_COARSE_DIM];
+                let ultra = self.ultra_coarse_search(ultra_vec, top_k * 8).await;
+                if ultra.is_empty() {
+                    vec![] // fall through to main index
+                } else {
+                    ultra
+                }
+            } else {
+                vec![]
+            };
+
+            // Step 2: Coarse 256d filter — narrow within ultra candidates
+            if !candidate_uuids.is_empty() && query_vector.len() >= COARSE_DIM {
+                let coarse_vec = &query_vector[..COARSE_DIM];
+                let coarse_candidates = self.coarse_search(coarse_vec, top_k * 4).await;
+                if !coarse_candidates.is_empty() {
+                    let coarse_set: std::collections::HashSet<Uuid> =
+                        coarse_candidates.into_iter().collect();
+                    candidate_uuids.retain(|uid| coarse_set.contains(uid));
+                }
+            }
+
+            // Step 3: Precision zoom_retrieve within filtered candidate set
+            if !candidate_uuids.is_empty() {
+                let nodes = self.nodes.read().await;
+                let owned_nodes: Vec<FractalNode> = candidate_uuids
+                    .iter()
+                    .filter_map(|uid| nodes.get(uid).cloned())
+                    .collect();
+                drop(nodes);
+
+                let mut scored: Vec<(f32, FractalNode)> = Vec::new();
+                for node in &owned_nodes {
+                    let results = node.zoom_retrieve(query_vector, max_depth, pruning_threshold);
+                    scored.extend(results.into_iter().map(|(s, n)| (s, n.clone())));
+                }
+                scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(Ordering::Equal));
+
+                #[cfg(feature = "postgres-storage")]
+                if let Some(traj) = trajectory {
+                    for (score, node) in &scored {
+                        traj.log_search(node.id, *score, "cascade_candidate");
+                    }
+                }
+
+                return scored
+                    .into_iter()
+                    .take(top_k)
+                    .map(|(_, n)| n)
+                    .collect();
+            }
+
+            // Fallback: main 768d index when cascade produced no candidates
             let candidate_keys = {
                 let guard = match self.usearch_index.lock() {
                     Ok(g) => g,
@@ -1144,21 +1477,26 @@ impl MemoryStore {
 
             if !candidate_keys.is_empty() {
                 let k2u = self.key_to_uuid.read().await;
-                let candidate_uuids: Vec<Uuid> = candidate_keys
+                let fallback_uuids: Vec<Uuid> = candidate_keys
                     .iter()
                     .filter_map(|k| k2u.get(k).copied())
                     .collect();
                 drop(k2u);
 
                 let nodes = self.nodes.read().await;
-                let mut scored: Vec<(f32, &FractalNode)> = candidate_uuids
+                let owned_nodes: Vec<FractalNode> = fallback_uuids
                     .iter()
-                    .filter_map(|uid| nodes.get(uid))
-                    .flat_map(|node| node.zoom_retrieve(query_vector, max_depth, pruning_threshold))
+                    .filter_map(|uid| nodes.get(uid).cloned())
                     .collect();
+                drop(nodes);
+
+                let mut scored: Vec<(f32, FractalNode)> = Vec::new();
+                for node in &owned_nodes {
+                    let results = node.zoom_retrieve(query_vector, max_depth, pruning_threshold);
+                    scored.extend(results.into_iter().map(|(s, n)| (s, n.clone())));
+                }
                 scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(Ordering::Equal));
 
-                // Log initial search steps if trajectory is provided
                 #[cfg(feature = "postgres-storage")]
                 if let Some(traj) = trajectory {
                     for (score, node) in &scored {
@@ -1169,7 +1507,7 @@ impl MemoryStore {
                 return scored
                     .into_iter()
                     .take(top_k)
-                    .map(|(_, n)| n.clone())
+                    .map(|(_, n)| n)
                     .collect();
             }
         }
@@ -1181,15 +1519,24 @@ impl MemoryStore {
         }
 
         let nodes = self.nodes.read().await;
-        let mut scored: Vec<(f32, &FractalNode)> = nodes
+        let mut scored: Vec<(f32, FractalNode)> = nodes
             .values()
-            .flat_map(|node| node.zoom_retrieve(query_vector, max_depth, pruning_threshold))
+            .filter_map(|node| {
+                let results = node.zoom_retrieve(query_vector, max_depth, pruning_threshold);
+                if results.is_empty() {
+                    None
+                } else {
+                    Some(results.into_iter().map(move |(s, ref_node)| (s, ref_node.clone())))
+                }
+            })
+            .flatten()
             .collect();
+        drop(nodes);
         scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(Ordering::Equal));
         scored
             .into_iter()
             .take(top_k)
-            .map(|(_, n)| n.clone())
+            .map(|(_, n)| n)
             .collect()
     }
 
@@ -1227,6 +1574,7 @@ impl MemoryStore {
             results.push(ScoredNode {
                 id: child.id,
                 score: sim,
+                distribution_scores: None,
                 debug: None,
                 node: child.clone(),
             });

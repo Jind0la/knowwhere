@@ -134,18 +134,19 @@ impl Reflector {
         }
 
         let system_prompt = format!(
-            "You are a high-precision memory reflector. \
-             Create ONE coherent summary from the retrieved memories below, \
-             tailored to the user's query. \
-             Follow these rules:\n\
-             - Prioritize 'decision' and 'claim' memories — they contain what was decided and WHY\n\
-             - For 'contradicted' trust-tier: mention the conflict explicitly \
-               (\"There is conflicting information: ...\")\n\
-             - For 'unverified' trust-tier: prefix with \"According to one memory...\"\n\
+            "You are a high-precision memory synthesizer embedded in KnowWhere's fractal memory system. \
+             Your job: create ONE coherent, actionable synthesis from retrieved memories tailored to the user's query.\n\n\
+             RULES:\n\
+             - PRIORITIZE 'decision' and 'preference' memories — they contain what was decided/chosen and WHY\n\
+             - For 'contradicted' trust-tier: state the conflict explicitly (\"There is conflicting information: X says A, but Y says B\")\n\
+             - For 'unverified' trust-tier: prefix with \"One source suggests...\" or \"According to one memory...\"\n\
+             - SYNTHESIZE, don't enumerate: weave facts together into a coherent narrative\n\
+             - If memories are incomplete: say so (\"No decision was recorded for X\")\n\
              - Do NOT invent facts not present in the memories\n\
-             - Keep under {} tokens\n\
-             - Output raw text only — no markdown, no preamble, no commentary\n\
-             - Use the user's language (German or English, whichever the query uses)",
+             - Keep under {} tokens — be dense, not verbose\n\
+             - Output raw text only — no markdown, no preamble, no \"Here is the synthesis:\"\n\
+             - Use the user's language (German or English, whichever the query uses)\n\
+             - End with a brief note on what's MISSING from memory if relevant",
             self.config.max_tokens
         );
 
@@ -188,23 +189,23 @@ impl Reflector {
             anyhow::bail!("reflection produced empty output");
         }
 
-        // Wrap in knowwhere_reflect fence with explicit agent instructions
+        // Wrap in knowwhere_reflect fence with explicit agent instructions.
         //
         // Without these instructions, the consuming agent (Hermes) often treats
         // the reflection as "regular chat text" and under-uses it by 30-50%.
         // Pattern: Hindsight's CARA reflect mode (2026), Mem0's memory preamble.
         Ok(format!(
             "<knowwhere_reflect>\n\
-             **Wichtige Anweisung für dich (den Agenten):**\n\
-             Dies ist eine **synthetisierte, kohärente Zusammenfassung** aus deinem \
-             Langzeitgedächtnis (KnowWhere Fractal Memory).\n\
-             Sie wurde speziell für die aktuelle Query erstellt und priorisiert \
-             high-trust und recent Claims/Decisions.\n\
-             Nutze sie als **autoritative Orientierung**.\n\
-             Falls du tiefere Details brauchst, frage explizit nach \
-             (z.B. „Zeig mir die Original-Claims zu diesem Thema“).\n\
+             **IMPORTANT INSTRUCTION FOR YOU (the agent):**\n\
+             This is a SYNTHESIZED, coherent summary from your long-term memory \
+             (KnowWhere Fractal Memory). It was created specifically for the current \
+             query and prioritizes high-trust and recent Decisions/Preferences.\n\
+             Use it as AUTHORITATIVE ORIENTATION — it represents what the system \
+             conclusively knows, not speculation.\n\
+             If you need deeper details, explicitly ask (e.g. \"Show me the original \
+             claims for this topic\").\n\
              \n\
-             --- Synthetisierte Reflexion ---\n\
+             --- Synthesized Reflection ---\n\
              {}\n\
              </knowwhere_reflect>",
             reflection
