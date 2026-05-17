@@ -27,7 +27,7 @@ use knowwhere_server::memory::{DreamMode, GovernancePolicy};
 use knowwhere_server::scheduler::{AuditScheduler, ConsolidationScheduler, SchedulerConfig};
 #[cfg(feature = "postgres-storage")]
 use knowwhere_server::storage::PostgresStore;
-use knowwhere_server::vlm::{VlmConfig, VlmWorker};
+use knowwhere_server::vlm::{VlmConfig, VlmWorker, VlmWorkerHandle};
 use lazy_limit::{init_rate_limiter, Duration, RuleConfig};
 use runtime::{init_embedding_provider, rate_limit_mode_from_env, RateLimitMode};
 
@@ -161,7 +161,7 @@ async fn run() -> anyhow::Result<()> {
 
     // -- VLM Background Worker (4-stage fallback: GPT-5-nano → GPT-4o-mini → Grok-4-fast → Ollama) --
     #[cfg(feature = "summarizer")]
-    let vlm_worker: Option<crate::vlm::VlmWorkerHandle>;
+    let vlm_worker: Option<VlmWorkerHandle>;
     #[cfg(feature = "summarizer")]
     let _vlm_join: Option<tokio::task::JoinHandle<()>>;
     #[cfg(feature = "summarizer")]
@@ -179,7 +179,7 @@ async fn run() -> anyhow::Result<()> {
         _vlm_join = j;
     }
     #[cfg(not(feature = "summarizer"))]
-    let vlm_worker: Option<knowwhere_server::vlm::VlmWorkerHandle> = None;
+    let vlm_worker: Option<VlmWorkerHandle> = None;
 
     // -- Dream Mode Background Schedulers --
     #[cfg(feature = "summarizer")]
@@ -253,6 +253,7 @@ async fn run() -> anyhow::Result<()> {
         .route("/store_session", post(routes::store_session))
         .route("/store_session_batch", post(routes::store_session_batch))
         .route("/store_external", post(routes::store_external))
+        .route("/memory/self_improve", post(routes::self_improve))
         .route("/retrieve/{id}", get(routes::retrieve))
         .route("/retrieve_fractal", post(routes::retrieve_fractal_safe))
         .route("/rerank", post(routes::rerank))

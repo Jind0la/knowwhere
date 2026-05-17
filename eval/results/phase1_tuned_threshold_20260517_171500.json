@@ -1,0 +1,43 @@
+{
+  "timestamp": "2026-05-17T17:15:00Z",
+  "run_id": 197,
+  "threshold_multiplier": 0.5,
+  "boost_range": "0.0-0.20",
+  "baseline_no_boost": {
+    "avg_top_score": 0.2072,
+    "avg_latency_ms": 54.1,
+    "relevance_rate": 1.0
+  },
+  "boosted_020": {
+    "avg_top_score": 0.3593,
+    "avg_latency_ms": 42.6,
+    "relevance_rate": 1.0
+  },
+  "delta": {
+    "score": 0.1521,
+    "score_pct": 73.4,
+    "latency_ms": -11.5
+  },
+  "selectivity": {
+    "queries_boosted_top_score": 14,
+    "queries_unchanged": 1,
+    "note": "Query 001 (highest natural score 0.4958) correctly NOT boosted — top result was clearly ahead of competitors by >0.10 threshold"
+  },
+  "per_query": [
+    {"id": "temporal-001", "no_boost": 0.4958, "boost": 0.4958, "delta": 0.0},
+    {"id": "temporal-002", "no_boost": 0.0583, "boost": 0.5400, "delta": 0.4817},
+    {"id": "temporal-003", "no_boost": 0.1667, "boost": 0.3429, "delta": 0.1762},
+    {"id": "temporal-004", "no_boost": 0.2024, "boost": 0.3690, "delta": 0.1666},
+    {"id": "temporal-005", "no_boost": 0.2833, "boost": 0.4217, "delta": 0.1384},
+    {"id": "temporal-006", "no_boost": 0.1667, "boost": 0.3000, "delta": 0.1333},
+    {"id": "temporal-007", "no_boost": 0.1667, "boost": 0.3000, "delta": 0.1333},
+    {"id": "temporal-008", "no_boost": 0.1667, "boost": 0.3111, "delta": 0.1444},
+    {"id": "temporal-009", "no_boost": 0.1667, "boost": 0.3313, "delta": 0.1646},
+    {"id": "temporal-010", "no_boost": 0.1667, "boost": 0.3524, "delta": 0.1857},
+    {"id": "temporal-011", "no_boost": 0.1964, "boost": 0.3036, "delta": 0.1072},
+    {"id": "temporal-012", "no_boost": 0.1250, "boost": 0.3143, "delta": 0.1893},
+    {"id": "temporal-013", "no_boost": 0.4141, "boost": 0.4164, "delta": 0.0023},
+    {"id": "temporal-014", "no_boost": 0.1667, "boost": 0.2909, "delta": 0.1242},
+    {"id": "temporal-015", "no_boost": 0.1667, "boost": 0.3000, "delta": 0.1333}
+  ]
+}

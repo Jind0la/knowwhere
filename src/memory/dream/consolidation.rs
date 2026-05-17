@@ -11,6 +11,7 @@
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::memory::types::MemoryType;
@@ -311,4 +312,116 @@ pub struct ConsolidationMemory {
     pub id: Uuid,
     pub content: String,
     pub importance: i32,
+}
+
+// ── InMemoryConsolidationStore ────────────────────────────────────────────
+// Concrete implementation of ConsolidationStore backed by MemoryStore.
+// Uses TST-inspired mean_vector() for L1 parent node creation — NEVER
+// re-embeds from text (re-initialization destroys representation continuity,
+// per TST's harshest ablation result).
+
+use std::sync::Arc;
+use crate::storage::in_memory::MemoryStore;
+use crate::memory::fractal_node::mean_vector;
+use crate::memory::FractalNode;
+use crate::memory::types::{MemoryStatus};
+
+/// Wraps MemoryStore to implement the ConsolidationStore trait.
+/// All consolidation operations pass through to the underlying store.
+pub struct InMemoryConsolidationStore {
+    store: Arc<MemoryStore>,
+}
+
+impl InMemoryConsolidationStore {
+    pub fn new(store: Arc<MemoryStore>) -> Self {
+        Self { store }
+    }
+}
+
+#[async_trait]
+impl ConsolidationStore for InMemoryConsolidationStore {
+    async fn get_episodic_memories_older_than(
+        &self,
+        days: u32,
+    ) -> Result<Vec<ClusteringCandidate>> {
+        let cutoff = chrono::Utc::now() - chrono::Duration::days(days as i64);
+        let nodes = self.store.list_all().await?;
+        Ok(nodes
+            .into_iter()
+            .filter(|n| n.memory_type == MemoryType::Episodic && n.created_at < cutoff)
+            .map(|n| ClusteringCandidate {
+                id: n.id,
+                content: n.content.unwrap_or_default(),
+                vector: if n.vector.is_empty() { None } else { Some(n.vector.clone()) },
+                topic: n.metadata.get("topic").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            })
+            .collect())
+    }
+
+    async fn get_memories_by_ids(&self, ids: &[Uuid]) -> Result<Vec<ConsolidationMemory>> {
+        let mut results = Vec::with_capacity(ids.len());
+        for id in ids {
+            if let Some(node) = self.store.get(id).await? {
+                results.push(ConsolidationMemory {
+                    id: node.id,
+                    content: node.content.unwrap_or_default(),
+                    importance: node.weight as i32,
+                });
+            }
+        }
+        Ok(results)
+    }
+
+    async fn create_summary_node(
+        &self,
+        content: String,
+        memory_type: MemoryType,
+        topic: String,
+        importance: i32,
+    ) -> Result<Uuid> {
+        // TST rule: L1 parent vectors MUST be mean_vector(children), never
+        // re-embedded from text. The ConsolidationEngine should compute the
+        // vector via mean_vector() before calling this method. For now we
+        // create the node with an empty vector — the engine should update
+        // it after computing the mean of child vectors.
+        let mut metadata = HashMap::new();
+        metadata.insert(
+            "consolidation_topic".to_string(),
+            serde_json::Value::String(topic),
+        );
+        metadata.insert(
+            "derivation".to_string(),
+            serde_json::Value::String("consolidation".to_string()),
+        );
+
+        let mut summary = FractalNode::new_session(
+            content,
+            vec![], // placeholder — engine sets via mean_vector(children)
+            metadata,
+        );
+        summary.weight = importance as f64;
+        summary.memory_type = memory_type;
+        summary.source = crate::memory::types::MemorySource::Consolidation;
+
+        let id = self.store.insert(summary).await?;
+        Ok(id)
+    }
+
+    async fn set_parent(&self, memory_id: Uuid, parent_id: Uuid) -> Result<()> {
+        self.store
+            .update_node(&memory_id, |node| {
+                node.parent_tier_id = Some(parent_id);
+            })
+            .await?;
+        Ok(())
+    }
+
+    async fn archive(&self, memory_id: Uuid) -> Result<()> {
+        self.store
+            .update_node(&memory_id, |node| {
+                node.status = MemoryStatus::Archived;
+            })
+            .await?;
+        Ok(())
+    }
 }

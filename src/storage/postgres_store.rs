@@ -209,6 +209,7 @@ impl PostgresStore {
                 expanded.push(ScoredNode {
                     id: child.id,
                     score: sim,
+                    distribution_scores: None,
                     debug: None,
                     node: child.clone(),
                 });
@@ -1317,6 +1318,7 @@ impl StorageBackend for PostgresStore {
             MemorySource::Import => "import",
             MemorySource::Manual => "manual",
             MemorySource::Consolidation => "consolidation",
+            MemorySource::AiSelfImprovement => "ai_self_improvement",
         };
         let source_id = None;
         let entities: Vec<String> = vec![];
@@ -1481,6 +1483,10 @@ impl StorageBackend for PostgresStore {
                     .unwrap_or(std::cmp::Ordering::Equal)
             });
             scored_nodes.truncate(query.top_k);
+            // Temporal recency boost
+            if let Some(boost) = query.recency_boost {
+                let _boosted = apply_temporal_boost_scored(&mut scored_nodes, boost);
+            }
             return Ok(scored_nodes);
         }
 
@@ -1511,6 +1517,11 @@ impl StorageBackend for PostgresStore {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
         scored_nodes.truncate(query.top_k);
+
+        // Temporal recency boost
+        if let Some(boost) = query.recency_boost {
+            let _boosted = apply_temporal_boost_scored(&mut scored_nodes, boost);
+        }
 
         Ok(scored_nodes)
     }
@@ -1580,6 +1591,7 @@ impl StorageBackend for PostgresStore {
                         expanded.push(ScoredNode {
                             id: parent.id,
                             score: parent_sim,
+                            distribution_scores: None,
                             debug: None,
                             node: parent.clone(),
                         });
@@ -1851,6 +1863,58 @@ fn rrf_fuse(vector_ids: &[Uuid], bm25_results: &[(Uuid, f32)], k: f32) -> Vec<(U
     let mut results: Vec<_> = scores.into_iter().collect();
     results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     results
+}
+
+/// Apply temporal recency boost to close-scoring ScoredNode results.
+///
+/// Same semantics as MemoryStore::apply_temporal_boost but operates on
+/// ScoredNode slices (used by PostgresStore).
+fn apply_temporal_boost_scored(results: &mut [ScoredNode], recency_boost: f32) -> usize {
+    let mut boosted = 0usize;
+    if results.is_empty() {
+        return boosted;
+    }
+    let newest = results.iter().map(|n| n.node.created_at).max();
+    let Some(newest) = newest else { return boosted };
+
+    let oldest = results
+        .iter()
+        .map(|n| n.node.created_at)
+        .min()
+        .unwrap_or(newest);
+    let time_range = (newest - oldest).num_seconds() as f32;
+    if time_range < 1.0 {
+        return boosted;
+    }
+
+    let max_score = results
+        .iter()
+        .map(|n| n.score)
+        .fold(f32::NEG_INFINITY, f32::max);
+    let closeness_threshold = recency_boost * 0.5;
+
+    for item in results.iter_mut() {
+        if (max_score - item.score).abs() <= closeness_threshold {
+            let age_seconds = (newest - item.node.created_at).num_seconds() as f32;
+            let recency_factor = 1.0 - (age_seconds / time_range).clamp(0.0, 1.0);
+            item.score += recency_boost * recency_factor;
+            boosted += 1;
+        }
+    }
+
+    results.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    tracing::info!(
+        boosted,
+        total = results.len(),
+        boost_factor = recency_boost,
+        time_range_s = time_range,
+        "temporal_boost_scored applied"
+    );
+    boosted
 }
 
 // =============================================================================

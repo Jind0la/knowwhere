@@ -1,0 +1,131 @@
+{
+  "label": "boost_0.2",
+  "boost": 0.2,
+  "timestamp": "2026-05-17T14:51:38.621585+00:00",
+  "queries_run": 15,
+  "errors": 0,
+  "avg_top_score": 0.3633,
+  "avg_latency_ms": 75.5,
+  "results": [
+    {
+      "id": "temporal-001",
+      "query": "What was the earliest decision Nimar made about the KnowWhere architecture?",
+      "type": "timeline_earliest",
+      "top_score": 0.47222227,
+      "num_results": 5,
+      "latency_ms": 273.4
+    },
+    {
+      "id": "temporal-002",
+      "query": "How did the embedding approach evolve from the first prototype to the current setup?",
+      "type": "preference_evolution",
+      "top_score": 0.52468085,
+      "num_results": 5,
+      "latency_ms": 70.5
+    },
+    {
+      "id": "temporal-003",
+      "query": "What was the most recent change to the consolidation scheduler?",
+      "type": "recent_change",
+      "top_score": 0.34285715,
+      "num_results": 5,
+      "latency_ms": 65.9
+    },
+    {
+      "id": "temporal-004",
+      "query": "What did Nimar prefer for responses in March 2026 vs May 2026?",
+      "type": "preference_drift",
+      "top_score": 0.36904764,
+      "num_results": 5,
+      "latency_ms": 58.3
+    },
+    {
+      "id": "temporal-005",
+      "query": "Which decisions were superseded and what replaced them?",
+      "type": "supersession_chain",
+      "top_score": 0.42166668,
+      "num_results": 5,
+      "latency_ms": 73.8
+    },
+    {
+      "id": "temporal-006",
+      "query": "What was the sequence of embedding model changes?",
+      "type": "timeline_sequence",
+      "top_score": 0.2909091,
+      "num_results": 5,
+      "latency_ms": 60.6
+    },
+    {
+      "id": "temporal-007",
+      "query": "What was the reasoning behind switching from Docker to native macOS?",
+      "type": "decision_rationale",
+      "top_score": 0.3,
+      "num_results": 5,
+      "latency_ms": 61.8
+    },
+    {
+      "id": "temporal-008",
+      "query": "When did KnowWhere first implement the Pointer-First architecture?",
+      "type": "timeline_milestone",
+      "top_score": 0.33630952,
+      "num_results": 5,
+      "latency_ms": 58.1
+    },
+    {
+      "id": "temporal-009",
+      "query": "How has the approach to evaluation benchmarks changed over time?",
+      "type": "preference_evolution",
+      "top_score": 0.33131313,
+      "num_results": 5,
+      "latency_ms": 64.3
+    },
+    {
+      "id": "temporal-010",
+      "query": "What was being worked on in the last week of April 2026?",
+      "type": "temporal_window",
+      "top_score": 0.35238096,
+      "num_results": 5,
+      "latency_ms": 49.6
+    },
+    {
+      "id": "temporal-011",
+      "query": "When did the fractal memory approach first appear in the codebase?",
+      "type": "timeline_origin",
+      "top_score": 0.36666667,
+      "num_results": 5,
+      "latency_ms": 63.5
+    },
+    {
+      "id": "temporal-012",
+      "query": "What preference changes happened between sessions 20-40?",
+      "type": "session_window",
+      "top_score": 0.31433332,
+      "num_results": 5,
+      "latency_ms": 48.6
+    },
+    {
+      "id": "temporal-013",
+      "query": "Which architectural decisions were made after the Docker migration was abandoned?",
+      "type": "post_event_timeline",
+      "top_score": 0.4273129,
+      "num_results": 5,
+      "latency_ms": 57.4
+    },
+    {
+      "id": "temporal-014",
+      "query": "How did Nimar's preference for embedding backends change from initial prototype to now?",
+      "type": "preference_trajectory",
+      "top_score": 0.3,
+      "num_results": 5,
+      "latency_ms": 69.0
+    },
+    {
+      "id": "temporal-015",
+      "query": "What was the consolidation strategy before the VLM approach was introduced?",
+      "type": "before_after",
+      "top_score": 0.3,
+      "num_results": 5,
+      "latency_ms": 58.2
+    }
+  ]
+}

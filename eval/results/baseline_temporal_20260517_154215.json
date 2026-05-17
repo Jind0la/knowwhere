@@ -1,0 +1,317 @@
+{
+  "summary": {
+    "dataset": "temporal",
+    "total_questions": 15,
+    "non_empty_results": 15,
+    "avg_hits_returned": 10.0,
+    "avg_top_score": 0.2149,
+    "avg_latency_ms": 93.2,
+    "relevant_above_threshold": 14,
+    "relevance_rate": 0.9333,
+    "node_count": 2405,
+    "top_k": 10,
+    "timestamp": "2026-05-17T13:42:15.331477+00:00"
+  },
+  "results": [
+    {
+      "question_id": "temporal-001",
+      "query": "What was the earliest decision Nimar made about the KnowWhere architecture?",
+      "hits_returned": 10,
+      "top_scores": [
+        0.49583337,
+        0.43174607,
+        0.28333336
+      ],
+      "top_memory_types": [
+        "decision",
+        "decision",
+        "decision"
+      ],
+      "top_content_preview": [
+        "Kanoa Manu made a pivotal decision to explore his artistry in a more personal and independent settin",
+        "Kanoa Manu made a pivotal decision to explore his artistry in a more personal and independent settin"
+      ],
+      "latency_ms": 297.4
+    },
+    {
+      "question_id": "temporal-002",
+      "query": "How did the embedding approach evolve from the first prototype to the current setup?",
+      "hits_returned": 10,
+      "top_scores": [
+        0.17999999,
+        0.058333334,
+        0.058333334
+      ],
+      "top_memory_types": [
+        "semantic",
+        "decision",
+        "decision"
+      ],
+      "top_content_preview": [
+        "[ASSISTANT] Assistant: That\u2019s an incredible initiative! Mentoring can be a great way to make a diffe",
+        "Arjun Patel discovered that the structured environment of painting classes imposed rigidity that sti"
+      ],
+      "latency_ms": 75.7
+    },
+    {
+      "question_id": "temporal-003",
+      "query": "What was the most recent change to the consolidation scheduler?",
+      "hits_returned": 10,
+      "top_scores": [
+        0.16666667,
+        0.16666667,
+        0.14285715
+      ],
+      "top_memory_types": [
+        "decision",
+        "decision",
+        "decision"
+      ],
+      "top_content_preview": [
+        "Arjun Patel found the recent storytelling event not conducive to expressing his most personal feelin",
+        "2018 realization pushed Kanoa Manu to other music realms."
+      ],
+      "latency_ms": 78.1
+    },
+    {
+      "question_id": "temporal-004",
+      "query": "What did Nimar prefer for responses in March 2026 vs May 2026?",
+      "hits_returned": 10,
+      "top_scores": [
+        0.18285716,
+        0.16666667,
+        0.16666667
+      ],
+      "top_memory_types": [
+        "decision",
+        "decision",
+        "decision"
+      ],
+      "top_content_preview": [
+        "Alex Martinez prefers making personalized recommendations during discussions.",
+        "Alex Martinez prefers making personalized recommendations during discussions."
+      ],
+      "latency_ms": 78.2
+    },
+    {
+      "question_id": "temporal-005",
+      "query": "Which decisions were superseded and what replaced them?",
+      "hits_returned": 10,
+      "top_scores": [
+        0.28333336,
+        0.24285716,
+        0.2125
+      ],
+      "top_memory_types": [
+        "decision",
+        "decision",
+        "decision"
+      ],
+      "top_content_preview": [
+        "The decision comes from a deep-rooted desire to express thoughts and feelings that resonate with per",
+        "The decision comes from a deep-rooted desire to express thoughts and feelings that resonate with per"
+      ],
+      "latency_ms": 75.9
+    },
+    {
+      "question_id": "temporal-006",
+      "query": "What was the sequence of embedding model changes?",
+      "hits_returned": 10,
+      "top_scores": [
+        0.16666667,
+        0.16666667,
+        0.14285715
+      ],
+      "top_memory_types": [
+        "decision",
+        "semantic",
+        "decision"
+      ],
+      "top_content_preview": [
+        "2018 realization pushed Kanoa Manu to other music realms.",
+        "[USER] User: It's been an interesting month since we last talked, with quite a few changes in my int"
+      ],
+      "latency_ms": 72.7
+    },
+    {
+      "question_id": "temporal-007",
+      "query": "What was the reasoning behind switching from Docker to native macOS?",
+      "hits_returned": 10,
+      "top_scores": [
+        0.16666667,
+        0.16666667,
+        0.14285715
+      ],
+      "top_memory_types": [
+        "decision",
+        "semantic",
+        "decision"
+      ],
+      "top_content_preview": [
+        "It was a tough decision for Kanoa Manu to drop out because he really wanted to dive deeper into audi",
+        "[ASSISTANT] Assistant: That\u2019s a bold move! Sometimes a bit of freedom can lead to the best adventure"
+      ],
+      "latency_ms": 74.5
+    },
+    {
+      "question_id": "temporal-008",
+      "query": "When did KnowWhere first implement the Pointer-First architecture?",
+      "hits_returned": 10,
+      "top_scores": [
+        0.16666667,
+        0.16666667,
+        0.14285715
+      ],
+      "top_memory_types": [
+        "decision",
+        "decision",
+        "decision"
+      ],
+      "top_content_preview": [
+        "Kanoa Manu's project aims to create a fusion of electronic and traditional music.",
+        "Alex Martinez is inspired by the first edition to expand her collection with other classic works, fi"
+      ],
+      "latency_ms": 74.5
+    },
+    {
+      "question_id": "temporal-009",
+      "query": "How has the approach to evaluation benchmarks changed over time?",
+      "hits_returned": 10,
+      "top_scores": [
+        0.16666667,
+        0.16666667,
+        0.14285715
+      ],
+      "top_memory_types": [
+        "decision",
+        "semantic",
+        "decision"
+      ],
+      "top_content_preview": [
+        "Album reviewing did not stick feeling unproductive for Kanoa Manu.",
+        "[ASSISTANT] Assistant: That's excellent news! It\u2019s great to learn how to make data analysis less str"
+      ],
+      "latency_ms": 82.4
+    },
+    {
+      "question_id": "temporal-010",
+      "query": "What was being worked on in the last week of April 2026?",
+      "hits_returned": 10,
+      "top_scores": [
+        0.16666667,
+        0.16666667,
+        0.14285715
+      ],
+      "top_memory_types": [
+        "decision",
+        "decision",
+        "decision"
+      ],
+      "top_content_preview": [
+        "Arjun Patel did not find the collaboration with the musician very fulfilling because of a series of ",
+        "Alex Martinez is working on a variety of goodies including tote bags and more bookmarks with the art"
+      ],
+      "latency_ms": 85.0
+    },
+    {
+      "question_id": "temporal-011",
+      "query": "When did the fractal memory approach first appear in the codebase?",
+      "hits_returned": 10,
+      "top_scores": [
+        0.20833334,
+        0.18803419,
+        0.16666667
+      ],
+      "top_memory_types": [
+        "decision",
+        "decision",
+        "decision"
+      ],
+      "top_content_preview": [
+        "Alex Martinez is inspired by the first edition to expand her collection with other classic works, fi",
+        "Alex Martinez is inspired by the first edition to expand her collection with other classic works, fi"
+      ],
+      "latency_ms": 75.0
+    },
+    {
+      "question_id": "temporal-012",
+      "query": "What preference changes happened between sessions 20-40?",
+      "hits_returned": 10,
+      "top_scores": [
+        0.125,
+        0.125,
+        0.125
+      ],
+      "top_memory_types": [
+        "decision",
+        "decision",
+        "semantic"
+      ],
+      "top_content_preview": [
+        "Kanoa Manu uses writing to process what has happened in his personal life and connect with others ex",
+        "Alex Martinez prefers making personalized recommendations during discussions."
+      ],
+      "latency_ms": 84.5
+    },
+    {
+      "question_id": "temporal-013",
+      "query": "Which architectural decisions were made after the Docker migration was abandoned?",
+      "hits_returned": 10,
+      "top_scores": [
+        0.4141026,
+        0.3845238,
+        0.30694446
+      ],
+      "top_memory_types": [
+        "decision",
+        "decision",
+        "decision"
+      ],
+      "top_content_preview": [
+        "Kanoa Manu made a pivotal decision to explore his artistry in a more personal and independent settin",
+        "Kanoa Manu made a pivotal decision to explore his artistry in a more personal and independent settin"
+      ],
+      "latency_ms": 77.3
+    },
+    {
+      "question_id": "temporal-014",
+      "query": "How did Nimar's preference for embedding backends change from initial prototype to now?",
+      "hits_returned": 10,
+      "top_scores": [
+        0.16666667,
+        0.14285715,
+        0.125
+      ],
+      "top_memory_types": [
+        "semantic",
+        "semantic",
+        "decision"
+      ],
+      "top_content_preview": [
+        "[USER] User: It's been an interesting month since we last talked, with quite a few changes in my int",
+        "[USER] User: It's been an interesting month since we last talked, with quite a few changes in my int"
+      ],
+      "latency_ms": 87.8
+    },
+    {
+      "question_id": "temporal-015",
+      "query": "What was the consolidation strategy before the VLM approach was introduced?",
+      "hits_returned": 10,
+      "top_scores": [
+        0.16666667,
+        0.16666667,
+        0.14285715
+      ],
+      "top_memory_types": [
+        "decision",
+        "decision",
+        "decision"
+      ],
+      "top_content_preview": [
+        "Kanoa Manu dissected the album's composition and production techniques in the review.",
+        "The research has introduced Kanoa Manu to a wide range of cultural practices and their connections t"
+      ],
+      "latency_ms": 78.8
+    }
+  ]
+}

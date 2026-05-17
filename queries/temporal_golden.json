@@ -1,0 +1,127 @@
+{
+  "version": "0.1.0",
+  "description": "Golden temporal queries for evaluating preference-evolution and timeline-based reasoning in KnowWhere",
+  "created": "2026-05-17",
+  "queries": [
+    {
+      "id": "temporal-001",
+      "query": "What was the earliest decision Nimar made about the KnowWhere architecture?",
+      "type": "timeline_earliest",
+      "memory_types": ["decision"],
+      "rationale": "Tests retrieval of oldest architectural decision from temporal sequence",
+      "expected_behavior": "Returns the earliest decision by created_at, demonstrating chronological ordering"
+    },
+    {
+      "id": "temporal-002",
+      "query": "How did the embedding approach evolve from the first prototype to the current setup?",
+      "type": "preference_evolution",
+      "memory_types": ["decision", "preference", "semantic"],
+      "rationale": "Traces the full evolution chain of embedding decisions",
+      "expected_behavior": "Returns decisions in temporal order showing progression: Docker/Qdrant → native macOS → Ollama/snowflake-arctic-embed2"
+    },
+    {
+      "id": "temporal-003",
+      "query": "What was the most recent change to the consolidation scheduler?",
+      "type": "recent_change",
+      "memory_types": ["decision", "procedural"],
+      "rationale": "Tests recency-weighted retrieval for operational changes",
+      "expected_behavior": "Returns the most recent decision or change related to ConsolidationScheduler"
+    },
+    {
+      "id": "temporal-004",
+      "query": "What did Nimar prefer for responses in March 2026 vs May 2026?",
+      "type": "preference_drift",
+      "memory_types": ["preference", "episodic"],
+      "rationale": "Detects preference changes over a multi-month window",
+      "expected_behavior": "Returns preferences from both time periods, showing any drift"
+    },
+    {
+      "id": "temporal-005",
+      "query": "Which decisions were superseded and what replaced them?",
+      "type": "supersession_chain",
+      "memory_types": ["decision"],
+      "rationale": "Tests the superseded_by chain for decision evolution tracking",
+      "expected_behavior": "Returns decision pairs showing old→new replacement links"
+    },
+    {
+      "id": "temporal-006",
+      "query": "What was the sequence of embedding model changes?",
+      "type": "timeline_sequence",
+      "memory_types": ["decision", "semantic"],
+      "rationale": "Tests ability to reconstruct a chronological sequence of changes",
+      "expected_behavior": "Returns embedding-related decisions in temporal order"
+    },
+    {
+      "id": "temporal-007",
+      "query": "What was the reasoning behind switching from Docker to native macOS?",
+      "type": "decision_rationale",
+      "memory_types": ["decision"],
+      "rationale": "Tests retrieval of decision provenance and rationale at a specific point in time",
+      "expected_behavior": "Returns the specific decision with latency benchmarks (5.5s→0.2s)"
+    },
+    {
+      "id": "temporal-008",
+      "query": "When did KnowWhere first implement the Pointer-First architecture?",
+      "type": "timeline_milestone",
+      "memory_types": ["decision", "semantic"],
+      "rationale": "Tests temporal localization of architectural milestones",
+      "expected_behavior": "Returns the earliest Pointer-First related memory with its timestamp"
+    },
+    {
+      "id": "temporal-009",
+      "query": "How has the approach to evaluation benchmarks changed over time?",
+      "type": "preference_evolution",
+      "memory_types": ["decision", "episodic", "preference"],
+      "rationale": "Traces how benchmarking methodology evolved",
+      "expected_behavior": "Returns benchmark-related decisions and preferences chronologically"
+    },
+    {
+      "id": "temporal-010",
+      "query": "What was being worked on in the last week of April 2026?",
+      "type": "temporal_window",
+      "memory_types": ["episodic", "decision"],
+      "rationale": "Tests windowed temporal retrieval for a specific time period",
+      "expected_behavior": "Returns memories from late April 2026 timeframe"
+    },
+    {
+      "id": "temporal-011",
+      "query": "When did the fractal memory approach first appear in the codebase?",
+      "type": "timeline_origin",
+      "memory_types": ["decision", "semantic"],
+      "rationale": "Tests retrieval of the origin point for core architectural concepts",
+      "expected_behavior": "Returns the earliest reference to fractal memory with timestamp"
+    },
+    {
+      "id": "temporal-012",
+      "query": "What preference changes happened between sessions 20-40?",
+      "type": "session_window",
+      "memory_types": ["preference", "episodic"],
+      "rationale": "Tests turn_index-based temporal filtering within a session range",
+      "expected_behavior": "Returns preferences from the specified session window"
+    },
+    {
+      "id": "temporal-013",
+      "query": "Which architectural decisions were made after the Docker migration was abandoned?",
+      "type": "post_event_timeline",
+      "memory_types": ["decision"],
+      "rationale": "Tests temporal filtering relative to a known event",
+      "expected_behavior": "Returns decisions with created_at after the Docker→native macOS switch"
+    },
+    {
+      "id": "temporal-014",
+      "query": "How did Nimar's preference for embedding backends change from initial prototype to now?",
+      "type": "preference_trajectory",
+      "memory_types": ["preference", "decision"],
+      "rationale": "Full trajectory of embedding preferences across all versions",
+      "expected_behavior": "Returns embedding-related preferences in temporal order"
+    },
+    {
+      "id": "temporal-015",
+      "query": "What was the consolidation strategy before the VLM approach was introduced?",
+      "type": "before_after",
+      "memory_types": ["decision", "procedural"],
+      "rationale": "Tests ability to retrieve state before a specific change point",
+      "expected_behavior": "Returns consolidation-related memories predating VLM integration"
+    }
+  ]
+}

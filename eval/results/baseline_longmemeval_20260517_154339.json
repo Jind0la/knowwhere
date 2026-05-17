@@ -1,0 +1,417 @@
+{
+  "summary": {
+    "dataset": "longmemeval",
+    "total_questions": 20,
+    "non_empty_results": 20,
+    "avg_hits_returned": 10.0,
+    "avg_top_score": 0.1972,
+    "avg_latency_ms": 112.2,
+    "relevant_above_threshold": 20,
+    "relevance_rate": 1.0,
+    "node_count": 2405,
+    "top_k": 10,
+    "timestamp": "2026-05-17T13:43:39.930362+00:00"
+  },
+  "results": [
+    {
+      "question_id": "e47becba",
+      "query": "What degree did I graduate with?",
+      "hits_returned": 10,
+      "top_scores": [
+        0.16666667,
+        0.16666667,
+        0.14285715
+      ],
+      "top_memory_types": [
+        "decision",
+        "semantic",
+        "decision"
+      ],
+      "top_content_preview": [
+        "Alex Martinez has extensive experience that has made her a valued mentor for emerging professionals.",
+        "[ASSISTANT] Assistant: It's all about finding your niche! When you focus on what truly resonates wit"
+      ],
+      "latency_ms": 298.5
+    },
+    {
+      "question_id": "118b2229",
+      "query": "How long is my daily commute to work?",
+      "hits_returned": 10,
+      "top_scores": [
+        0.16666667,
+        0.16666667,
+        0.14285715
+      ],
+      "top_memory_types": [
+        "decision",
+        "semantic",
+        "decision"
+      ],
+      "top_content_preview": [
+        "Alex Martinez felt like having a personal shopper saving time and energy.",
+        "[USER] User: Hi, I need help converting this email to better match my writing style as a college ath"
+      ],
+      "latency_ms": 111.2
+    },
+    {
+      "question_id": "51a45a95",
+      "query": "Where did I redeem a $5 coupon on coffee creamer?",
+      "hits_returned": 10,
+      "top_scores": [
+        0.16666667,
+        0.16666667,
+        0.14285715
+      ],
+      "top_memory_types": [
+        "decision",
+        "semantic",
+        "decision"
+      ],
+      "top_content_preview": [
+        "Alex Martinez felt the subscription box like a gamble every month never sure what she would get.",
+        "[USER] User: I started a collection of local travel brochures from recent trips, as I found that phy"
+      ],
+      "latency_ms": 95.8
+    },
+    {
+      "question_id": "58bf7951",
+      "query": "What play did I attend at the local community theater?",
+      "hits_returned": 10,
+      "top_scores": [
+        0.16666667,
+        0.16666667,
+        0.14285715
+      ],
+      "top_memory_types": [
+        "decision",
+        "semantic",
+        "decision"
+      ],
+      "top_content_preview": [
+        "Kanoa Manu attended a local electronic music festival that featured Pacific Islander artists recentl",
+        "[ASSISTANT] Assistant: It's all about finding your niche! When you focus on what truly resonates wit"
+      ],
+      "latency_ms": 112.1
+    },
+    {
+      "question_id": "1e043500",
+      "query": "What is the name of the playlist I created on Spotify?",
+      "hits_returned": 10,
+      "top_scores": [
+        0.30952382,
+        0.26785713,
+        0.17763159
+      ],
+      "top_memory_types": [
+        "decision",
+        "decision",
+        "decision"
+      ],
+      "top_content_preview": [
+        "Kanoa Manu created the playlist to highlight voices that often go unheard.",
+        "Kanoa Manu created the playlist to highlight voices that often go unheard."
+      ],
+      "latency_ms": 114.0
+    },
+    {
+      "question_id": "c5e8278d",
+      "query": "What was my last name before I changed it?",
+      "hits_returned": 10,
+      "top_scores": [
+        0.16666667,
+        0.16666667,
+        0.14285715
+      ],
+      "top_memory_types": [
+        "decision",
+        "semantic",
+        "decision"
+      ],
+      "top_content_preview": [
+        "Arjun Patel was born in 1981.",
+        "[USER] User: I attempted to weave home automation into my daily life, but I quickly realized that th"
+      ],
+      "latency_ms": 107.8
+    },
+    {
+      "question_id": "6ade9755",
+      "query": "Where do I take yoga classes?",
+      "hits_returned": 10,
+      "top_scores": [
+        0.30952382,
+        0.30952382,
+        0.19090909
+      ],
+      "top_memory_types": [
+        "decision",
+        "decision",
+        "decision"
+      ],
+      "top_content_preview": [
+        "Arjun Patel has taken up some classes focusing on various hobbies and interests ranging from cooking",
+        "Arjun Patel has taken up some classes focusing on various hobbies and interests ranging from cooking"
+      ],
+      "latency_ms": 113.3
+    },
+    {
+      "question_id": "6f9b354f",
+      "query": "What color did I repaint my bedroom walls?",
+      "hits_returned": 10,
+      "top_scores": [
+        0.16666667,
+        0.16666667,
+        0.14285715
+      ],
+      "top_memory_types": [
+        "decision",
+        "semantic",
+        "decision"
+      ],
+      "top_content_preview": [
+        "Arjun Patel has started painting again from home using online tutorials.",
+        "[USER] User: I attempted to weave home automation into my daily life, but I quickly realized that th"
+      ],
+      "latency_ms": 102.7
+    },
+    {
+      "question_id": "58ef2f1c",
+      "query": "When did I volunteer at the local animal shelter's fundraising dinner?",
+      "hits_returned": 10,
+      "top_scores": [
+        0.16666667,
+        0.16666667,
+        0.14285715
+      ],
+      "top_memory_types": [
+        "decision",
+        "decision",
+        "decision"
+      ],
+      "top_content_preview": [
+        "Alex Martinez joined the charity run because she thought it would be fulfilling especially consideri",
+        "Arjun Patel enjoyed sharing stories about favorite recipes at the potluck dinner."
+      ],
+      "latency_ms": 96.2
+    },
+    {
+      "question_id": "f8c5f88b",
+      "query": "Where did I buy my new tennis racket from?",
+      "hits_returned": 10,
+      "top_scores": [
+        0.16666667,
+        0.16666667,
+        0.14285715
+      ],
+      "top_memory_types": [
+        "decision",
+        "decision",
+        "decision"
+      ],
+      "top_content_preview": [
+        "The competitive atmosphere at the tennis clinic really took away from the enjoyment of the sport for",
+        "Alex Martinez had been eyeing the products she bought for a while."
+      ],
+      "latency_ms": 99.6
+    },
+    {
+      "question_id": "5d3d2817",
+      "query": "What was my previous occupation?",
+      "hits_returned": 10,
+      "top_scores": [
+        0.16666667,
+        0.16666667,
+        0.14285715
+      ],
+      "top_memory_types": [
+        "decision",
+        "semantic",
+        "decision"
+      ],
+      "top_content_preview": [
+        "Alex Martinez is a seasoned industry professional.",
+        "[USER] User: I attempted to weave home automation into my daily life, but I quickly realized that th"
+      ],
+      "latency_ms": 95.0
+    },
+    {
+      "question_id": "7527f7e2",
+      "query": "How much did I spend on a designer handbag?",
+      "hits_returned": 10,
+      "top_scores": [
+        0.16666667,
+        0.16666667,
+        0.16025642
+      ],
+      "top_memory_types": [
+        "decision",
+        "decision",
+        "semantic"
+      ],
+      "top_content_preview": [
+        "Alex Martinez is working on a variety of goodies including tote bags and more bookmarks with the art",
+        "After realizing how much she missed discussing books with others, especially after spending so much "
+      ],
+      "latency_ms": 106.1
+    },
+    {
+      "question_id": "c960da58",
+      "query": "How many playlists do I have on Spotify?",
+      "hits_returned": 10,
+      "top_scores": [
+        0.16666667,
+        0.16666667,
+        0.14285715
+      ],
+      "top_memory_types": [
+        "decision",
+        "semantic",
+        "decision"
+      ],
+      "top_content_preview": [
+        "Creating playlists always brings Arjun Patel joy.",
+        "[ASSISTANT] Assistant: It\u2019s truly wonderful to hear how your confidence is blossoming through such c"
+      ],
+      "latency_ms": 98.1
+    },
+    {
+      "question_id": "3b6f954b",
+      "query": "Where did I attend for my study abroad program?",
+      "hits_returned": 10,
+      "top_scores": [
+        0.25757575,
+        0.24285716,
+        0.17045455
+      ],
+      "top_memory_types": [
+        "semantic",
+        "semantic",
+        "decision"
+      ],
+      "top_content_preview": [
+        "[ASSISTANT] Assistant: That\u2019s an incredible initiative! Mentoring can be a great way to make a diffe",
+        "[ASSISTANT] Assistant: That\u2019s an incredible initiative! Mentoring can be a great way to make a diffe"
+      ],
+      "latency_ms": 98.1
+    },
+    {
+      "question_id": "726462e0",
+      "query": "What was the discount I got on my first purchase from the new clothing brand?",
+      "hits_returned": 10,
+      "top_scores": [
+        0.16666667,
+        0.16666667,
+        0.14285715
+      ],
+      "top_memory_types": [
+        "decision",
+        "semantic",
+        "decision"
+      ],
+      "top_content_preview": [
+        "Alex Martinez bought several items at a great discount during the flash sale.",
+        "[USER] User: I really got into browsing fashion websites recently. It's fascinating to see how fashi"
+      ],
+      "latency_ms": 98.1
+    },
+    {
+      "question_id": "94f70d80",
+      "query": "How long did it take me to assemble the IKEA bookshelf?",
+      "hits_returned": 10,
+      "top_scores": [
+        0.16666667,
+        0.16666667,
+        0.14285715
+      ],
+      "top_memory_types": [
+        "decision",
+        "semantic",
+        "decision"
+      ],
+      "top_content_preview": [
+        "Arjun Patel longs for the days when the book club simply shared favorite passages, reflected on char",
+        "[USER] User: I also enrolled in a wine and poetry night that combines tasting and creativity. I redi"
+      ],
+      "latency_ms": 107.1
+    },
+    {
+      "question_id": "66f24dbb",
+      "query": "What did I buy for my sister's birthday gift?",
+      "hits_returned": 10,
+      "top_scores": [
+        0.33333334,
+        0.26785713,
+        0.14285715
+      ],
+      "top_memory_types": [
+        "decision",
+        "decision",
+        "decision"
+      ],
+      "top_content_preview": [
+        "Alex Martinez created a wishlist that includes birthday gifts for friends on a shopping platform.",
+        "Alex Martinez included unique gadgets, funky accessories, and experiences like concert tickets on th"
+      ],
+      "latency_ms": 93.4
+    },
+    {
+      "question_id": "ad7109d1",
+      "query": "What speed is my new internet plan?",
+      "hits_returned": 10,
+      "top_scores": [
+        0.16666667,
+        0.16666667,
+        0.14285715
+      ],
+      "top_memory_types": [
+        "semantic",
+        "semantic",
+        "semantic"
+      ],
+      "top_content_preview": [
+        "[ASSISTANT] Assistant: It\u2019s easy to accumulate so much paper, especially when it comes to travel res",
+        "[ASSISTANT] Assistant: Volunteering is indeed a wonderful way to contribute while learning from othe"
+      ],
+      "latency_ms": 102.6
+    },
+    {
+      "question_id": "af8d2e46",
+      "query": "How many shirts did I pack for my 5-day trip to Costa Rica?",
+      "hits_returned": 10,
+      "top_scores": [
+        0.23333335,
+        0.20535715,
+        0.16666667
+      ],
+      "top_memory_types": [
+        "semantic",
+        "semantic",
+        "semantic"
+      ],
+      "top_content_preview": [
+        "[USER] User: It really is! But I attempted to plan a week-long road trip for the fall and found the ",
+        "[USER] User: It really is! But I attempted to plan a week-long road trip for the fall and found the "
+      ],
+      "latency_ms": 102.7
+    },
+    {
+      "question_id": "dccbc061",
+      "query": "What was my previous stance on spirituality?",
+      "hits_returned": 10,
+      "top_scores": [
+        0.16666667,
+        0.16666667,
+        0.14285715
+      ],
+      "top_memory_types": [
+        "decision",
+        "semantic",
+        "decision"
+      ],
+      "top_content_preview": [
+        "Kanoa Manu believes his time and energy are precious and should be spent on pursuits that bring prof",
+        "[USER] User: I've realized the value of negotiation skills and mediation processes through practical"
+      ],
+      "latency_ms": 91.1
+    }
+  ]
+}

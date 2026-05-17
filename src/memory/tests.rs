@@ -563,7 +563,7 @@ mod tests {
 
         let query_vec = vec![0.5, 0.5, 0.5, 0.5];
         let results = store
-            .hybrid_retrieve(Some("Frigate Haustuer"), &query_vec, 5, 0, None)
+            .hybrid_retrieve(Some("Frigate Haustuer"), &query_vec, 5, 0, None, None)
             .await;
 
         assert!(!results.is_empty());
@@ -595,9 +595,9 @@ mod tests {
 
         let query_vec = vec![1.0, 0.0, 0.0, 0.0];
         #[cfg(feature = "postgres-storage")]
-        let results = store.hybrid_retrieve(None, &query_vec, 2, 0, None).await;
+        let results = store.hybrid_retrieve(None, &query_vec, 2, 0, None, None).await;
         #[cfg(not(feature = "postgres-storage"))]
-        let results = store.hybrid_retrieve(None, &query_vec, 2, 0).await;
+        let results = store.hybrid_retrieve(None, &query_vec, 2, 0, None).await;
 
         assert!(!results.is_empty());
         assert_eq!(
@@ -605,5 +605,43 @@ mod tests {
             "without query_text, pure vector search should work"
         );
         assert!(results[0].0 > 0.0, "score should be positive");
+    }
+
+    #[test]
+    fn truncate_vector_matryoshka() {
+        use crate::memory::fractal_node::truncate_vector;
+        let v = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let t = truncate_vector(&v, 3).unwrap();
+        assert_eq!(t, vec![1.0, 2.0, 3.0]);
+        assert!(truncate_vector(&v, 10).is_none());
+    }
+
+    #[test]
+    fn mean_vector_bag_of_claims() {
+        use crate::memory::fractal_node::mean_vector;
+        let a = vec![1.0, 2.0, 3.0];
+        let b = vec![3.0, 2.0, 1.0];
+        let m = mean_vector(&[&a, &b]).unwrap();
+        assert_eq!(m, vec![2.0, 2.0, 2.0]);
+        // Empty
+        assert!(mean_vector(&[]).is_none());
+        // Mismatched dims
+        assert!(mean_vector(&[&a, &vec![1.0]]).is_none());
+    }
+
+    #[test]
+    fn matryoshka_continuity_preserved() {
+        use crate::memory::fractal_node::{matryoshka_continuity, mean_vector};
+        // Simulate L0 children and their L1 parent via mean
+        let child_a = vec![1.0, 0.5, 0.2, 0.1, 0.05, 0.0, 0.0, 0.0];
+        let child_b = vec![0.8, 0.6, 0.3, 0.15, 0.0, 0.0, 0.0, 0.0];
+        let parent = mean_vector(&[&child_a, &child_b]).unwrap();
+
+        // 4d truncation should approximate full similarity
+        let (full, trunc) = matryoshka_continuity(&parent, &child_a, 4).unwrap();
+        assert!(full > 0.9, "parent-child full cos_sim should be high: {full}");
+        // Truncated sim should be within 10% of full sim
+        let delta = (full - trunc).abs();
+        assert!(delta < 0.15, "matryoshka continuity broken: full={full:.3} trunc={trunc:.3} delta={delta:.3}");
     }
 }

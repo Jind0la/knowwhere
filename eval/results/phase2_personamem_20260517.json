@@ -1,0 +1,416 @@
+{
+  "summary": {
+    "dataset": "personamem",
+    "total_questions": 20,
+    "non_empty_results": 20,
+    "avg_hits_returned": 10.0,
+    "avg_top_score": 0.2227,
+    "avg_latency_ms": 82.4,
+    "node_count": 2405,
+    "top_k": 10,
+    "timestamp": "2026-05-17T15:51:52.864185+00:00",
+    "phase": "phase2_nomic_embed_text"
+  },
+  "results": [
+    {
+      "question_id": "acd74206-37dc-4756-94a8-b99a395d9a21",
+      "query": "I recently attended an event where there was a unique blend of modern beats with Pacific sounds.",
+      "hits_returned": 10,
+      "top_scores": [
+        0.26666668,
+        0.26666668,
+        0.2361111
+      ],
+      "top_memory_types": [
+        "decision",
+        "decision",
+        "semantic"
+      ],
+      "latency_ms": 377.4,
+      "top_content_preview": [
+        "Kanoa Manu collaborated with a local musician to blend traditional Pacific sound",
+        "Kanoa Manu found delight in seeing how traditional Pacific Islander sounds merge"
+      ]
+    },
+    {
+      "question_id": "f546a74f-54de-40d0-9d88-8b0e30467d7b",
+      "query": "I'm planning a weekend getaway and want to try something creatively fulfilling. What would you suggest?",
+      "hits_returned": 10,
+      "top_scores": [
+        0.25,
+        0.21978024,
+        0.16666667
+      ],
+      "top_memory_types": [
+        "decision",
+        "decision",
+        "decision"
+      ],
+      "latency_ms": 55.9,
+      "top_content_preview": [
+        "Arjun Patel went on a weekend getaway to a romance-themed resort.",
+        "Arjun Patel went on a weekend getaway to a romance-themed resort."
+      ]
+    },
+    {
+      "question_id": "b3588797-acdf-40d3-bcc5-951f81896f95",
+      "query": "How can I find a more fulfilling way to express my love for music?",
+      "hits_returned": 10,
+      "top_scores": [
+        0.16666667,
+        0.16666667,
+        0.14285715
+      ],
+      "top_memory_types": [
+        "decision",
+        "semantic",
+        "decision"
+      ],
+      "latency_ms": 58.6,
+      "top_content_preview": [
+        "Kanoa Manu realized his passion for music needed to be expressed in a more perso",
+        "[USER] User: I joined a local bar's music trivia night, and I was surprised at h"
+      ]
+    },
+    {
+      "question_id": "5370f186-0028-41f4-b436-c48575899fca",
+      "query": "I'm exploring new creative outlets and would love some suggestions. Any ideas on activities that can capture emotions and ideas effectively?",
+      "hits_returned": 10,
+      "top_scores": [
+        0.16666667,
+        0.16666667,
+        0.16233766
+      ],
+      "top_memory_types": [
+        "decision",
+        "decision",
+        "semantic"
+      ],
+      "latency_ms": 53.2,
+      "top_content_preview": [
+        "Arjun Patel finds engaging in painting a breath of fresh air for his spirit invo",
+        "Positive feedback on her products inspires Alex Martinez to continue creating an"
+      ]
+    },
+    {
+      "question_id": "a40d5f67-8ec6-480b-a901-9709eecee9b9",
+      "query": "I've decided I don't enjoy podcasting about music trends anymore.",
+      "hits_returned": 10,
+      "top_scores": [
+        0.30952382,
+        0.30952382,
+        0.12878788
+      ],
+      "top_memory_types": [
+        "decision",
+        "decision",
+        "semantic"
+      ],
+      "latency_ms": 43.9,
+      "top_content_preview": [
+        "In 2018, Kanoa Manu started a podcast about music trends.",
+        "In 2018, Kanoa Manu started a podcast about music trends."
+      ]
+    },
+    {
+      "question_id": "6142fba4-a233-405a-a4fe-a5b2e27374a7",
+      "query": "User: I found that my reviews were often criticized for not being objective, which made me less engaged in the process. It felt like I was constantly under the microscope, where every word I wrote was scrutinized by people who often missed the nuance of my opinion. This external pressure led me to second-guess not only my thoughts but also my emotional connection to the music I was discussing. In the end, I realized that the joy I once found in sharing my perspective on albums was overshadowed by the fear of backlash, and that\u2019s a heavy burden for anyone. It became clearer to me that my passion for music needed to be expressed in a more personal, less public way, which is something I\u2019m finally starting to embrace.",
+      "hits_returned": 10,
+      "top_scores": [
+        0.16666667,
+        0.16666667,
+        0.14285715
+      ],
+      "top_memory_types": [
+        "decision",
+        "semantic",
+        "decision"
+      ],
+      "latency_ms": 105.7,
+      "top_content_preview": [
+        "Kanoa Manu's reviews were often criticized for not being objective, which made h",
+        "[ASSISTANT] Assistant: I completely understand where you're coming from, and it'"
+      ]
+    },
+    {
+      "question_id": "2cef53ac-c165-41b5-a31f-c3064106471f",
+      "query": "After several disagreements over the artistic direction, I felt stifled, which really discouraged me from that collaborative process. It was as if the creative vision I had in mind was at odds with the direction my bandmates wanted to pursue. I remember those discussions often being emotionally charged, where opinions clashed and passion ran high, but ultimately, it was clear that I couldn't contribute to something that did not resonate with my artistic essence. Feeling restricted in that environment made me question not just my contributions, but also my abilities and instincts as an artist. This inner turmoil prompted a desire for more autonomy over my own creative endeavors, leading to a pivotal decision to explore my artistry in a more personal and independent setting.",
+      "hits_returned": 10,
+      "top_scores": [
+        0.28333336,
+        0.24285716,
+        0.2125
+      ],
+      "top_memory_types": [
+        "decision",
+        "decision",
+        "decision"
+      ],
+      "latency_ms": 112.6,
+      "top_content_preview": [
+        "After several disagreements over the artistic direction, Kanoa Manu felt stifled",
+        "After several disagreements over the artistic direction, Kanoa Manu felt stifled"
+      ]
+    },
+    {
+      "question_id": "4afc48ca-e6a7-4467-abd2-911915199315",
+      "query": "I found that my reviews were often criticized for not being objective, which made me less engaged in the process. It felt like I was constantly under the microscope, where every word I wrote was scrutinized by people who often missed the nuance of my opinion. This external pressure led me to second-guess not only my thoughts but also my emotional connection to the music I was discussing. In the end, I realized that the joy I once found in sharing my perspective on albums was overshadowed by the fear of backlash, and that\u2019s a heavy burden for anyone. It became clearer to me that my passion for music needed to be expressed in a more personal, less public way, which is something I\u2019m finally starting to embrace.",
+      "hits_returned": 10,
+      "top_scores": [
+        0.16666667,
+        0.16666667,
+        0.14285715
+      ],
+      "top_memory_types": [
+        "decision",
+        "semantic",
+        "decision"
+      ],
+      "latency_ms": 113.8,
+      "top_content_preview": [
+        "Kanoa Manu's reviews were often criticized for not being objective, which made h",
+        "[ASSISTANT] Assistant: I completely understand where you're coming from, and it'"
+      ]
+    },
+    {
+      "question_id": "defecce2-ff39-438e-ae41-90f3bcf9cb48",
+      "query": "I found a mentor who helped me make the connection between music theory and my cultural background, which made it more relatable and enjoyable. This mentorship was a pivotal experience for me, bridging the gap between the academic concepts I learned and the cultural narratives that shape my identity. My mentor, with a rich knowledge of both traditional sounds and contemporary styles, utilized examples from our Pacific Island heritage that sparked a deeper appreciation in me. Together, we explored various rhythms and how they reflect the stories and values of our people, making every lesson feel not just educational but also deeply personal. The joy I felt in discovering this connection has genuinely revitalized my passion for music and creative exploration.",
+      "hits_returned": 10,
+      "top_scores": [
+        0.2254902,
+        0.20535715,
+        0.16666667
+      ],
+      "top_memory_types": [
+        "decision",
+        "decision",
+        "semantic"
+      ],
+      "latency_ms": 111.6,
+      "top_content_preview": [
+        "Kanoa Manu found a mentor who helped him make the connection between music theor",
+        "Kanoa Manu found a mentor who helped him make the connection between music theor"
+      ]
+    },
+    {
+      "question_id": "fd81b480-5723-43fe-9fb1-d3efa0df8e49",
+      "query": "I recently attended an event where there was a unique blend of modern beats with Pacific sounds.",
+      "hits_returned": 10,
+      "top_scores": [
+        0.25757575,
+        0.25757575,
+        0.25
+      ],
+      "top_memory_types": [
+        "decision",
+        "decision",
+        "semantic"
+      ],
+      "latency_ms": 64.8,
+      "top_content_preview": [
+        "Kanoa Manu found delight in seeing how traditional Pacific Islander sounds merge",
+        "Kanoa Manu collaborated with a local musician to blend traditional Pacific sound"
+      ]
+    },
+    {
+      "question_id": "60023d63-4f11-47dc-8cef-82e3ca665a68",
+      "query": "I'm planning a weekend getaway and want to try something creatively fulfilling. What would you suggest?",
+      "hits_returned": 10,
+      "top_scores": [
+        0.25,
+        0.21978024,
+        0.16666667
+      ],
+      "top_memory_types": [
+        "decision",
+        "decision",
+        "decision"
+      ],
+      "latency_ms": 69.1,
+      "top_content_preview": [
+        "Arjun Patel went on a weekend getaway to a romance-themed resort.",
+        "Arjun Patel went on a weekend getaway to a romance-themed resort."
+      ]
+    },
+    {
+      "question_id": "c8a763a5-a7ae-4047-b1cf-f17204fd1f7d",
+      "query": "How can I find a more fulfilling way to express my love for music?",
+      "hits_returned": 10,
+      "top_scores": [
+        0.16666667,
+        0.16666667,
+        0.14285715
+      ],
+      "top_memory_types": [
+        "decision",
+        "semantic",
+        "decision"
+      ],
+      "latency_ms": 50.7,
+      "top_content_preview": [
+        "Kanoa Manu realized his passion for music needed to be expressed in a more perso",
+        "[USER] User: I joined a local bar's music trivia night, and I was surprised at h"
+      ]
+    },
+    {
+      "question_id": "ce9c7c39-c600-4971-9a7d-51a46e6c915c",
+      "query": "I'm exploring new creative outlets and would love some suggestions. Any ideas on activities that can capture emotions and ideas effectively?",
+      "hits_returned": 10,
+      "top_scores": [
+        0.16666667,
+        0.16666667,
+        0.16233766
+      ],
+      "top_memory_types": [
+        "decision",
+        "decision",
+        "semantic"
+      ],
+      "latency_ms": 46.1,
+      "top_content_preview": [
+        "Arjun Patel finds engaging in painting a breath of fresh air for his spirit invo",
+        "Positive feedback on her products inspires Alex Martinez to continue creating an"
+      ]
+    },
+    {
+      "question_id": "217481b7-ad97-45d8-988f-abb3f9cf9b34",
+      "query": "I've decided I don't enjoy podcasting about music trends anymore.",
+      "hits_returned": 10,
+      "top_scores": [
+        0.33333334,
+        0.2857143,
+        0.1268116
+      ],
+      "top_memory_types": [
+        "decision",
+        "decision",
+        "semantic"
+      ],
+      "latency_ms": 42.7,
+      "top_content_preview": [
+        "In 2018, Kanoa Manu started a podcast about music trends.",
+        "In 2018, Kanoa Manu started a podcast about music trends."
+      ]
+    },
+    {
+      "question_id": "b4812983-2c33-48ae-8955-1a19f78f7f54",
+      "query": "I recently revisited a project where we released a remix album combining electronic music and Pacific Islander melodies.",
+      "hits_returned": 10,
+      "top_scores": [
+        0.30952382,
+        0.30952382,
+        0.25
+      ],
+      "top_memory_types": [
+        "decision",
+        "decision",
+        "semantic"
+      ],
+      "latency_ms": 44.2,
+      "top_content_preview": [
+        "Kanoa Manu recently released a remix album that blends contemporary electronic m",
+        "Kanoa Manu recently released a remix album that blends contemporary electronic m"
+      ]
+    },
+    {
+      "question_id": "344ea859-e70d-48d2-8a97-7b68a104c6ae",
+      "query": "I'm working on a new project blending cultural elements with modern music styles and I'm curious what fresh approaches or techniques I could explore to really captivate an audience. Any creative recommendations?",
+      "hits_returned": 10,
+      "top_scores": [
+        0.1936937,
+        0.17063493,
+        0.16666667
+      ],
+      "top_memory_types": [
+        "semantic",
+        "semantic",
+        "decision"
+      ],
+      "latency_ms": 61.0,
+      "top_content_preview": [
+        "[USER] User: It's been quite a journey over the past year! I recently released a",
+        "[USER] User: It's been quite a journey over the past year! I recently released a"
+      ]
+    },
+    {
+      "question_id": "c6d22f3d-282f-4e11-b9fd-39e2a687ef18",
+      "query": "I'm curious about how to start writing impactful album reviews that connect deeply with the music. What should I focus on to transition effectively into this new creative endeavor?",
+      "hits_returned": 10,
+      "top_scores": [
+        0.20833334,
+        0.17857143,
+        0.1585145
+      ],
+      "top_memory_types": [
+        "semantic",
+        "semantic",
+        "semantic"
+      ],
+      "latency_ms": 60.6,
+      "top_content_preview": [
+        "[USER] User: I joined a local bar's music trivia night, and I was surprised at h",
+        "[USER] User: I joined a local bar's music trivia night, and I was surprised at h"
+      ]
+    },
+    {
+      "question_id": "c2d3daad-6d3b-4852-8830-39f830f6cd01",
+      "query": "I joined another reading challenge recently.",
+      "hits_returned": 10,
+      "top_scores": [
+        0.23333335,
+        0.21428573,
+        0.1936937
+      ],
+      "top_memory_types": [
+        "decision",
+        "decision",
+        "decision"
+      ],
+      "latency_ms": 49.1,
+      "top_content_preview": [
+        "Alex Martinez participated in a reading challenge.",
+        "Alex Martinez participated in a reading challenge."
+      ]
+    },
+    {
+      "question_id": "96589b76-f0fa-4214-a110-c6f13ef15e83",
+      "query": "What new creative writing pursuits could I explore to further engage with other readers and reflect on literary works?",
+      "hits_returned": 10,
+      "top_scores": [
+        0.16666667,
+        0.16666667,
+        0.14583333
+      ],
+      "top_memory_types": [
+        "decision",
+        "semantic",
+        "semantic"
+      ],
+      "latency_ms": 59.3,
+      "top_content_preview": [
+        "Alex Martinez's newfound engagement with literature has ignited a desire to shar",
+        "[USER] User: It's been an interesting month since we last talked, with quite a f"
+      ]
+    },
+    {
+      "question_id": "2b3ce0bd-d0c2-48e3-8cd8-564905e9fe64",
+      "query": "I'm looking for an activity that can really engage my creative side and allows for some deep contemplation. What would you recommend?",
+      "hits_returned": 10,
+      "top_scores": [
+        0.16666667,
+        0.16666667,
+        0.16203704
+      ],
+      "top_memory_types": [
+        "decision",
+        "semantic",
+        "semantic"
+      ],
+      "latency_ms": 67.0,
+      "top_content_preview": [
+        "The mindfulness session allowed Kanoa Manu to reconnect with himself and reflect",
+        "[ASSISTANT] Therapist: Podcasts can be very valuable resources, especially in to"
+      ]
+    }
+  ]
+}

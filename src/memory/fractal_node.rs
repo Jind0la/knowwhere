@@ -33,6 +33,53 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     dot / (mag_a * mag_b)
 }
 
+/// Truncate a vector to the first `dim` dimensions (Matryoshka embedding).
+/// Returns a copy of the truncated prefix.
+pub fn truncate_vector(vector: &[f32], dim: usize) -> Option<Vec<f32>> {
+    if vector.len() >= dim {
+        Some(vector[..dim].to_vec())
+    } else {
+        None
+    }
+}
+
+/// Compute the mean of multiple equal-length vectors (TST bag-of-claims averaging).
+/// Returns None if input is empty or vectors have mismatched lengths.
+pub fn mean_vector(vectors: &[&[f32]]) -> Option<Vec<f32>> {
+    if vectors.is_empty() {
+        return None;
+    }
+    let dim = vectors[0].len();
+    if vectors.iter().any(|v| v.len() != dim) {
+        return None;
+    }
+    let mut sum = vec![0.0f32; dim];
+    for v in vectors {
+        for (i, &x) in v.iter().enumerate() {
+            sum[i] += x;
+        }
+    }
+    let n = vectors.len() as f32;
+    for x in &mut sum {
+        *x /= n;
+    }
+    Some(sum)
+}
+
+/// Matryoshka geometric continuity check: truncated cosine similarity should
+/// approximate full-dimensional cosine similarity for Matryoshka embeddings.
+/// Returns (full_sim, truncated_sim) for the given truncation dimension.
+pub fn matryoshka_continuity(a: &[f32], b: &[f32], trunc_dim: usize) -> Option<(f32, f32)> {
+    let full_sim = cosine_similarity(a, b);
+    if full_sim == 0.0 && (a.iter().all(|x| *x == 0.0) || b.iter().all(|x| *x == 0.0)) {
+        return None;
+    }
+    let trunc_a = truncate_vector(a, trunc_dim)?;
+    let trunc_b = truncate_vector(b, trunc_dim)?;
+    let trunc_sim = cosine_similarity(&trunc_a, &trunc_b);
+    Some((full_sim, trunc_sim))
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct Relation {
     pub target_id: Uuid,

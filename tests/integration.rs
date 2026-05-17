@@ -441,6 +441,7 @@ async fn user_facing_retrieval_prioritizes_primary_trust_tiers() {
             profile: RetrievalProfile::UserFacing,
             memory_type_filter: None,
             user_id: None,
+            multi_query: false,
         },
     )
     .await
@@ -458,8 +459,10 @@ async fn user_facing_retrieval_prioritizes_primary_trust_tiers() {
             "derived trust memory",
         ]
     );
-    assert!(results[0].score > results[1].score);
-    assert!(results[1].score > results[2].score);
+    // Neutralized multipliers (Reduce-to-Core, 2026-05-12): all scores equal,
+    // ordering guaranteed by deterministic trust-tier tiebreaker.
+    assert!(results[0].score >= results[1].score);
+    assert!(results[1].score >= results[2].score);
 }
 
 #[tokio::test]
@@ -534,7 +537,7 @@ async fn full_fidelity_profile_surfaces_internal_assistant_artifacts() {
     assert!(body.contains("ASSISTANT: Interner Agentenhinweis"));
     assert_eq!(payload[0]["retrieval_profile"], "full-fidelity");
     assert_eq!(payload[0]["trust_tier"], "derived");
-    assert_eq!(payload[0]["score_debug"]["multiplier"], 0.85);
+    assert_eq!(payload[0]["score_debug"]["multiplier"], 1.0); // neutralized (Reduce-to-Core, 2026-05-12)
 }
 
 #[tokio::test]
@@ -898,6 +901,7 @@ async fn memory_store_expand_fractal_includes_sibling_via_parent_bridge() {
     let seed = ScoredNode {
         id: c1,
         score: 0.9,
+        distribution_scores: None,
         debug: None,
         node: child1,
     };
@@ -955,6 +959,7 @@ async fn memory_store_expand_fractal_stops_on_cycle() {
             vec![ScoredNode {
                 id: a,
                 score: 1.0,
+                distribution_scores: None,
                 debug: None,
                 node: na,
             }],

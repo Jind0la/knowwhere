@@ -1,0 +1,41 @@
+{
+  "longmemeval": {
+    "dataset": "longmemeval",
+    "total_questions": 20,
+    "non_empty_results": 20,
+    "avg_hits_returned": 10.0,
+    "avg_top_score": 0.1972,
+    "avg_latency_ms": 112.2,
+    "relevant_above_threshold": 20,
+    "relevance_rate": 1.0,
+    "node_count": 2405,
+    "top_k": 10,
+    "timestamp": "2026-05-17T13:43:39.930362+00:00"
+  },
+  "personamem": {
+    "dataset": "personamem",
+    "total_questions": 20,
+    "non_empty_results": 20,
+    "avg_hits_returned": 10.0,
+    "avg_top_score": 0.2524,
+    "avg_latency_ms": 115.1,
+    "relevant_above_threshold": 20,
+    "relevance_rate": 1.0,
+    "node_count": 2405,
+    "top_k": 10,
+    "timestamp": "2026-05-17T13:43:42.293534+00:00"
+  },
+  "temporal": {
+    "dataset": "temporal",
+    "total_questions": 15,
+    "non_empty_results": 15,
+    "avg_hits_returned": 10.0,
+    "avg_top_score": 0.2156,
+    "avg_latency_ms": 92.7,
+    "relevant_above_threshold": 14,
+    "relevance_rate": 0.9333,
+    "node_count": 2405,
+    "top_k": 10,
+    "timestamp": "2026-05-17T13:43:43.756530+00:00"
+  }
+}
