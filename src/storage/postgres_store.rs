@@ -304,6 +304,7 @@ impl PostgresStore {
         children_tier_ids: Vec<Uuid>,
         summary_content: Option<&str>,
         overview_content: Option<&str>,
+        created_at: Option<chrono::DateTime<chrono::Utc>>,
     ) -> Result<Uuid> {
         let id = Uuid::new_v4();
         let memory_type_str = match memory_type {
@@ -323,7 +324,7 @@ impl PostgresStore {
                 context_tier, parent_tier_id, children_tier_ids,
                 summary_content, overview_content
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'active', 0, NOW(), NOW(), $14::context_tier, $15, $16, $17, $18)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'active', 0, COALESCE($19, NOW()), NOW(), $14::context_tier, $15, $16, $17, $18)
             "#)
         .bind(id)
         .bind(memory_type_str)
@@ -343,6 +344,7 @@ impl PostgresStore {
         .bind(&children_tier_ids)
         .bind(summary_content)
         .bind(overview_content)
+        .bind(created_at)
         .execute(&self.pool)
         .await?;
 
@@ -1338,6 +1340,7 @@ impl StorageBackend for PostgresStore {
         let children_tier_ids = node.children_tier_ids.clone();
         let summary_content = node.summary_content.as_deref();
         let overview_content = node.overview_content.as_deref();
+        let created_at = node.created_at;
 
         self.store_session(
             content,
@@ -1357,6 +1360,7 @@ impl StorageBackend for PostgresStore {
             children_tier_ids,
             summary_content,
             overview_content,
+            Some(created_at),
         )
         .await
     }
@@ -1518,9 +1522,58 @@ impl StorageBackend for PostgresStore {
         });
         scored_nodes.truncate(query.top_k);
 
-        // Temporal recency boost
+        // Temporal recency boost (legacy)
         if let Some(boost) = query.recency_boost {
             let _boosted = apply_temporal_boost_scored(&mut scored_nodes, boost);
+        }
+
+        // NEW: Hybrid temporal + semantic scoring (WP1)
+        if let Some(w) = query.temporal_weight {
+            apply_hybrid_temporal_scoring(&mut scored_nodes, w);
+        }
+
+        // === SQL-Level Session Filtering + Boost (WP2) ===
+        if let Some(ref sid) = query.session_id {
+            let mut has_session_matches = false;
+            
+            for item in &mut scored_nodes {
+                if let Some(node_sid) = item.node.metadata.get("session_id").and_then(|v| v.as_str()) {
+                    if node_sid == sid {
+                        // Strong boost + slight semantic protection
+                        let boost = 1.65;
+                        item.score = item.score * boost + 0.08;
+                        
+                        if let Some(debug) = &mut item.debug {
+                            debug.session_boost = Some(boost);
+                            debug.explanation = Some(format!(
+                                "{} | Session match (+{:.2}x)",
+                                debug.explanation.clone().unwrap_or_default(),
+                                boost
+                            ));
+                        }
+                        has_session_matches = true;
+                    } else {
+                        // Soft penalty for other sessions (reduces leakage)
+                        item.score *= 0.72;
+                        
+                        if let Some(debug) = &mut item.debug {
+                            debug.session_boost = Some(0.72);
+                        }
+                    }
+                }
+            }
+            
+            // Re-sort after session-aware adjustment
+            scored_nodes.sort_by(|a, b| {
+                b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal)
+            });
+            
+            if has_session_matches {
+                tracing::info!(
+                    session_id = %sid,
+                    "SQL-level session filtering applied (strong preference + leakage penalty)"
+                );
+            }
         }
 
         Ok(scored_nodes)
@@ -1869,6 +1922,98 @@ fn rrf_fuse(vector_ids: &[Uuid], bm25_results: &[(Uuid, f32)], k: f32) -> Vec<(U
 ///
 /// Same semantics as MemoryStore::apply_temporal_boost but operates on
 /// ScoredNode slices (used by PostgresStore).
+/// Improved hybrid temporal + semantic scoring.
+/// Applies configurable weight between semantic similarity and global recency (exponential decay).
+/// This is the core of Work Package 1.
+fn apply_hybrid_temporal_scoring(results: &mut [ScoredNode], temporal_weight: f32) {
+    if results.is_empty() || temporal_weight <= 0.0 {
+        tracing::info!(
+            results_empty = results.is_empty(),
+            temporal_weight,
+            "hybrid_temporal_scoring SKIPPED (empty or weight <= 0)"
+        );
+        return;
+    }
+    let w = temporal_weight.clamp(0.0, 0.8);
+    let now = chrono::Utc::now();
+
+    // Snapshot pre-scoring state
+    let original_scores: Vec<f32> = results.iter().map(|r| r.score).collect();
+    let original_top3_ids: Vec<String> = results.iter().take(3).map(|r| r.id.to_string()).collect();
+
+    // Collect recency factors for diagnostics
+    let mut recency_factors: Vec<f32> = Vec::with_capacity(results.len());
+    
+    for item in results.iter_mut() {
+        let age_days = (now - item.node.created_at).num_days() as f32;
+        // Half-life of 7 days chosen for typical conversational memory use cases.
+// Note: There are currently two temporal mechanisms:
+//   1. temporal_weight (hybrid semantic + global recency, this function)
+//   2. recency_boost (legacy close-score boost, kept for backward compat)
+// These are independent and can be combined.
+        // With 21-day half-life, 0-2 day old data produced almost no variance (range ~0.064).
+        // 7 days gives ~3x more differentiation for recent memories while still allowing
+        // older relevant memories to compete when semantically strong.
+        let recency_factor = 0.5f32.powf(age_days / 7.0).max(0.05);
+        recency_factors.push(recency_factor);
+        
+        // Store debug info
+        if let Some(debug) = &mut item.debug {
+            debug.recency_factor = Some(recency_factor);
+            debug.temporal_weight = Some(w);
+            debug.explanation = Some(format!(
+                "Hybrid score: semantic×{:.2} + recency({:.1}d)×{:.2}",
+                1.0 - w, age_days, w
+            ));
+        }
+        
+        // Hybrid score: semantic * (1-w) + recency * w
+        item.score = item.score * (1.0 - w) + recency_factor * w;
+    }
+
+    results.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    // Post-scoring snapshot
+    let new_scores: Vec<f32> = results.iter().map(|r| r.score).collect();
+    let new_top3_ids: Vec<String> = results.iter().take(3).map(|r| r.id.to_string()).collect();
+
+    // Compute deltas
+    let max_delta = original_scores.iter().zip(new_scores.iter())
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0f32, f32::max);
+    let mean_delta = original_scores.iter().zip(new_scores.iter())
+        .map(|(a, b)| (a - b).abs())
+        .sum::<f32>() / results.len() as f32;
+    let recency_min = recency_factors.iter().fold(f32::INFINITY, |a, &b| a.min(b));
+    let recency_max = recency_factors.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
+    let recency_mean = recency_factors.iter().sum::<f32>() / recency_factors.len() as f32;
+    let recency_range = recency_max - recency_min;
+    let reorder_happened = original_top3_ids != new_top3_ids;
+    
+    tracing::info!(
+        weight = w,
+        nodes = results.len(),
+        score_range_before = format!("{:.4}-{:.4}", 
+            original_scores.iter().fold(f32::INFINITY, |a, &b| a.min(b)),
+            original_scores.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b))),
+        score_range_after = format!("{:.4}-{:.4}",
+            new_scores.iter().fold(f32::INFINITY, |a, &b| a.min(b)),
+            new_scores.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b))),
+        max_delta = format!("{:.4}", max_delta),
+        mean_delta = format!("{:.4}", mean_delta),
+        recency_factor_range = format!("{:.4}-{:.4}", recency_min, recency_max),
+        recency_factor_mean = format!("{:.4}", recency_mean),
+        recency_range = format!("{:.4}", recency_range),
+        top3_reordered = reorder_happened,
+        "hybrid_temporal_scoring applied (WP1) — diagnostics"
+    );
+}
+
+/// Legacy close-score recency boost (kept for backward compat)
 fn apply_temporal_boost_scored(results: &mut [ScoredNode], recency_boost: f32) -> usize {
     let mut boosted = 0usize;
     if results.is_empty() {

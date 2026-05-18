@@ -172,6 +172,7 @@ impl HomeAssistantWebhookPayload {
             pointer,
             metadata,
             multimodal: None,
+            created_at: None,
         }
     }
 }
@@ -299,6 +300,7 @@ impl FrigateWebhookEvent {
                 ("score".to_string(), json!(top_score)),
             ]),
             multimodal,
+            created_at: None,
         }
     }
 }

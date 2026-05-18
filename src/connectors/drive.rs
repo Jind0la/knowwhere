@@ -207,6 +207,7 @@ impl GoogleDriveConnector {
                 pointer,
                 metadata,
                 multimodal,
+                created_at: None,
             });
         }
 

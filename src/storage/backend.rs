@@ -19,12 +19,21 @@ pub enum RetrievalProfile {
     FullFidelity,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct ScoreDebug {
     pub profile: RetrievalProfile,
     pub trust_tier: String,
     pub base_score: f32,
     pub multiplier: f32,
+    /// New explainable fields for temporal + session hybrid scoring
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recency_factor: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_boost: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub temporal_weight: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub explanation: Option<String>,
 }
 
 impl ScoreDebug {
@@ -81,6 +90,10 @@ impl RetrievalProfile {
             trust_tier: node.trust_tier().to_string(),
             base_score,
             multiplier: self.score_multiplier(node),
+            recency_factor: None,
+            session_boost: None,
+            temporal_weight: None,
+            explanation: None,
         }
     }
 
@@ -96,7 +109,7 @@ impl RetrievalProfile {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct HybridQuery {
     /// Text query for BM25 keyword search (optional).
     pub query_text: Option<String>,
@@ -119,6 +132,13 @@ pub struct HybridQuery {
     /// receive a recency bonus proportional to how recent they are relative to
     /// the newest node in the result set.
     pub recency_boost: Option<f32>,
+    /// Weight for temporal recency in hybrid scoring (0.0 = pure semantic, 1.0 = pure recency).
+    /// Recommended: 0.15–0.35 for balanced temporal + semantic retrieval.
+    /// When set, applies a global recency factor (exponential decay) combined with semantic score.
+    pub temporal_weight: Option<f32>,
+    /// Optional session_id filter / boost — strongly prefers or filters to memories from the same session.
+    /// Reduces session leakage and anchor contamination between different conversations.
+    pub session_id: Option<String>,
 }
 
 impl HybridQuery {
@@ -134,6 +154,8 @@ impl HybridQuery {
             user_id: None,
             multi_query: false,
             recency_boost: None,
+            temporal_weight: None,
+            session_id: None,
         }
     }
 
@@ -149,6 +171,8 @@ impl HybridQuery {
             user_id: None,
             multi_query: false,
             recency_boost: None,
+            temporal_weight: None,
+            session_id: None,
         }
     }
 
@@ -169,6 +193,8 @@ impl HybridQuery {
             user_id: None,
             multi_query: false,
             recency_boost: None,
+            temporal_weight: None,
+            session_id: None,
         }
     }
 
@@ -222,7 +248,7 @@ impl HybridQuery {
 /// Operations for updating a node — used by DreamMode, ConsolidationScheduler,
 /// and AuditScheduler. This enum-based approach is dyn Trait-compatible
 /// (unlike closure-based update_node which doesn't work with Arc<dyn StorageBackend>).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub enum UpdateOperation {
     /// Multiply the node's weight by a factor (e.g., weight *= 0.95).
     MultiplyWeight(f64),
@@ -286,7 +312,7 @@ impl UpdateOperation {
 }
 
 /// A scored retrieval result from a storage backend.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct ScoredNode {
     pub id: Uuid,
     pub score: f32,

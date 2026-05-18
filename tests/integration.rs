@@ -71,6 +71,7 @@ fn test_state_with_embedding(embedding: Arc<dyn EmbeddingProvider>) -> routes::A
         frigate_webhook_secret: std::env::var("FRIGATE_WEBHOOK_SECRET").ok(),
         homeassistant_dedup: DedupCache::new(),
         homeassistant_webhook_secret: std::env::var("HASS_WEBHOOK_SECRET").ok(),
+        temporal_weight: Arc::new(RwLock::new(None)),
     }
 }
 
@@ -442,6 +443,9 @@ async fn user_facing_retrieval_prioritizes_primary_trust_tiers() {
             memory_type_filter: None,
             user_id: None,
             multi_query: false,
+            recency_boost: None,
+            temporal_weight: None,
+            session_id: None,
         },
     )
     .await
@@ -1182,6 +1186,52 @@ async fn store_external_multimodal_image() {
     assert!(body.contains("snapshot.jpg"));
 }
 
+// -- Custom created_at timestamp --
+// Regression test: store_external must preserve a caller-supplied created_at
+// timestamp. The postgres backend previously ignored it (always used NOW()).
+#[tokio::test]
+async fn store_external_preserves_custom_created_at() {
+    let app = app_without_auth();
+    let custom_ts = "2024-06-15T12:00:00Z";
+
+    let payload = serde_json::json!({
+        "pointer": "s3://bucket/report-2024.pdf",
+        "created_at": custom_ts,
+    });
+
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::post("/store_external")
+                .header("content-type", "application/json")
+                .body(Body::from(payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CREATED);
+
+    let body = body_string(resp.into_body()).await;
+    let created: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let node_id = created["id"].as_str().unwrap();
+
+    let resp = app
+        .oneshot(
+            Request::get(&format!("/retrieve/{node_id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let body = body_string(resp.into_body()).await;
+    assert!(
+        body.contains(custom_ts),
+        "retrieved node must contain the custom created_at timestamp {custom_ts}; got: {body}"
+    );
+}
+
 // -- Fractal Retrieve --
 
 #[tokio::test]
@@ -1446,6 +1496,10 @@ async fn postgres_store_hybrid_retrieve_bm25_only() {
         profile: knowwhere_server::storage::RetrievalProfile::FullFidelity,
         memory_type_filter: None,
         user_id: None,
+        multi_query: false,
+        recency_boost: None,
+        temporal_weight: None,
+        session_id: None,
     };
 
     let results = store
@@ -1596,6 +1650,10 @@ async fn postgres_store_hybrid_retrieve_with_vector() {
         profile: knowwhere_server::storage::RetrievalProfile::FullFidelity,
         memory_type_filter: None,
         user_id: None,
+        multi_query: false,
+        recency_boost: None,
+        temporal_weight: None,
+        session_id: None,
     };
 
     let results = store

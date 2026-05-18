@@ -361,8 +361,9 @@ impl FractalNode {
         pointer: String,
         vector: Vec<f32>,
         metadata: HashMap<String, Value>,
+        created_at: Option<DateTime<Utc>>,
     ) -> Self {
-        let now = Utc::now();
+        let now = created_at.unwrap_or_else(Utc::now);
         Self {
             id: Uuid::new_v4(),
             memory_type: MemoryType::Semantic,
@@ -399,8 +400,9 @@ impl FractalNode {
         vector: Vec<f32>,
         metadata: HashMap<String, Value>,
         multimodal: MultimodalData,
+        created_at: Option<DateTime<Utc>>,
     ) -> Self {
-        let now = Utc::now();
+        let now = created_at.unwrap_or_else(Utc::now);
         Self {
             id: Uuid::new_v4(),
             memory_type: MemoryType::Semantic,

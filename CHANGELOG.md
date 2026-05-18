@@ -11,6 +11,7 @@ All notable changes to KnowWhere are documented in this file.
 - **BUG-016: Vector Retrieval Score Collapse (CRITICAL):** `retrieve_fractal()` was embedding query text with raw `state.embedding.embed(text)` instead of `embed_query()` — missing the `"search_query: "` prefix required by asymmetric embedding models (nomic-embed-text, snowflake-arctic-embed2). All retrieval scores collapsed from ~0.83 to ~0.03 (random noise level). Fixed at both query embedding (L2240) and contrastive query embedding (L2362). Added regression test `test_embed_query_single_with_prefix`. Full root cause analysis in BUG-TRACKING.md.
 
 ### Changed
+- **Temporal Scoring Half-Life:** Reduced from 21 days to 7 days in `apply_hybrid_temporal_scoring` (both PostgresStore and InMemoryStore). The previous 21-day half-life produced almost no variance on typical conversational data (0–2 days old). 7 days provides ~3× better differentiation for recent memories while still allowing older relevant memories to compete. See t_6001dbad for full analysis.
 - **Consolidation Content Threshold:** `find_candidates()`, `pending_count()`, `should_compact()`, `force_run()` lowered minimum content length from 500 → 100 chars to catch claim/document chunks.
 
 ## [0.5.0] — 2026-05-05

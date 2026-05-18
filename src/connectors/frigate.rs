@@ -71,6 +71,7 @@ impl FrigateConnector {
                     pointer,
                     embedding: vec![],
                 }),
+                created_at: None,
             });
         }
 

@@ -135,3 +135,64 @@ pub async fn list_events(
         }
     }
 }
+
+// -- Temporal Weight Config (runtime-configurable, no restart needed) --
+
+/// Get current server-wide temporal_weight default.
+#[utoipa::path(
+    get,
+    path = "/config/temporal_weight",
+    tag = "config",
+    responses(
+        (status = 200, description = "Current temporal_weight config", body = TemporalWeightConfig)
+    )
+)]
+pub async fn get_temporal_weight(State(state): State<AppState>) -> Json<TemporalWeightConfig> {
+    let weight = state.temporal_weight.read().await;
+    Json(TemporalWeightConfig {
+        temporal_weight: *weight,
+    })
+}
+
+/// Response/request for temporal_weight config.
+#[derive(Serialize, Deserialize, ToSchema)]
+pub struct TemporalWeightConfig {
+    /// Server-wide default weight applied when per-query temporal_weight is absent.
+    /// None disables temporal scoring unless the request provides its own.
+    /// Valid range: 0.0–0.8 (clamped server-side). Recommended: 0.15–0.35.
+    pub temporal_weight: Option<f32>,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct UpdateTemporalWeightRequest {
+    /// New server-wide temporal_weight (clamped to 0.0–0.8).
+    pub temporal_weight: Option<f32>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct UpdateTemporalWeightResponse {
+    pub message: String,
+    pub temporal_weight: Option<f32>,
+}
+
+#[utoipa::path(
+    post,
+    path = "/config/temporal_weight",
+    tag = "config",
+    request_body = UpdateTemporalWeightRequest,
+    responses(
+        (status = 200, description = "Temporal weight updated", body = UpdateTemporalWeightResponse)
+    )
+)]
+pub async fn update_temporal_weight(
+    State(state): State<AppState>,
+    Json(req): Json<UpdateTemporalWeightRequest>,
+) -> Json<UpdateTemporalWeightResponse> {
+    let clamped = req.temporal_weight.map(|w| w.clamp(0.0, 0.8));
+    *state.temporal_weight.write().await = clamped;
+    tracing::info!(?clamped, "temporal_weight config updated at runtime");
+    Json(UpdateTemporalWeightResponse {
+        message: "temporal_weight updated (takes effect on next query)".into(),
+        temporal_weight: clamped,
+    })
+}

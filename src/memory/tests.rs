@@ -31,6 +31,7 @@ mod tests {
             "s3://bucket/photo.jpg".to_string(),
             vec![0.4, 0.5, 0.6],
             HashMap::new(),
+            None,
         );
         assert!(node.original_pointer.is_some());
         assert_eq!(
@@ -50,6 +51,7 @@ mod tests {
             "gdrive://doc/123".to_string(),
             vec![0.3, 0.4],
             HashMap::new(),
+            None,
         );
 
         store.insert(session).await.expect("insert session");
@@ -266,6 +268,7 @@ mod tests {
                 ("camera".to_string(), serde_json::json!("front_door")),
             ]),
             mm,
+            None,
         );
         let id = node.id;
 
@@ -322,6 +325,7 @@ mod tests {
                 ("camera".to_string(), serde_json::json!("front_door")),
             ]),
             mm,
+            None,
         );
         let id = node.id;
 
@@ -361,6 +365,7 @@ mod tests {
             embedding.clone(),
             HashMap::from([("source".to_string(), serde_json::json!("microphone"))]),
             mm,
+            None,
         );
         let id = node.id;
 
@@ -401,6 +406,7 @@ mod tests {
             embedding,
             HashMap::from([("source".to_string(), serde_json::json!("iot_hub"))]),
             mm,
+            None,
         );
         let id = node.id;
 
@@ -437,7 +443,7 @@ mod tests {
     #[test]
     fn test_external_node_type() {
         use crate::memory::types::MemoryType;
-        let node = FractalNode::new_external("s3://x".into(), vec![0.1], HashMap::new());
+        let node = FractalNode::new_external("s3://x".into(), vec![0.1], HashMap::new(), None);
         assert_eq!(node.memory_type, MemoryType::Semantic);
     }
 

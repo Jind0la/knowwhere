@@ -216,6 +216,16 @@ async fn run() -> anyhow::Result<()> {
             tracing::info!("Dream Mode scheduler disabled (DREAM_ENABLED=false)");
         }
     }
+    // Server-wide temporal_weight default from env, or None.
+    // Per-query override via RetrieveFractalRequest.temporal_weight takes precedence.
+    let temporal_weight: Option<f32> = std::env::var("KNOWWHERE_TEMPORAL_WEIGHT")
+        .ok()
+        .and_then(|v| v.trim().parse::<f32>().ok())
+        .map(|w| w.clamp(0.0, 0.8));
+    tracing::info!(
+        ?temporal_weight,
+        "temporal_weight config (set KNOWWHERE_TEMPORAL_WEIGHT to override, or POST /config/temporal_weight at runtime)"
+    );
 
     let state = routes::AppState {
         store: store.clone(),
@@ -235,6 +245,7 @@ async fn run() -> anyhow::Result<()> {
         frigate_webhook_secret: std::env::var("FRIGATE_WEBHOOK_SECRET").ok(),
         homeassistant_dedup: DedupCache::new(),
         homeassistant_webhook_secret: std::env::var("HASS_WEBHOOK_SECRET").ok(),
+        temporal_weight: Arc::new(RwLock::new(temporal_weight)),
     };
 
     let api_key = ApiKey(std::env::var("KNOWWHERE_API_KEY").ok());
@@ -275,6 +286,9 @@ async fn run() -> anyhow::Result<()> {
         // -- Governance routes --
         .route("/governance/policy", get(routes::get_governance_policy))
         .route("/governance/policy", post(routes::update_governance_policy))
+        // -- Runtime config routes --
+        .route("/config/temporal_weight", get(routes::get_temporal_weight))
+        .route("/config/temporal_weight", post(routes::update_temporal_weight))
         // -- Webhook routes --
         .route("/webhooks/frigate", post(routes::webhook_frigate))
         .route("/webhooks/homeassistant", post(routes::webhook_homeassistant));

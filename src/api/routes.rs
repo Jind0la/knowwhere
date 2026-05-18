@@ -244,6 +244,13 @@ use crate::storage::{HybridQuery, RetrievalProfile, StorageBackend};
 
 /// Split conversation text into rounds (user+assistant turn pairs).
 /// Falls back to the full text as a single chunk when no role prefixes are detected.
+/// Chunk text into rounds (dialog turns) or semantic chunks.
+///
+/// If the text contains role prefixes (user:, assistant:, etc.), splits on
+/// turn boundaries. Otherwise falls back to the TextChunker for semantic
+/// paragraph/sentence-boundary splitting.
+///
+/// Returns chunks with overlap when using semantic splitting (non-dialog text).
 fn chunk_into_rounds(text: &str, min_round_chars: usize) -> Vec<String> {
     let role_prefixes = [
         "user:",
@@ -258,17 +265,21 @@ fn chunk_into_rounds(text: &str, min_round_chars: usize) -> Vec<String> {
     let lines: Vec<&str> = text.lines().collect();
     let mut rounds: Vec<String> = Vec::new();
     let mut current = String::new();
+    let mut has_role_prefixes = false;
 
     for line in &lines {
         let trimmed = line.trim();
         let is_role_start = role_prefixes.iter().any(|p| trimmed.starts_with(p));
 
-        if is_role_start && !current.is_empty() {
-            let c = current.trim().to_string();
-            if !c.is_empty() {
-                rounds.push(c);
+        if is_role_start {
+            has_role_prefixes = true;
+            if !current.is_empty() {
+                let c = current.trim().to_string();
+                if !c.is_empty() {
+                    rounds.push(c);
+                }
+                current.clear();
             }
-            current.clear();
         }
         if !current.is_empty() {
             current.push('\n');
@@ -277,6 +288,17 @@ fn chunk_into_rounds(text: &str, min_round_chars: usize) -> Vec<String> {
     }
     if !current.trim().is_empty() {
         rounds.push(current.trim().to_string());
+    }
+
+    // If no dialog turns detected, use smart semantic chunking
+    if !has_role_prefixes && text.len() > 6000 {
+        let chunker = crate::memory::TextChunker::new(
+            crate::memory::ChunkerConfig::for_nomic_8192(),
+        );
+        let chunks = chunker.chunk(text);
+        if chunks.len() > 1 {
+            return chunks.into_iter().map(|c| c.content).collect();
+        }
     }
 
     if rounds.len() <= 1 {
@@ -336,6 +358,11 @@ pub struct AppState {
     pub homeassistant_dedup: DedupCache,
     /// HomeAssistant webhook secret (read once at startup, not per-request).
     pub homeassistant_webhook_secret: Option<String>,
+    /// Server-wide temporal_weight default for hybrid retrieval scoring.
+    /// Per-query overrides via `temporal_weight` in RetrieveFractalRequest
+    /// take precedence; this is the fallback when the request omits it.
+    /// Editable at runtime via GET/POST /config/temporal_weight.
+    pub temporal_weight: Arc<RwLock<Option<f32>>>,
 }
 
 impl std::fmt::Debug for AppState {
@@ -889,8 +916,20 @@ fn governance_score_multiplier(issues: &[crate::memory::governance::ValidationIs
 const MMR_LAMBDA: f32 = 0.65;
 
 fn mmr_rel_score(entry: &crate::storage::ScoredNode, query_vector: &[f32]) -> f32 {
+    // Use the entry's composite score (semantic + temporal + session boosts)
+    // instead of recomputing raw cosine similarity.
+    // The storage layer (PostgresStore or InMemoryStore) already applied
+    // the full scoring pipeline: RRF fusion, profile multipliers, temporal
+    // weighting, and session boosts.  Using entry.score preserves all of that.
     if !query_vector.is_empty() && !entry.node.vector.is_empty() {
-        crate::memory::fractal_node::cosine_similarity(&entry.node.vector, query_vector).clamp(0.0, 1.0)
+        let raw_cos = crate::memory::fractal_node::cosine_similarity(
+            &entry.node.vector, query_vector,
+        )
+        .clamp(0.0, 1.0);
+        // Blend 50% composite score + 50% raw cosine similarity
+        // so MMR diversity still has a signal to work with while
+        // preserving temporal/session adjustments.
+        0.5 * entry.score.max(0.0) + 0.5 * raw_cos
     } else {
         entry.score.max(0.0)
     }
@@ -938,6 +977,12 @@ fn mmr_finalize_storage(
         return pool;
     }
 
+    // Snapshot: what would pure-score ranking give?
+    let score_top_k_ids: std::collections::HashSet<String> = pool.iter()
+        .take(top_k)
+        .map(|c| c.id.to_string())
+        .collect();
+
     let max_rel = pool
         .iter()
         .map(|c| mmr_rel_score(c, query_vector))
@@ -968,6 +1013,28 @@ fn mmr_finalize_storage(
         cand_idx.retain(|&i| i != best);
         selected.push(pool[best].clone());
     }
+
+    // Diagnostic: MMR vs pure-score overlap
+    let mmr_top_k_ids: std::collections::HashSet<String> = selected.iter()
+        .map(|c| c.id.to_string())
+        .collect();
+    let overlap: Vec<_> = score_top_k_ids.intersection(&mmr_top_k_ids).collect();
+    let new_in_topk: Vec<_> = mmr_top_k_ids.difference(&score_top_k_ids).collect();
+    
+    // Avg age of top-k
+    let now = chrono::Utc::now();
+    let avg_age_days = selected.iter()
+        .map(|c| (now - c.node.created_at).num_days() as f32)
+        .sum::<f32>() / selected.len() as f32;
+    
+    tracing::info!(
+        pool_size = pool_n,
+        top_k,
+        overlap = overlap.len(),
+        displaced = new_in_topk.len(),
+        avg_age_days = format!("{:.1}", avg_age_days),
+        "MMR finalization — score→MMR overlap diagnostic"
+    );
 
     selected
 }
@@ -1274,6 +1341,10 @@ async fn store_session_json(
             "session_chunk_group".to_string(),
             Value::String(session_chunk_id.clone()),
         );
+        metadata.insert(
+            "is_chunk".to_string(),
+            Value::Bool(true),
+        );
         normalize_node_metadata(memory_type, source, &mut metadata);
 
         let content = if idx == 0 {
@@ -1545,6 +1616,10 @@ pub async fn store_session_batch(
                 "session_chunk_count".to_string(),
                 Value::Number(serde_json::Number::from(chunk_count)),
             );
+            metadata.insert(
+                "is_chunk".to_string(),
+                Value::Bool(true),
+            );
             normalize_node_metadata(memory_type, source, &mut metadata);
 
             let content = if chunk_idx == chunk_start {
@@ -1811,6 +1886,10 @@ pub struct StoreExternalRequest {
     /// Optional sensitivity.
     #[serde(default)]
     pub sensitivity: Option<Sensitivity>,
+    /// Optional historical timestamp (ISO 8601).
+    /// When provided, the node uses this timestamp instead of the current time.
+    #[serde(default)]
+    pub created_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 fn default_semantic_type_str() -> String {
@@ -1885,6 +1964,9 @@ pub async fn store_external(
     }
     if let Some(sens) = req.sensitivity {
         node.sensitivity = sens;
+    }
+    if let Some(ts) = req.created_at {
+        node.created_at = ts;
     }
     if let Some(mm) = req.multimodal {
         node.multimodal = Some(mm);
@@ -2015,6 +2097,13 @@ pub struct RetrieveFractalRequest {
     /// When set, close-scoring results get a slight recency bonus.
     #[serde(default)]
     pub recency_boost: Option<f32>,
+    /// Weight for temporal recency in hybrid scoring (0.0 = pure semantic, 1.0 = pure recency).
+    /// Recommended: 0.15–0.35. Enables configurable temporal + semantic hybrid.
+    #[serde(default)]
+    pub temporal_weight: Option<f32>,
+    /// Optional session_id for filtering/boosting to reduce session leakage.
+    #[serde(default)]
+    pub session_id: Option<String>,
 }
 
 fn default_top_k() -> usize {
@@ -2381,6 +2470,13 @@ pub async fn retrieve_fractal(
     let type_filter = parse_memory_type_filter(req.memory_type_filter.as_ref())?;
     let query_intent = parse_query_intent(req.query_intent.as_ref(), req.query_text.as_ref());
 
+    // Resolve temporal_weight: per-query override > server-wide config default.
+    let temporal_weight = match req.temporal_weight {
+        Some(w) => Some(w),
+        None => *state.temporal_weight.read().await,
+    };
+    tracing::debug!(?temporal_weight, "resolved temporal_weight");
+
     // Stage 1: Hybrid retrieval (with optional multi-query expansion)
     let query_vector_for_expand = query_vector.clone();
     let effective_top_k = if req.diversity {
@@ -2416,6 +2512,8 @@ pub async fn retrieve_fractal(
                 user_id: req.user_id.clone(),
                 multi_query: false, // prevent recursion
                 recency_boost: req.recency_boost,
+                temporal_weight,
+                session_id: req.session_id.clone(),
             };
 
             let r = state.store.hybrid_retrieve(&q).await.map_err(|e| {
@@ -2481,6 +2579,8 @@ pub async fn retrieve_fractal(
             user_id: req.user_id.clone(),
             multi_query: false,
             recency_boost: req.recency_boost,
+            temporal_weight,
+            session_id: req.session_id.clone(),
         };
         let r = state.store.hybrid_retrieve(&query).await.map_err(|e| {
             tracing::error!("hybrid_retrieve failed: {e}");
@@ -2565,6 +2665,8 @@ pub async fn retrieve_fractal(
                         user_id: req.user_id.clone(),
                         multi_query: false,
                         recency_boost: req.recency_boost,
+                        temporal_weight,
+                        session_id: req.session_id.clone(),
                     };
                     state.store.hybrid_retrieve(&fallback_query).await.map_err(|e| {
                         tracing::error!("hybrid_retrieve fallback failed: {}", e);
@@ -2594,6 +2696,8 @@ pub async fn retrieve_fractal(
                         user_id: req.user_id.clone(),
                         multi_query: false,
                         recency_boost: req.recency_boost,
+                        temporal_weight,
+                        session_id: req.session_id.clone(),
                     };
                     if let Ok(extra) = state.store.hybrid_retrieve(&cq_query).await {
                         tracing::info!(contrastive = extra.len(), "contrastive results");
@@ -2631,6 +2735,27 @@ pub async fn retrieve_fractal(
 
     if !req.governance_enabled {
         let allow_meta = type_filter == Some(MemoryType::Meta);
+        // Pre-MMR diagnostic: snapshot top-k scores/recency before MMR
+        if !results.is_empty() {
+            let now = chrono::Utc::now();
+            let top_n = req.top_k.min(results.len());
+            let avg_score = results.iter().take(top_n)
+                .map(|s| s.score).sum::<f32>() / top_n as f32;
+            let avg_age = results.iter().take(top_n)
+                .map(|s| (now - s.node.created_at).num_days() as f32)
+                .sum::<f32>() / top_n as f32;
+            let newest_age = results.iter().take(top_n)
+                .map(|s| (now - s.node.created_at).num_days() as f32)
+                .fold(f32::INFINITY, f32::min);
+            tracing::info!(
+                top_n,
+                avg_score = format!("{:.4}", avg_score),
+                avg_age_days = format!("{:.1}", avg_age),
+                newest_age_days = format!("{:.1}", newest_age),
+                temporal_weight = ?req.temporal_weight,
+                "pre-MMR snapshot — scores/recency before finalization"
+            );
+        }
         let results = finalize_retrieval_storage(
             results,
             query_intent,

@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::Result;
+use chrono::{DateTime, Utc};
 use serde_json::Value;
 
 use crate::storage::StorageBackend;
@@ -19,6 +20,9 @@ pub struct ExternalEvent {
     pub pointer: String,
     pub metadata: HashMap<String, Value>,
     pub multimodal: Option<MultimodalData>,
+    /// Optional historical timestamp. When provided, the stored node
+    /// will use this timestamp instead of Utc::now().
+    pub created_at: Option<DateTime<Utc>>,
 }
 
 /// Shared helper: embeds + stores an ExternalEvent as a FractalNode.
@@ -40,8 +44,8 @@ pub async fn store_external_event(
     };
 
     let node = match event.multimodal {
-        Some(mm) => FractalNode::new_external_multimodal(event.pointer, vector, event.metadata, mm),
-        None => FractalNode::new_external(event.pointer, vector, event.metadata),
+        Some(mm) => FractalNode::new_external_multimodal(event.pointer, vector, event.metadata, mm, event.created_at),
+        None => FractalNode::new_external(event.pointer, vector, event.metadata, event.created_at),
     };
 
     let id = store.insert(node).await?;
@@ -72,6 +76,7 @@ pub async fn store_external_events_batch(
                 event.pointer,
                 vector,
                 event.metadata,
+                event.created_at,
             ))
         })
         .collect();
