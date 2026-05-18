@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod chunking;
 pub mod control_room;
 pub mod dream;
 pub mod events;
@@ -24,6 +25,7 @@ mod tests;
 mod governance_test;
 
 pub use agent::{AgentId, AgentProvenance, AgentRegistry, AgentRole, AgentState, MemoryVisibility};
+pub use chunking::{ChunkerConfig, TextChunk, TextChunker};
 pub use control_room::{ControlRoom, ControlRoomSnapshot, LayerStats};
 pub use dream::{audit, consolidation, DreamMode};
 pub use events::{Event, EventStore, EventType, InMemoryEventStore};

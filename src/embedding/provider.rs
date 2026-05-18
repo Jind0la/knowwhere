@@ -272,6 +272,17 @@ impl LocalOllamaProvider {
             model,
         }
     }
+
+    /// Get the configured context window size for Ollama embeddings.
+    /// Reads OLLAMA_NUM_CTX env var, defaults to 8192 for nomic-embed-text.
+    /// This is passed as `num_ctx` in the Ollama /api/embed request to override
+    /// the model's default (usually 2048), preventing silent truncation of long texts.
+    pub fn num_ctx(&self) -> usize {
+        std::env::var("OLLAMA_NUM_CTX")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(8192)
+    }
 }
 
 impl Default for LocalOllamaProvider {
@@ -288,7 +299,10 @@ impl LocalOllamaProvider {
             .json(&serde_json::json!({
                 "model": self.model,
                 "input": texts,
-                "keep_alive": -1
+                "keep_alive": -1,
+                "options": {
+                    "num_ctx": self.num_ctx()
+                }
             }))
             .send()
             .await
@@ -334,7 +348,10 @@ impl EmbeddingProvider for LocalOllamaProvider {
             .json(&serde_json::json!({
                 "model": self.model,
                 "input": text,
-                "keep_alive": -1
+                "keep_alive": -1,
+                "options": {
+                    "num_ctx": self.num_ctx()
+                }
             }))
             .send()
             .await
