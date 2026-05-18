@@ -2,12 +2,17 @@
 
 All notable changes to KnowWhere are documented in this file.
 
-## [Unreleased] — 2026-05-12
+## [Unreleased] — 2026-05-18
 
 ### Added
+- **Hybrid Temporal-Semantic Scoring (WP1):** `retrieve_fractal` and `hybrid_retrieve` now apply temporal recency scoring alongside semantic relevance. Configurable via per-query `temporal_weight` override or server-wide default. Produces linear 5× score amplification (tw=0.0→0.9) with a 7-day half-life for conversational memory. Quantitative: 2.73 Avg Recency (baseline 2.48, +10.1%).
+- **Runtime Temporal Weight Configurability:** `GET /config/temporal_weight` reads the current server default; `POST /config/temporal_weight` updates it at runtime (no restart). Per-query overrides in `RetrieveFractalRequest.temporal_weight` take precedence. Reads `KNOWWHERE_TEMPORAL_WEIGHT` env var at startup (clamped 0.0–0.8). Design follows `governance_policy` pattern (`Arc<RwLock<Option<f32>>>`).
+- **Smart Text Chunker (WP3):** `TextChunker` performs semantic boundary detection with paragraph→sentence→word fallback, configurable overlap, and stub merging. Enables chunking of large content before embedding. 12 tests covering major paths. Commit `6a237e5`.
+- **num_ctx 2048→8192:** Embedding context window expanded 4× for better chunk coverage. Highest-impact WP3 change.
 - **Fractal Hierarchy in API Response:** `POST /retrieve_fractal` now includes `context_tier`, `parent_tier_id`, `children_tier_ids`, `status`, and `importance` in every `ScoredNode`. Enables API consumers (AMB adapter, Hermes plugin) to distinguish L1 summaries from L0 raw nodes and traverse the fractal hierarchy. Previously only `GET /retrieve/{id}` exposed these fields.
 
 ### Fixed
+- **created_at Bug in store_external:** `PostgresStore::store_session()` now accepts `Optional created_at` — SQL uses `COALESCE($19, NOW())`. `insert()` passes `node.created_at` through. Regression test `store_external_preserves_custom_created_at` verifies round-trip. Commit `114755a`.
 - **BUG-016: Vector Retrieval Score Collapse (CRITICAL):** `retrieve_fractal()` was embedding query text with raw `state.embedding.embed(text)` instead of `embed_query()` — missing the `"search_query: "` prefix required by asymmetric embedding models (nomic-embed-text, snowflake-arctic-embed2). All retrieval scores collapsed from ~0.83 to ~0.03 (random noise level). Fixed at both query embedding (L2240) and contrastive query embedding (L2362). Added regression test `test_embed_query_single_with_prefix`. Full root cause analysis in BUG-TRACKING.md.
 
 ### Changed
