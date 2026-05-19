@@ -1,0 +1,165 @@
+Loading dataset: benchmarks/data/longmemeval_s_cleaned.json
+  Stratified filter: 42/500 cases selected
+    single-session-user: 6 cases
+    single-session-assistant: 4 cases
+    single-session-preference: 4 cases
+    multi-session: 10 cases
+    temporal-reasoning: 10 cases
+    knowledge-update: 8 cases
+  Loaded 42 cases
+  Types: {'single-session-user': 5, 'multi-session': 8, 'single-session-preference': 4, 'temporal-reasoning': 9, 'knowledge-update': 7, 'single-session-assistant': 4}
+  Abstention: 5
+  Turn labels: YES (42 cases)
+
+KnowWhere API: http://127.0.0.1:3737
+Mode: multi
+Top-K (old): 20
+
+  ── PHASE 1: Indexing all sessions ──
+    Indexed 10/37 cases (4580 total nodes)
+    Indexed 20/37 cases (9250 total nodes)
+    Indexed 30/37 cases (13935 total nodes)
+    Indexed 37/37 cases (17153 total nodes)
+    Indexed 17153 nodes total
+
+  ── PHASE 2: Querying all cases ──
+    Queried 10/42 cases
+    Queried 20/42 cases
+    Queried 30/42 cases
+    Queried 40/42 cases
+    Queried 42/42 cases
+
+  ── PHASE 3: Scoring ──
+    Scored 10/42 | top1=0.4444 recall@5=0.6667
+    Scored 20/42 | top1=0.3529 recall@5=0.7059
+    Scored 30/42 | top1=0.3077 recall@5=0.7308
+    Scored 40/42 | top1=0.4286 recall@5=0.7429
+    Scored 42/42 | top1=0.4324 recall@5=0.7297
+
+  ── PHASE 4: Cleanup ──
+    Deleting 17153 unique nodes...
+    Cleanup done
+
+======================================================================
+  LongMemEval Evaluation Report
+======================================================================
+
+  Dataset: 42 cases (37 eval, 5 abstention)
+  Mode: multi-session (index all, query all) | stratified (6 strata)
+  Turn labels: YES (42 cases with has_answer)
+
+  ── OLD METRICS (session-level, for comparison) ──
+  top1:          0.4324
+  recall@5:      0.7297
+  recall@20:     0.8649
+  MRR:           0.5577
+
+  ── NEW METRICS (session-level recall + NDCG) ──
+    k    recall_any    recall_all    ndcg_any
+  ---------------------------------------------
+    1        0.4324        0.2162      0.4324
+    3        0.6486        0.4054      0.5162
+    5        0.7297        0.4595      0.5560
+   10        0.8108        0.6216      0.6104
+   30        0.8649        0.6757      0.6289
+   50        0.8649        0.7027      0.6314
+
+  ── NEW METRICS (turn-level recall + NDCG) ──
+    k    recall_any    recall_all    ndcg_any
+  ---------------------------------------------
+    1        0.3784        0.1622      0.3784
+    3        0.7297        0.2703      0.4126
+    5        0.7297        0.2973      0.4247
+   10        0.7838        0.5946      0.5180
+   30        0.7838        0.7027      0.5356
+   50        0.7838        0.7027      0.5356
+
+  ── PER-TYPE BREAKDOWN ──
+  Type                         Count      top1    recall@5    recall@k       MRR    new_recall@5    new_ndcg@5
+  ------------------------------------------------------------------------------------------------------------------------
+  single-session-user              5    0.6000      0.8000      0.8000    0.7000          0.8000        0.7262
+  single-session-assistant         4    0.7500      0.7500      1.0000    0.7750          0.7500        0.7500
+  single-session-preference        4    0.2500      0.5000      1.0000    0.4208          0.5000        0.4077
+  multi-session                    8    0.2500      0.7500      0.7500    0.4479          0.7500        0.4470
+  temporal-reasoning               9    0.2222      0.7778      0.8889    0.4048          0.7778        0.4150
+  knowledge-update                 7    0.7143      0.7143      0.8571    0.7321          0.7143        0.7143
+
+  ── PER-TYPE NEW METRICS (all k-values) ──
+
+  single-session-user (5 cases):
+      k    recall_any    recall_all    ndcg_any
+    -----------------------------------------------
+      1        0.6000        0.6000      0.6000
+      3        0.8000        0.8000      0.7262
+      5        0.8000        0.8000      0.7262
+     10        0.8000        0.8000      0.7262
+     30        0.8000        0.8000      0.7262
+     50        0.8000        0.8000      0.7262
+
+  single-session-assistant (4 cases):
+      k    recall_any    recall_all    ndcg_any
+    -----------------------------------------------
+      1        0.7500        0.7500      0.7500
+      3        0.7500        0.7500      0.7500
+      5        0.7500        0.7500      0.7500
+     10        1.0000        1.0000      0.8223
+     30        1.0000        1.0000      0.8223
+     50        1.0000        1.0000      0.8223
+
+  single-session-preference (4 cases):
+      k    recall_any    recall_all    ndcg_any
+    -----------------------------------------------
+      1        0.2500        0.2500      0.2500
+      3        0.5000        0.5000      0.4077
+      5        0.5000        0.5000      0.4077
+     10        0.7500        0.7500      0.4800
+     30        1.0000        1.0000      0.5476
+     50        1.0000        1.0000      0.5476
+
+  multi-session (8 cases):
+      k    recall_any    recall_all    ndcg_any
+    -----------------------------------------------
+      1        0.2500        0.0000      0.2500
+      3        0.6250        0.2500      0.3660
+      5        0.7500        0.3750      0.4470
+     10        0.7500        0.6250      0.5097
+     30        0.7500        0.6250      0.5097
+     50        0.7500        0.7500      0.5212
+
+  temporal-reasoning (9 cases):
+      k    recall_any    recall_all    ndcg_any
+    -----------------------------------------------
+      1        0.2222        0.1111      0.2222
+      3        0.5556        0.1111      0.3232
+      5        0.7778        0.2222      0.4150
+     10        0.7778        0.4444      0.4970
+     30        0.8889        0.4444      0.5262
+     50        0.8889        0.4444      0.5262
+
+  knowledge-update (7 cases):
+      k    recall_any    recall_all    ndcg_any
+    -----------------------------------------------
+      1        0.7143        0.0000      0.7143
+      3        0.7143        0.4286      0.7143
+      5        0.7143        0.4286      0.7143
+     10        0.8571        0.4286      0.7419
+     30        0.8571        0.5714      0.7638
+     50        0.8571        0.5714      0.7638
+
+  ── ABSTENTION ──
+  Total: 5
+  Correctly abstained: 5
+  Accuracy: 1.0000
+
+  ── COMPARISON: Old vs New ──
+  Overall score (mean recall@5): 0.7153
+  Old recall@5:        0.7297
+  New session recall@5: 0.7297
+  New session NDCG@5:   0.5560
+  Δ (recall):           +0.0000
+  Old MRR:              0.5577
+======================================================================
+
+  Evaluation took 6732.3s
+
+  Report saved to: longmemeval_report_multi_20260519_175204.json

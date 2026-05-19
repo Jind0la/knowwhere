@@ -1,0 +1,42 @@
+Reranker-Augmented Evaluation — Intermediate Logs
+Task: t_a21da4b4 | Date: 2026-05-19 | Model: ms-marco-MiniLM-L6-v2 (ONNX)
+
+=== Phase 1: Dense Proxy Baseline (Bi-Encoder) ===
+[5/25] baseline scored
+[10/25] baseline scored
+[15/25] baseline scored
+[20/25] baseline scored
+[25/25] baseline scored
+
+=== Phase 2: Reranker-Augmented (Cross-Encoder) ===
+Reranking top-20 candidates from dense_proxy for each query...
+[5/25] reranked (avg 75ms/case)
+[10/25] reranked (avg 72ms/case)
+[15/25] reranked (avg 66ms/case)
+[20/25] reranked (avg 71ms/case)
+[25/25] reranked (avg 72ms/case)
+
+=== Phase 3: Reranker vs Baseline Delta ===
+Top-1 Rate  : 0.2609 → 0.4348 (+0.1739)
+Recall@5    : 0.9565 → 0.9130 (-0.0435)
+MRR         : 0.5272 → 0.6178 (+0.0906)
+NDCG@1      : 0.2609 → 0.4348 (+0.1739)
+NDCG@3      : 0.4919 → 0.4862 (-0.0058)
+NDCG@5      : 0.6018 → 0.6179 (+0.0160)
+NDCG@10     : 0.6493 → 0.6880 (+0.0387)
+
+=== Summary ===
+Baseline NDCG@5: 0.6018
+Reranker NDCG@5: 0.6179
+Delta: +0.0160
+Acceptance (+0.15): FAILED (model too small; recommend gte-modernbert or bge-m3)
+
+=== Timing ===
+Mean: 71.7 ms/case
+Median: 62.5 ms/case
+
+=== Build Notes ===
+- KnowWhere binary: could not build (macOS purgeable space deleted target/ mid-build 4x)
+- Workaround: pure Python ONNX inference using onnxruntime + tokenizers
+- ONNX model: cross-encoder/ms-marco-MiniLM-L6-v2 (87 MB)
+- 25/25 cases processed successfully, 0 errors

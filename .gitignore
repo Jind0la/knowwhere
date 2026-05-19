@@ -56,9 +56,9 @@ native_data/
 models/
 
 # Eval outputs (generated)
-baseline-results/
-eval_results/
-results/
-state.json
-id_map.json
-longmemeval_report_*.json
+/baseline-results/
+/eval_results/
+/results/
+/state.json
+/id_map.json
+/longmemeval_report_*.json
