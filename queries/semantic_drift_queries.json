@@ -1,0 +1,345 @@
+{
+  "version": "1.0.0",
+  "description": "TDD query set targeting semantic drift and fact burial failures. Each query has a gold document whose embedding is semantically distant from the query intent — testing whether turn-level retrieval can surface facts buried in off-topic sessions.",
+  "created": "2026-05-19",
+  "evaluation_metrics": ["ndcg@5", "recall@1", "top1_accuracy", "ndcg@1"],
+  "failure_patterns_targeted": [
+    "semantic_drift",
+    "fact_burial",
+    "numeric_blindness",
+    "generic_session_dominance"
+  ],
+  "gold_documents": [
+    {
+      "doc_id": "drift-001-gold",
+      "type": "conversation_turn",
+      "session_id": "drift-session-001",
+      "session_topic": "cooking and recipes",
+      "turn_index": 12,
+      "speaker": "user",
+      "content": "Oh by the way, I'm switching my primary database from MongoDB to PostgreSQL for the KnowWhere project."
+    },
+    {
+      "doc_id": "drift-002-gold",
+      "type": "conversation_turn",
+      "session_id": "drift-session-002",
+      "session_topic": "vacation planning in Japan",
+      "turn_index": 8,
+      "speaker": "user",
+      "content": "The API key needs to be rotated. Current one is kw_7x9m2p4q. Set the new one to kw_n8y3r5t6 and update all services."
+    },
+    {
+      "doc_id": "drift-003-gold",
+      "type": "conversation_turn",
+      "session_id": "drift-session-003",
+      "session_topic": "debugging a Kubernetes pod crash",
+      "turn_index": 15,
+      "speaker": "assistant",
+      "content": "As a note: Nimar prefers all commits to be squashed before merging to main. He mentioned this during the incident review last month."
+    },
+    {
+      "doc_id": "drift-004-gold",
+      "type": "conversation_turn",
+      "session_id": "drift-session-004",
+      "session_topic": "movie recommendations and film criticism",
+      "turn_index": 3,
+      "speaker": "user",
+      "content": "The backup server IP changed to 192.168.1.87:8443. The old one 10.0.0.45 got decommissioned yesterday."
+    },
+    {
+      "doc_id": "drift-005-gold",
+      "type": "conversation_turn",
+      "session_id": "drift-session-005",
+      "session_topic": "fantasy football league discussion",
+      "turn_index": 22,
+      "speaker": "user",
+      "content": "I decided on the license: AGPL-3.0 for KnowWhere. Dual-licensing with a commercial option for enterprises."
+    },
+    {
+      "doc_id": "drift-006-gold",
+      "type": "conversation_turn",
+      "session_id": "drift-session-006",
+      "session_topic": "gardening tips for beginners",
+      "turn_index": 7,
+      "speaker": "user",
+      "content": "Just migrated: the embedding dimension changed from 768 to 1536. All existing vectors need re-indexing after the upgrade."
+    },
+    {
+      "doc_id": "drift-007-gold",
+      "type": "conversation_turn",
+      "session_id": "drift-session-007",
+      "session_topic": "complaining about airline delays",
+      "turn_index": 5,
+      "speaker": "user",
+      "content": "Timeout config: the retrieval timeout is set to 5000ms, but the embedding timeout should be 15000ms. Don't swap these."
+    },
+    {
+      "doc_id": "drift-008-gold",
+      "type": "conversation_turn",
+      "session_id": "drift-session-008",
+      "session_topic": "discussing philosophy of mind and consciousness",
+      "turn_index": 31,
+      "speaker": "user",
+      "content": "The max batch size for embeddings is 2048 tokens. Hitting this limit crashes the Ollama server silently."
+    },
+    {
+      "doc_id": "burial-001-gold",
+      "type": "conversation_turn",
+      "session_id": "burial-session-001",
+      "session_topic": "KnowWhere development discussion",
+      "turn_index": 4,
+      "speaker": "user",
+      "content": "Specific number: we currently have exactly 2,549 active nodes in the graph. Target is 10K by end of month."
+    },
+    {
+      "doc_id": "burial-002-gold",
+      "type": "conversation_turn",
+      "session_id": "burial-session-002",
+      "session_topic": "KnowWhere performance tuning",
+      "turn_index": 2,
+      "speaker": "assistant",
+      "content": "The P95 retrieval latency dropped to 487ms after the RRF k=60 tuning. P50 is now 312ms. Previously P95 was 850ms."
+    },
+    {
+      "doc_id": "burial-003-gold",
+      "type": "conversation_turn",
+      "session_id": "burial-session-003",
+      "session_topic": "KnowWhere architecture review",
+      "turn_index": 6,
+      "speaker": "user",
+      "content": "Decision recorded: we will use Reciprocal Rank Fusion with k=60, not k=40. The grid search showed k=60 gives best NDCG@5."
+    },
+    {
+      "doc_id": "burial-004-gold",
+      "type": "conversation_turn",
+      "session_id": "burial-session-004",
+      "session_topic": "KnowWhere roadmap planning",
+      "turn_index": 9,
+      "speaker": "user",
+      "content": "The consolidation scheduler frequency was changed from every 3600 seconds to every 7200 seconds on May 14th due to CPU concerns."
+    },
+    {
+      "doc_id": "burial-005-gold",
+      "type": "conversation_turn",
+      "session_id": "burial-session-005",
+      "session_topic": "KnowWhere deployment discussion",
+      "turn_index": 3,
+      "speaker": "assistant",
+      "content": "Current deployment: single binary on M1 MacBook Air, 8GB RAM. Peak memory usage is 1.2GB with 2,549 nodes loaded."
+    },
+    {
+      "doc_id": "num-001-gold",
+      "type": "fact",
+      "content": "The exact Recall@5 score from the baseline dense-only evaluation on 25 queries was 0.6600, not 0.66 — the precision matters for regression testing."
+    },
+    {
+      "doc_id": "num-002-gold",
+      "type": "fact",
+      "content": "The total number of nodes in KnowWhere is exactly 2,216 as of the last health check. The health endpoint returns node_count."
+    },
+    {
+      "doc_id": "num-003-gold",
+      "type": "fact",
+      "content": "The exact port number for the KnowWhere server is 3737. It binds to 0.0.0.0:3737."
+    },
+    {
+      "doc_id": "num-004-gold",
+      "type": "fact",
+      "content": "The KnowWhere max batch embedding size is 2048 tokens. The server crashes if this is exceeded on Ollama."
+    },
+    {
+      "doc_id": "num-005-gold",
+      "type": "fact",
+      "content": "The migration from session-level to turn-level embeddings changed 33 files, added 5,936 lines, and removed 390 lines. Commit hash: 12cb604."
+    }
+  ],
+  "queries": [
+    {
+      "id": "drift-001",
+      "query": "What database did I switch to for the KnowWhere project?",
+      "type": "semantic_drift",
+      "failure_pattern": "semantic_drift",
+      "expected_answer": "PostgreSQL",
+      "gold_documents": ["drift-001-gold"],
+      "relevance_judgments": {"drift-001-gold": 3},
+      "hypothesis": "The session about cooking buries the database fact. Session-level embedding points to recipes, not databases. Turn-level should surface the specific turn."
+    },
+    {
+      "id": "drift-002",
+      "query": "What is the new API key after rotation?",
+      "type": "semantic_drift",
+      "failure_pattern": "semantic_drift",
+      "expected_answer": "kw_n8y3r5t6",
+      "gold_documents": ["drift-002-gold"],
+      "relevance_judgments": {"drift-002-gold": 3},
+      "hypothesis": "API key hidden in a vacation planning session. Session embedding points to Japan/travel, not API security."
+    },
+    {
+      "id": "drift-003",
+      "query": "Does Nimar prefer squashed commits before merging?",
+      "type": "semantic_drift",
+      "failure_pattern": "semantic_drift",
+      "expected_answer": "yes, squash before merge",
+      "gold_documents": ["drift-003-gold"],
+      "relevance_judgments": {"drift-003-gold": 3},
+      "hypothesis": "Preference fact buried in a Kubernetes debugging session. Assistant turn in a devops context."
+    },
+    {
+      "id": "drift-004",
+      "query": "What is the new backup server IP address?",
+      "type": "semantic_drift",
+      "failure_pattern": "semantic_drift",
+      "expected_answer": "192.168.1.87:8443",
+      "gold_documents": ["drift-004-gold"],
+      "relevance_judgments": {"drift-004-gold": 3},
+      "hypothesis": "IP address buried in a movie discussion session. Session about films has no semantic overlap with server IPs."
+    },
+    {
+      "id": "drift-005",
+      "query": "What license did I choose for KnowWhere?",
+      "type": "semantic_drift",
+      "failure_pattern": "semantic_drift",
+      "expected_answer": "AGPL-3.0",
+      "gold_documents": ["drift-005-gold"],
+      "relevance_judgments": {"drift-005-gold": 3},
+      "hypothesis": "License decision buried in fantasy football chat. Session embedding is about sports."
+    },
+    {
+      "id": "drift-006",
+      "query": "What is the new embedding dimension after the migration?",
+      "type": "semantic_drift",
+      "failure_pattern": "semantic_drift",
+      "expected_answer": "1536",
+      "gold_documents": ["drift-006-gold"],
+      "relevance_judgments": {"drift-006-gold": 3},
+      "hypothesis": "Embedding dimension fact in a gardening session. Session about plants vs. ML infrastructure."
+    },
+    {
+      "id": "drift-007",
+      "query": "What is the retrieval timeout set to in milliseconds?",
+      "type": "semantic_drift",
+      "failure_pattern": "semantic_drift + numeric_blindness",
+      "expected_answer": "5000ms",
+      "gold_documents": ["drift-007-gold"],
+      "relevance_judgments": {"drift-007-gold": 3},
+      "hypothesis": "Timeout value in an airline complaints session. Also tests numeric precision."
+    },
+    {
+      "id": "drift-008",
+      "query": "What is the max batch embedding size in tokens?",
+      "type": "semantic_drift",
+      "failure_pattern": "semantic_drift + numeric_blindness",
+      "expected_answer": "2048",
+      "gold_documents": ["drift-008-gold"],
+      "relevance_judgments": {"drift-008-gold": 3},
+      "hypothesis": "Token limit in a philosophy discussion. Extreme topic mismatch."
+    },
+    {
+      "id": "burial-001",
+      "query": "How many active nodes are currently in the KnowWhere graph?",
+      "type": "fact_burial",
+      "failure_pattern": "fact_burial + numeric_blindness",
+      "expected_answer": "2,549",
+      "gold_documents": ["burial-001-gold"],
+      "relevance_judgments": {"burial-001-gold": 3},
+      "hypothesis": "Specific number buried among many KnowWhere sessions. All sessions have similar KnowWhere-topic embeddings — retrieving the exact node count is hard."
+    },
+    {
+      "id": "burial-002",
+      "query": "What is the current P95 retrieval latency in milliseconds?",
+      "type": "fact_burial",
+      "failure_pattern": "fact_burial + numeric_blindness",
+      "expected_answer": "487ms",
+      "gold_documents": ["burial-002-gold"],
+      "relevance_judgments": {"burial-002-gold": 3},
+      "hypothesis": "P95 latency number buried among many KnowWhere performance discussions. Multiple sessions mention latency — need the exact P95 value."
+    },
+    {
+      "id": "burial-003",
+      "query": "What RRF k-value was selected after the grid search?",
+      "type": "fact_burial",
+      "failure_pattern": "fact_burial",
+      "expected_answer": "k=60",
+      "gold_documents": ["burial-003-gold"],
+      "relevance_judgments": {"burial-003-gold": 3},
+      "hypothesis": "Specific k-value among many architecture discussions. Multiple sessions reference RRF — which one has the final decision?"
+    },
+    {
+      "id": "burial-004",
+      "query": "When was the consolidation scheduler frequency changed and to what value?",
+      "type": "fact_burial",
+      "failure_pattern": "fact_burial + temporal",
+      "expected_answer": "May 14th, 7200 seconds",
+      "gold_documents": ["burial-004-gold"],
+      "relevance_judgments": {"burial-004-gold": 3},
+      "hypothesis": "Date + number change in roadmap discussion. Temporal precision matters."
+    },
+    {
+      "id": "burial-005",
+      "query": "What is the peak memory usage of KnowWhere on the M1 MacBook Air?",
+      "type": "fact_burial",
+      "failure_pattern": "fact_burial + numeric_blindness",
+      "expected_answer": "1.2GB",
+      "gold_documents": ["burial-005-gold"],
+      "relevance_judgments": {"burial-005-gold": 3},
+      "hypothesis": "Memory number in deployment discussion. Many sessions mention hardware — need the exact peak memory."
+    },
+    {
+      "id": "num-001",
+      "query": "What was the exact Recall@5 score from the baseline dense-only evaluation?",
+      "type": "numeric_precision",
+      "failure_pattern": "numeric_blindness",
+      "expected_answer": "0.6600",
+      "gold_documents": ["num-001-gold"],
+      "relevance_judgments": {"num-001-gold": 3},
+      "hypothesis": "Precise numeric value — session-level embeddings might return nearby sessions about 'evaluation' but miss the exact number."
+    },
+    {
+      "id": "num-002",
+      "query": "What is the exact node count in KnowWhere right now?",
+      "type": "numeric_precision",
+      "failure_pattern": "numeric_blindness",
+      "expected_answer": "2,216",
+      "gold_documents": ["num-002-gold"],
+      "relevance_judgments": {"num-002-gold": 3},
+      "hypothesis": "Exact current node count — should match health endpoint. Tests whether precise numbers survive retrieval."
+    },
+    {
+      "id": "num-003",
+      "query": "What port does the KnowWhere server listen on?",
+      "type": "numeric_precision",
+      "failure_pattern": "numeric_blindness",
+      "expected_answer": "3737",
+      "gold_documents": ["num-003-gold"],
+      "relevance_judgments": {"num-003-gold": 3},
+      "hypothesis": "Port number — single numeric fact that should be easy to retrieve if embeddings work."
+    },
+    {
+      "id": "num-004",
+      "query": "What is the maximum batch embedding token size?",
+      "type": "numeric_precision",
+      "failure_pattern": "numeric_blindness",
+      "expected_answer": "2048",
+      "gold_documents": ["num-004-gold"],
+      "relevance_judgments": {"num-004-gold": 3},
+      "hypothesis": "Technical limit — should surface from the drift-008 session if turn-level works, or from the fact node."
+    },
+    {
+      "id": "num-005",
+      "query": "How many lines were changed in the turn-level embedding migration commit?",
+      "type": "numeric_precision",
+      "failure_pattern": "numeric_blindness",
+      "expected_answer": "5936 added, 390 removed",
+      "gold_documents": ["num-005-gold"],
+      "relevance_judgments": {"num-005-gold": 3},
+      "hypothesis": "Multi-part numeric answer (added + removed). Tests whether both numbers are retrievable."
+    }
+  ],
+  "query_type_distribution": {
+    "semantic_drift": 8,
+    "fact_burial": 5,
+    "numeric_precision": 5
+  },
+  "total_queries": 18,
+  "total_gold_documents": 18
+}

@@ -1448,4 +1448,370 @@ mod tests {
             );
         }
     }
+
+    // ── Edge case: unknown sources ──────────────────────────────────
+    // The Unknown SourceType variant exists in the enum and weight table
+    // but is currently unreachable through detect_source_type() (all
+    // MemorySource variants map to Real or Synthetic). These tests
+    // exercise the Unknown weight infrastructure directly so it's
+    // covered if/when detect_source_type is extended to return Unknown.
+
+    #[test]
+    fn test_unknown_source_type_direct_multiplier_default() {
+        let weights = SourceTypeWeights::default();
+        assert!(
+            (weights.multiplier(SourceType::Unknown) - 0.95).abs() < 0.001,
+            "Unknown should default to 0.95x"
+        );
+    }
+
+    #[test]
+    fn test_unknown_source_type_direct_multiplier_custom() {
+        let weights = SourceTypeWeights::new(1.0, 0.5, 0.3, 0.1);
+        assert!(
+            (weights.multiplier(SourceType::Unknown) - 0.1).abs() < 0.001,
+            "Unknown with custom weight"
+        );
+    }
+
+    #[test]
+    fn test_unknown_source_type_display() {
+        assert_eq!(SourceType::Unknown.to_string(), "unknown");
+    }
+
+    #[test]
+    fn test_unknown_source_type_serde_roundtrip() {
+        let json = serde_json::to_string(&SourceType::Unknown).unwrap();
+        assert_eq!(json, "\"unknown\"");
+        let parsed: SourceType = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, SourceType::Unknown);
+    }
+
+    #[test]
+    fn test_unknown_weight_from_env() {
+        std::env::set_var(
+            "KNOWWHERE_SOURCE_TYPE_WEIGHTS",
+            r#"{"unknown":0.42}"#,
+        );
+        let w = SourceTypeWeights::from_env().expect("should parse");
+        assert!((w.unknown - 0.42).abs() < 0.001, "unknown overridden");
+        assert!((w.real - 1.0).abs() < 0.001, "real stays default");
+        std::env::remove_var("KNOWWHERE_SOURCE_TYPE_WEIGHTS");
+    }
+
+    #[test]
+    fn test_unknown_weight_from_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("unknown_weights.json");
+        std::fs::write(&path, r#"{"unknown":0.15}"#).unwrap();
+        let w = SourceTypeWeights::from_file(&path).expect("should parse");
+        assert!((w.unknown - 0.15).abs() < 0.001);
+        assert!((w.real - 1.0).abs() < 0.001, "real stays default");
+    }
+
+    // ── Edge case: zero weights ─────────────────────────────────────
+
+    #[test]
+    fn test_zero_weight_multiplier_returns_zero() {
+        let weights = SourceTypeWeights::new(0.0, 0.0, 0.5, 1.0);
+        assert!(
+            weights.multiplier(SourceType::Real) == 0.0,
+            "zero real weight → zero multiplier"
+        );
+        assert!(
+            weights.multiplier(SourceType::Synthetic) == 0.0,
+            "zero synthetic weight → zero multiplier"
+        );
+        assert!(
+            weights.multiplier(SourceType::Derived) > 0.0,
+            "non-zero derived stays non-zero"
+        );
+    }
+
+    #[test]
+    fn test_zero_weight_score_node_zeros_score() {
+        let mut meta = HashMap::new();
+        meta.insert("provenance".into(), serde_json::json!("real"));
+        let node = make_node(
+            MemorySource::Conversation,
+            serde_json::json!({"method": "session"}),
+            meta,
+        );
+        // Real weight = 0.0 → final score should be 0.0
+        let weights = SourceTypeWeights::new(0.0, 0.85, 0.70, 0.95);
+        let scored = RetrievalProfile::FullFidelity
+            .score_node(0.95, node, Some(weights));
+
+        assert!(
+            scored.score == 0.0,
+            "zero source weight should produce zero final score, got {}",
+            scored.score
+        );
+        assert_eq!(
+            scored.debug.as_ref().and_then(|d| d.original_source.as_deref()),
+            Some("real")
+        );
+        assert!(
+            (scored.debug.as_ref().and_then(|d| d.source_weight_applied).unwrap() - 0.0).abs()
+                < 0.001,
+            "source_weight_applied should be 0.0"
+        );
+    }
+
+    #[test]
+    fn test_zero_weight_synthetic_score_node() {
+        let mut meta = HashMap::new();
+        meta.insert("provenance".into(), serde_json::json!("synthetic"));
+        let node = make_node(
+            MemorySource::Consolidation,
+            serde_json::json!({"method": "consolidation"}),
+            meta,
+        );
+        // Synthetic weight = 0.0
+        let weights = SourceTypeWeights::new(1.0, 0.0, 0.70, 0.95);
+        let scored = RetrievalProfile::FullFidelity
+            .score_node(0.90, node, Some(weights));
+
+        assert!(
+            scored.score == 0.0,
+            "zero synthetic weight → zero score, got {}",
+            scored.score
+        );
+        assert_eq!(
+            scored.debug.as_ref().and_then(|d| d.original_source.as_deref()),
+            Some("synthetic")
+        );
+    }
+
+    #[test]
+    fn test_all_zero_weights_config() {
+        let weights = SourceTypeWeights::new(0.0, 0.0, 0.0, 0.0);
+        let nodes = session_nodes();
+
+        for (i, node) in nodes.iter().enumerate() {
+            let mult = source_multiplier(node, &weights);
+            assert!(
+                mult == 0.0,
+                "node {i}: all-zero weights should give 0.0 multiplier, got {mult}"
+            );
+
+            let scored = RetrievalProfile::FullFidelity
+                .score_node(0.95, node.clone(), Some(weights));
+            assert!(
+                scored.score == 0.0,
+                "node {i}: all-zero weights should give 0.0 final score, got {}",
+                scored.score
+            );
+        }
+    }
+
+    #[test]
+    fn test_mixed_zero_and_nonzero_weights() {
+        // Only Real penalized to zero; Synthetic/Derived/Unknown keep defaults
+        let weights = SourceTypeWeights::new(0.0, 0.85, 0.70, 0.95);
+        let nodes = session_nodes();
+
+        // Node 0: Real → zero
+        let mult0 = source_multiplier(&nodes[0], &weights);
+        assert!(mult0 == 0.0, "Real with zero weight");
+
+        // Node 1: Synthetic → 0.85 (non-zero, uses explicit value)
+        let mult1 = source_multiplier(&nodes[1], &weights);
+        assert!((mult1 - 0.85).abs() < 0.001, "Synthetic non-zero");
+
+        // Node 2: Derived → 0.70 (non-zero)
+        let mult2 = source_multiplier(&nodes[2], &weights);
+        assert!((mult2 - 0.70).abs() < 0.001, "Derived non-zero");
+
+        // Synthetic should score higher than Real when Real is zeroed
+        let scored0 = RetrievalProfile::FullFidelity
+            .score_node(0.90, nodes[0].clone(), Some(weights));
+        let scored1 = RetrievalProfile::FullFidelity
+            .score_node(0.90, nodes[1].clone(), Some(weights));
+        assert!(
+            scored1.score > scored0.score,
+            "synthetic ({}) > real ({}) when real is zeroed",
+            scored1.score,
+            scored0.score
+        );
+    }
+
+    #[test]
+    fn test_zero_weight_penalizes_all_real_sources() {
+        // All sources that resolve to Real should be zeroed
+        let weights = SourceTypeWeights::new(0.0, 1.0, 1.0, 1.0);
+
+        let sources: Vec<(MemorySource, &str)> = vec![
+            (MemorySource::Conversation, "conversation"),
+            (MemorySource::Document, "document"),
+            (MemorySource::Import, "import"),
+            (MemorySource::Manual, "manual"),
+        ];
+
+        for (source, name) in &sources {
+            let node = make_node(*source, serde_json::json!({}), HashMap::new());
+            let mult = source_multiplier(&node, &weights);
+            assert!(
+                mult == 0.0,
+                "{name}: should be zeroed (resolves to Real), got {mult}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_zero_weight_all_profiles() {
+        let mut meta = HashMap::new();
+        meta.insert("provenance".into(), serde_json::json!("real"));
+        let node = make_node(
+            MemorySource::Conversation,
+            serde_json::json!({"method": "session"}),
+            meta,
+        );
+        let weights = SourceTypeWeights::new(0.0, 0.85, 0.70, 0.95);
+
+        for profile in [
+            RetrievalProfile::UserFacing,
+            RetrievalProfile::AgentDebug,
+            RetrievalProfile::FullFidelity,
+        ] {
+            let scored = profile.score_node(0.95, node.clone(), Some(weights));
+            assert!(
+                scored.score == 0.0,
+                "{:?}: zero Real weight → zero score, got {}",
+                profile,
+                scored.score
+            );
+            let debug = scored.debug.as_ref().expect("debug present");
+            assert_eq!(debug.original_source.as_deref(), Some("real"));
+            assert!(
+                (debug.source_weight_applied.unwrap() - 0.0).abs() < 0.001,
+                "{:?}: source_weight_applied should be 0.0",
+                profile
+            );
+        }
+    }
+
+    // ── Edge case: unrecognized / malformed metadata ─────────────────
+
+    #[test]
+    fn test_unrecognized_metadata_provenance_falls_through() {
+        let mut meta = HashMap::new();
+        meta.insert("provenance".into(), serde_json::json!("garbage_value"));
+        let node = make_node(
+            MemorySource::Conversation,
+            serde_json::json!({"method": "session"}),
+            meta,
+        );
+        // "garbage_value" doesn't match real/synthetic/derived → falls through
+        // to provenance.method → "session" → Real
+        assert_eq!(detect_source_type(&node), SourceType::Real);
+    }
+
+    #[test]
+    fn test_empty_string_provenance_falls_through() {
+        let mut meta = HashMap::new();
+        meta.insert("provenance".into(), serde_json::json!(""));
+        let node = make_node(
+            MemorySource::Conversation,
+            serde_json::json!({"method": "consolidation"}),
+            meta,
+        );
+        // Empty string doesn't match → falls to provenance.method →
+        // "consolidation" → Synthetic
+        assert_eq!(detect_source_type(&node), SourceType::Synthetic);
+    }
+
+    #[test]
+    fn test_non_string_provenance_metadata_ignored() {
+        let mut meta = HashMap::new();
+        meta.insert("provenance".into(), serde_json::json!(42));
+        let node = make_node(
+            MemorySource::Conversation,
+            serde_json::json!({"method": "session"}),
+            meta,
+        );
+        // Integer provenance value → .as_str() returns None → falls through
+        assert_eq!(detect_source_type(&node), SourceType::Real);
+    }
+
+    #[test]
+    fn test_non_string_source_dataset_ignored() {
+        let mut meta = HashMap::new();
+        meta.insert("source_dataset".into(), serde_json::json!(true));
+        let node = make_node(
+            MemorySource::Import,
+            serde_json::json!({"method": "external"}),
+            meta,
+        );
+        // Boolean source_dataset → .as_str() returns None → falls through
+        assert_eq!(detect_source_type(&node), SourceType::Real);
+    }
+
+    #[test]
+    fn test_null_provenance_metadata_ignored() {
+        let mut meta = HashMap::new();
+        meta.insert("provenance".into(), serde_json::Value::Null);
+        let node = make_node(
+            MemorySource::Document,
+            serde_json::json!({"method": "external"}),
+            meta,
+        );
+        // Null provenance → .as_str() returns None → falls through
+        assert_eq!(detect_source_type(&node), SourceType::Real);
+    }
+
+    // ── Edge case: weight at exact clamp boundaries ──────────────────
+
+    #[test]
+    fn test_weight_exactly_zero() {
+        let weights = SourceTypeWeights::new(0.0, 0.0, 0.0, 0.0);
+        assert!(weights.real == 0.0);
+        assert!(weights.synthetic == 0.0);
+        assert!(weights.derived == 0.0);
+        assert!(weights.unknown == 0.0);
+    }
+
+    #[test]
+    fn test_weight_exactly_two() {
+        let weights = SourceTypeWeights::new(2.0, 2.0, 2.0, 2.0);
+        assert!((weights.real - 2.0).abs() < 0.001);
+        assert!((weights.synthetic - 2.0).abs() < 0.001);
+        assert!((weights.derived - 2.0).abs() < 0.001);
+        assert!((weights.unknown - 2.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_weight_exactly_two_doubles_score() {
+        let weights_2x = SourceTypeWeights::new(2.0, 1.0, 1.0, 1.0);
+        let weights_1x = SourceTypeWeights::new(1.0, 1.0, 1.0, 1.0);
+        let node = make_node(
+            MemorySource::Conversation,
+            serde_json::json!({"method": "session"}),
+            HashMap::new(),
+        );
+        let base = 0.50;
+
+        // Verify the source_multiplier itself is exactly 2.0
+        let mult = source_multiplier(&node, &weights_2x);
+        assert!((mult - 2.0).abs() < 0.001);
+
+        // score_multiplier() includes tier * explicit * memory_type * source_type,
+        // so the 2x source weight should exactly double the final score relative
+        // to a 1x source weight when all other multipliers are held equal.
+        let scored_2x = RetrievalProfile::FullFidelity
+            .score_node(base, node.clone(), Some(weights_2x));
+        let scored_1x = RetrievalProfile::FullFidelity
+            .score_node(base, node.clone(), Some(weights_1x));
+
+        assert!(
+            scored_2x.score > 0.0,
+            "2x weight should produce non-zero score"
+        );
+        assert!(
+            (scored_2x.score - 2.0 * scored_1x.score).abs() < 0.001,
+            "2x weight score ({}) = 2.0 * 1x weight score ({})",
+            scored_2x.score,
+            scored_1x.score
+        );
+    }
 }

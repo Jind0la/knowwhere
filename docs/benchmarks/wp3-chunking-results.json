@@ -1,0 +1,91 @@
+{
+  "timestamp": "2026-05-18T15:39:20",
+  "model": "nomic-embed-text (8192 ctx)",
+  "base_url": "http://localhost:3737",
+  "doc_count": 4,
+  "total_queries": 20,
+  "metrics": {
+    "no_chunking": {
+      "recall@1": 0.3,
+      "recall@3": 0.65,
+      "recall@5": 0.65,
+      "mrr": 0.475,
+      "fact_retention": 0.65
+    },
+    "with_chunking": {
+      "recall@1": 0.35,
+      "recall@3": 0.85,
+      "recall@5": 0.85,
+      "mrr": 0.6,
+      "fact_retention": 0.85
+    },
+    "total_queries": 20,
+    "no_chunking_count": 20,
+    "with_chunking_count": 20
+  },
+  "position_analysis": {
+    "beginning": {
+      "count": 8,
+      "no_chunking_hit_rate": 0.75,
+      "with_chunking_hit_rate": 1.0
+    },
+    "quarter": {
+      "count": 8,
+      "no_chunking_hit_rate": 0.75,
+      "with_chunking_hit_rate": 1.0
+    },
+    "middle": {
+      "count": 8,
+      "no_chunking_hit_rate": 0.5,
+      "with_chunking_hit_rate": 0.75
+    },
+    "three_quarter": {
+      "count": 8,
+      "no_chunking_hit_rate": 0.5,
+      "with_chunking_hit_rate": 0.5
+    },
+    "end": {
+      "count": 8,
+      "no_chunking_hit_rate": 0.75,
+      "with_chunking_hit_rate": 1.0
+    }
+  },
+  "per_document": [
+    {
+      "doc_id": "DOC-A",
+      "doc_size_chars": 3309,
+      "num_chunks": 1,
+      "no_chunking_hits": 4,
+      "with_chunking_hits": 4,
+      "no_chunking_store_time": 0.8567380905151367,
+      "with_chunking_store_time": 0.17693710327148438
+    },
+    {
+      "doc_id": "DOC-B",
+      "doc_size_chars": 6147,
+      "num_chunks": 1,
+      "no_chunking_hits": 4,
+      "with_chunking_hits": 4,
+      "no_chunking_store_time": 0.3548860549926758,
+      "with_chunking_store_time": 1.0174500942230225
+    },
+    {
+      "doc_id": "DOC-C",
+      "doc_size_chars": 8067,
+      "num_chunks": 2,
+      "no_chunking_hits": 5,
+      "with_chunking_hits": 5,
+      "no_chunking_store_time": 0.511955976486206,
+      "with_chunking_store_time": 0.48491597175598145
+    },
+    {
+      "doc_id": "DOC-D",
+      "doc_size_chars": 12036,
+      "num_chunks": 3,
+      "no_chunking_hits": 0,
+      "with_chunking_hits": 4,
+      "no_chunking_store_time": null,
+      "with_chunking_store_time": 1.4119439125061035
+    }
+  ]
+}
