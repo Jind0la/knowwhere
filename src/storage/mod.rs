@@ -6,11 +6,16 @@ pub mod postgres_store;
 pub mod trajectory;
 
 pub use backend::{
-    HybridQuery, RetrievalProfile, ScoreDebug, ScoredNode, StorageBackend, UpdateOperation,
+    FusionStrategy, HybridQuery, RetrievalProfile, ScoreDebug, ScoredNode, StorageBackend,
+    UpdateOperation,
 };
 pub use in_memory::MemoryStore;
 #[cfg(feature = "postgres-storage")]
 pub use postgres_store::PostgresStore;
+#[cfg(feature = "postgres-storage")]
+pub use postgres_store::TurnWithScore;
+#[cfg(feature = "postgres-storage")]
+pub use crate::memory::conversation::TurnRow;
 #[cfg(feature = "postgres-storage")]
 pub use trajectory::{
     RetrievalRunRow, RetrievalStep, RetrievalTrajectory, TrajectoryStepRow, TrajectoryStore,

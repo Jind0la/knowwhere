@@ -16,7 +16,7 @@ use uuid::Uuid;
 use crate::embedding::{embed_document, EmbeddingProvider};
 use crate::memory::FractalNode;
 use crate::storage::backend::EmbeddingRepairReport;
-use crate::storage::{HybridQuery, ScoredNode, StorageBackend, UpdateOperation};
+use crate::storage::{FusionStrategy, HybridQuery, ScoredNode, StorageBackend, UpdateOperation};
 
 const USEARCH_THRESHOLD: usize = 50;
 const SAVE_DEBOUNCE_SECS: u64 = 5;
@@ -207,6 +207,8 @@ impl StorageBackend for MemoryStore {
                 fetch_k,
                 query.max_depth,
                 query.recency_boost,
+                query.fusion_strategy,
+                query.query_type_routing,
                 #[cfg(feature = "postgres-storage")]
                 None,
             )
@@ -233,7 +235,7 @@ impl StorageBackend for MemoryStore {
                     Some(uid) => node_uid.map_or(true, |v| v == uid.as_str()),
                 }
             })
-            .map(|(score, node)| query.profile.score_node(score, node))
+            .map(|(score, node)| query.profile.score_node(score, node, query.source_type_weights))
             .collect();
         // Sort by score descending, with deterministic tiebreaker on trust tier.
         // When multipliers are neutralized, equal scores must still produce
@@ -257,12 +259,6 @@ impl StorageBackend for MemoryStore {
         // Hybrid temporal + semantic scoring (WP1)
         if let Some(w) = query.temporal_weight {
             Self::apply_temporal_to_scored_nodes(&mut weighted, w);
-        }
-
-        // Session filtering + boost (WP2) — always applied when session_id is set,
-        // regardless of whether temporal scoring also ran (matches PostgresStore behavior)
-        if let Some(ref sid) = query.session_id {
-            Self::apply_session_scoring(&mut weighted, sid);
         }
 
         // Distributional scoring: softmax-normalize scores into a proper probability
@@ -1333,43 +1329,6 @@ impl MemoryStore {
         );
     }
 
-    /// Session-aware scoring: boost same-session nodes, penalize others (WP2).
-    fn apply_session_scoring(results: &mut [ScoredNode], session_id: &str) {
-        let mut has_session_matches = false;
-
-        for item in results.iter_mut() {
-            if let Some(node_sid) =
-                item.node.metadata.get("session_id").and_then(|v| v.as_str())
-            {
-                if node_sid == session_id {
-                    let boost = 1.65;
-                    item.score = item.score * boost + 0.08;
-                    if let Some(debug) = &mut item.debug {
-                        debug.session_boost = Some(boost);
-                    }
-                    has_session_matches = true;
-                } else {
-                    item.score *= 0.72;
-                    if let Some(debug) = &mut item.debug {
-                        debug.session_boost = Some(0.72);
-                    }
-                }
-            }
-        }
-
-        if has_session_matches {
-            results.sort_by(|a, b| {
-                b.score
-                    .partial_cmp(&a.score)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            });
-            tracing::info!(
-                session_id = %session_id,
-                "session scoring applied (WP2, in-memory)"
-            );
-        }
-    }
-
     pub async fn hybrid_retrieve<'a>(
         &self,
         query_text: Option<&str>,
@@ -1377,6 +1336,8 @@ impl MemoryStore {
         top_k: usize,
         max_depth: usize,
         recency_boost: Option<f32>,
+        fusion_strategy: Option<FusionStrategy>,
+        query_type_routing: bool,
         #[cfg(feature = "postgres-storage")] trajectory_store: Option<
             &'a crate::storage::TrajectoryStore<'_>,
         >,
@@ -1465,13 +1426,30 @@ impl MemoryStore {
         #[cfg(feature = "postgres-storage")]
         let total_candidates = vector_ids.len() + bm25_results.len();
 
-        let fused = Self::rrf_fuse(&vector_ids, &bm25_results, 5.0);
+        // Build dense candidates with cosine similarity scores
+        use crate::retrieval::hybrid::{DenseCandidate, hybrid_retrieve as hybrid_fuse};
+        let dense_candidates: Vec<DenseCandidate> = vector_results
+            .iter()
+            .map(|n| {
+                let sim = crate::memory::cosine_similarity(&n.vector, query_vector);
+                DenseCandidate::new(n.id, sim, n.vector.clone())
+            })
+            .collect();
+
+        let fused = hybrid_fuse(
+            query_text,
+            Some(query_vector),
+            &bm25_results,
+            &dense_candidates,
+            top_k,
+            fusion_strategy,
+            query_type_routing,
+        );
 
         let nodes = self.nodes.read().await;
         let results: Vec<_> = fused
             .into_iter()
-            .take(top_k)
-            .filter_map(|(id, score)| nodes.get(&id).cloned().map(|n| (score, n)))
+            .filter_map(|fr| nodes.get(&fr.id).cloned().map(|n| (fr.score, n)))
             .collect();
 
         #[cfg(feature = "postgres-storage")]
@@ -1719,5 +1697,289 @@ impl MemoryStore {
 impl Default for MemoryStore {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Temporal Scoring Unit Tests — Multi Half-Life & Weighting Strategies
+// ═══════════════════════════════════════════════════════════════════════
+
+#[cfg(test)]
+#[allow(deprecated, reason = "tests intentionally exercise legacy FractalNode::new_session constructor")]
+mod temporal_scoring_tests {
+    use super::*;
+    use crate::memory::FractalNode;
+    use std::collections::HashMap;
+
+    /// Compute recency factor for a given age (in days) and half-life (in days).
+    /// Mirrors the exact formula from apply_hybrid_temporal_scoring / apply_temporal_to_scored_nodes.
+    fn recency_factor(age_days: f32, half_life_days: f32) -> f32 {
+        0.5f32.powf(age_days / half_life_days).max(0.05)
+    }
+
+    /// Apply hybrid temporal scoring to a vector of (score, age_days) pairs.
+    /// Returns new scores after blending with recency.
+    fn apply_temporal_scoring(
+        mut scores_and_ages: Vec<(f32, f32)>, // (semantic_score, age_days)
+        w: f32,
+        half_life_days: f32,
+    ) -> Vec<f32> {
+        for (score, age_days) in &mut scores_and_ages {
+            let rf = recency_factor(*age_days, half_life_days);
+            *score = *score * (1.0 - w) + rf * w;
+        }
+        scores_and_ages.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+        scores_and_ages.iter().map(|(s, _)| *s).collect()
+    }
+
+    // ── Core Formula Tests ──
+
+    #[test]
+    fn recency_factor_at_half_life_is_0_5() {
+        // At exactly half-life, factor should be 0.5
+        assert!((recency_factor(7.0, 7.0) - 0.5).abs() < 0.001);
+        assert!((recency_factor(3.0, 3.0) - 0.5).abs() < 0.001);
+        assert!((recency_factor(30.0, 30.0) - 0.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn recency_factor_at_double_half_life_is_0_25() {
+        assert!((recency_factor(14.0, 7.0) - 0.25).abs() < 0.001);
+        assert!((recency_factor(6.0, 3.0) - 0.25).abs() < 0.001);
+        assert!((recency_factor(60.0, 30.0) - 0.25).abs() < 0.001);
+    }
+
+    #[test]
+    fn recency_factor_floor_is_0_05() {
+        // Very old memories hit the floor
+        assert!((recency_factor(100.0, 7.0) - 0.05).abs() < 0.001);
+        assert!((recency_factor(365.0, 7.0) - 0.05).abs() < 0.001);
+        assert!((recency_factor(1000.0, 7.0) - 0.05).abs() < 0.001);
+    }
+
+    #[test]
+    fn recency_factor_zero_age_is_1_0() {
+        // Brand new (0 days) gets full recency
+        assert!((recency_factor(0.0, 7.0) - 1.0).abs() < 0.001);
+        assert!((recency_factor(0.0, 3.0) - 1.0).abs() < 0.001);
+    }
+
+    // ── Multi Half-Life Tests ──
+
+    #[test]
+    fn half_life_3d_decays_faster_than_7d() {
+        // At 3 days: 3d half-life gives 0.5, 7d half-life gives ~0.743
+        let rf_3 = recency_factor(3.0, 3.0);
+        let rf_7 = recency_factor(3.0, 7.0);
+        assert!(rf_3 < rf_7, "3d half-life ({rf_3}) should decay faster than 7d ({rf_7})");
+        assert!((rf_3 - 0.5).abs() < 0.01);
+        assert!(rf_7 > 0.7);
+    }
+
+    #[test]
+    fn half_life_30d_decays_slower_than_7d() {
+        // At 7 days: 7d half-life gives 0.5, 30d half-life gives ~0.851
+        let rf_7 = recency_factor(7.0, 7.0);
+        let rf_30 = recency_factor(7.0, 30.0);
+        assert!(rf_30 > rf_7, "30d half-life ({rf_30}) should decay slower than 7d ({rf_7})");
+        assert!((rf_7 - 0.5).abs() < 0.01);
+        assert!(rf_30 > 0.8);
+    }
+
+    #[test]
+    fn half_life_60d_preserves_much_more_recency() {
+        // At 14 days: 7d gives 0.25, 60d gives ~0.851
+        let rf_7 = recency_factor(14.0, 7.0);
+        let rf_60 = recency_factor(14.0, 60.0);
+        assert!((rf_7 - 0.25).abs() < 0.01);
+        assert!(rf_60 > 0.8, "60d half-life should give high recency ({rf_60}) at 14 days");
+        assert!(rf_60 > rf_7 * 3.0, "60d should be >3x higher than 7d at 14 days");
+    }
+
+    #[test]
+    fn recency_range_wider_with_shorter_half_life() {
+        // Shorter half-life → wider range between newest and oldest
+        let rf_new = recency_factor(0.0, 3.0);
+        let rf_old = recency_factor(10.0, 3.0); // ~0.05 floor
+        let range_3 = rf_new - rf_old;
+
+        let rf_new = recency_factor(0.0, 30.0);
+        let rf_old = recency_factor(10.0, 30.0);
+        let range_30 = rf_new - rf_old;
+
+        assert!(range_3 > range_30,
+            "3d half-life range ({range_3:.4}) should be wider than 30d ({range_30:.4})"
+        );
+    }
+
+    // ── Weighting Strategy Tests ──
+
+    #[test]
+    fn weight_zero_is_pure_semantic() {
+        // w=0: recency has no effect, scores unchanged
+        let input = vec![(0.9, 0.0), (0.8, 100.0), (0.5, 1.0)];
+        let result = apply_temporal_scoring(input.clone(), 0.0, 7.0);
+        // Scores should remain in same relative order (sorted descending)
+        assert!((result[0] - 0.9).abs() < 0.001);
+        assert!((result[1] - 0.8).abs() < 0.001);
+        assert!((result[2] - 0.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn weight_full_is_pure_recency() {
+        // w=0.8 (max): dominated by recency, newest wins regardless of semantic
+        let input = vec![(0.9, 100.0), (0.1, 0.0), (0.5, 50.0)];
+        let result = apply_temporal_scoring(input, 0.8, 7.0);
+        // Brand-new (0d) item should now be top despite low semantic score
+        assert!((result[0] - 0.8).abs() < 0.1,
+            "New item (0d) should rank first with w=0.8. Got result: {:?}", result
+        );
+    }
+
+    #[test]
+    fn weight_moderate_balances_semantic_and_recency() {
+        // w=0.3: balanced — very old relevant might still beat new irrelevant
+        let input = vec![(0.9, 100.0), (0.4, 0.0)];
+        let result = apply_temporal_scoring(input, 0.3, 7.0);
+        // Old but highly relevant should still win
+        let old_score = 0.9 * 0.7 + 0.05 * 0.3; // 0.63 + 0.015 = 0.645
+        let new_score = 0.4 * 0.7 + 1.0 * 0.3;  // 0.28 + 0.3 = 0.58
+        assert!(old_score > new_score, "Old relevant should beat new irrelevant at w=0.3");
+        assert!((result[0] - old_score).abs() < 0.01);
+    }
+
+    #[test]
+    fn weight_crossing_point() {
+        // As weight increases, a crossover happens where recency overwhelms semantics
+        // Find the crossing point between (0.8 score, 10d old) and (0.3 score, 1d old)
+        // At w=0: 0.8 > 0.3 → older wins
+        // At w=0.8: 0.8*(1-w)+0.05*w vs 0.3*(1-w)+0.5^(1/7)*w
+        //           w=0: 0.8 vs 0.3 → older wins
+        //           w=0.8: 0.16+0.04=0.20 vs 0.06+0.724=0.784 → newer wins
+        let w_cross = 0.2;
+        let input = vec![(0.8, 10.0), (0.3, 1.0)];
+        let result = apply_temporal_scoring(input, w_cross, 7.0);
+        // At low weight, older high-quality should still win
+        let old_score = 0.8 * 0.8 + recency_factor(10.0, 7.0) * 0.2;
+        let new_score = 0.3 * 0.8 + recency_factor(1.0, 7.0) * 0.2;
+        assert!(old_score > new_score,
+            "At w=0.2, old relevant ({old_score:.4}) should beat new weak ({new_score:.4})"
+        );
+        assert!((result[0] - old_score).abs() < 0.01);
+    }
+
+    // ── Edge Case Tests ──
+
+    #[test]
+    fn all_same_age_preserves_semantic_order() {
+        // When all items have same age, temporal scoring doesn't reorder
+        let input = vec![(0.9, 5.0), (0.7, 5.0), (0.5, 5.0)];
+        let result = apply_temporal_scoring(input.clone(), 0.5, 7.0);
+        assert!(result[0] > result[1]);
+        assert!(result[1] > result[2]);
+    }
+
+    #[test]
+    fn temporal_scoring_with_small_result_set() {
+        // Single item: score changes but no reordering needed
+        let input = vec![(0.5, 3.0)];
+        let result = apply_temporal_scoring(input, 0.5, 7.0);
+        let rf = recency_factor(3.0, 7.0);
+        let expected = 0.5 * 0.5 + rf * 0.5;
+        assert!((result[0] - expected).abs() < 0.01);
+    }
+
+    #[test]
+    fn temporal_scoring_idempotent_at_zero_weight() {
+        // Running temporal scoring with w=0 twice should give same result
+        let input = vec![(0.9, 1.0), (0.8, 5.0), (0.5, 10.0)];
+        let r1 = apply_temporal_scoring(input.clone(), 0.0, 7.0);
+        let r2 = apply_temporal_scoring(input, 0.0, 7.0);
+        for (a, b) in r1.iter().zip(r2.iter()) {
+            assert!((a - b).abs() < 0.001);
+        }
+    }
+
+    // ── Per-Memory-Type Half-Life Tests (proposed improvement #6.1) ──
+
+    #[test]
+    fn episodic_3d_vs_semantic_30d_differentiation() {
+        // Episodic memory (3d half-life) and Semantic memory (30d half-life)
+        // at age=7 days should have very different recency factors
+        let epi_rf = recency_factor(7.0, 3.0);   // 7d old episodic
+        let sem_rf = recency_factor(7.0, 30.0);  // 7d old semantic
+        assert!(epi_rf < 0.2, "Episodic at 7d should be nearly fully decayed, got {epi_rf:.4}");
+        assert!(sem_rf > 0.8, "Semantic at 7d should still be strong, got {sem_rf:.4}");
+        assert!(sem_rf > epi_rf * 4.0,
+            "Semantic ({sem_rf:.4}) should be >> Episodic ({epi_rf:.4}) at 7 days"
+        );
+    }
+
+    #[test]
+    fn procedural_60d_stays_strong_for_weeks() {
+        // Procedural memory (60d half-life) should retain high recency for weeks
+        let rf_14 = recency_factor(14.0, 60.0);
+        let rf_30 = recency_factor(30.0, 60.0);
+        assert!(rf_14 > 0.85, "Procedural at 14d should be >0.85, got {rf_14:.4}");
+        assert!(rf_30 > 0.7, "Procedural at 30d should still be >0.7, got {rf_30:.4}");
+    }
+
+    #[test]
+    fn per_type_half_life_ranking() {
+        // At 14 days, different types produce different recency factors
+        // Episodic (3d): nearly floor → Procedural (60d): still very strong
+        let episodic = recency_factor(14.0, 3.0);
+        let semantic = recency_factor(14.0, 30.0);
+        let procedural = recency_factor(14.0, 60.0);
+        assert!(episodic < semantic);
+        assert!(semantic < procedural);
+    }
+
+    #[test]
+    fn preference_7d_balanced_decay() {
+        // Preference (7d half-life) should be between Episodic and Semantic
+        let pref_1d = recency_factor(1.0, 7.0);
+        let pref_14d = recency_factor(14.0, 7.0);
+        assert!(pref_1d > 0.9, "1d preference should be strong");
+        assert!((pref_14d - 0.25).abs() < 0.01, "14d preference should be 0.25");
+    }
+
+    // ── In-Memory Store Integration Test ──
+
+    #[tokio::test]
+    async fn test_inmemory_temporal_scoring_with_different_ages() {
+        let store = MemoryStore::new();
+
+        // Create nodes with different ages
+        let n1 = FractalNode::new_session(
+            "very recent important info".to_string(),
+            vec![0.9, 0.1, 0.0],
+            HashMap::new(),
+        );
+        let n2 = FractalNode::new_session(
+            "week old important info".to_string(),
+            vec![0.85, 0.15, 0.0],
+            HashMap::new(),
+        );
+        let n3 = FractalNode::new_session(
+            "month old outdated info".to_string(),
+            vec![0.3, 0.7, 0.0],
+            HashMap::new(),
+        );
+
+        store.insert(n1).await.unwrap();
+        store.insert(n2).await.unwrap();
+        store.insert(n3).await.unwrap();
+
+        // Retrieve without temporal weight
+        let query = vec![0.9, 0.1, 0.0];
+        #[cfg(feature = "postgres-storage")]
+        let results = store.retrieve_fractal(&query, 5, 0, 0.5, None).await;
+        #[cfg(not(feature = "postgres-storage"))]
+        let results = store.retrieve_fractal(&query, 5, 0).await;
+        assert!(!results.is_empty(), "Should return results");
+
+        // Verify the store functions correctly
+        assert_eq!(store.count().await, 3);
     }
 }

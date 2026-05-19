@@ -3,6 +3,7 @@ pub mod chunking;
 pub mod control_room;
 pub mod dream;
 pub mod events;
+pub mod fact_extraction;
 pub mod fractal_node;
 pub mod governance;
 #[cfg(feature = "postgres-storage")]
@@ -17,6 +18,9 @@ pub mod self_healing;
 
 #[cfg(feature = "postgres-storage")]
 pub mod skills;
+
+#[cfg(feature = "postgres-storage")]
+pub mod conversation;
 
 #[cfg(test)]
 mod tests;
@@ -37,3 +41,9 @@ pub use governance::{
 #[cfg(feature = "postgres-storage")]
 pub use tiered::TieredCompactionWorker;
 pub use types::{ConflictState, ContextTier, MemorySource, MemoryStatus, MemoryType, Sensitivity};
+
+#[cfg(feature = "postgres-storage")]
+pub use conversation::{
+    ConversationSession, ConversationTurn, EmbeddingInfo, ScoredTurn, ScoredTurnRow, SessionRow, SpeakerRole,
+    TurnRow,
+};

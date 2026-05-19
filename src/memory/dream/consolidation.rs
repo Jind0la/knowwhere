@@ -394,14 +394,15 @@ impl ConsolidationStore for InMemoryConsolidationStore {
             serde_json::Value::String("consolidation".to_string()),
         );
 
-        let mut summary = FractalNode::new_session(
-            content,
+        let mut summary = FractalNode::new_typed(
+            Some(content),
+            None,
             vec![], // placeholder — engine sets via mean_vector(children)
             metadata,
+            memory_type,
+            crate::memory::types::MemorySource::Consolidation,
         );
         summary.weight = importance as f64;
-        summary.memory_type = memory_type;
-        summary.source = crate::memory::types::MemorySource::Consolidation;
 
         let id = self.store.insert(summary).await?;
         Ok(id)

@@ -134,7 +134,9 @@ fn query_for(case: &EchoCase, variant_idx: usize, query_text: &str) -> HybridQue
         multi_query: false,
         recency_boost: None,
         temporal_weight: None,
-        session_id: None,
+        fusion_strategy: None,
+        query_type_routing: false,
+        source_type_weights: None,
     }
 }
 

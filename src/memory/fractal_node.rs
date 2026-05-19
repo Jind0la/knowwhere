@@ -319,7 +319,19 @@ impl FractalNode {
         Self::TRUST_REFERENCE
     }
 
-    /// Session-Knoten: speichert den vollen Text + Embedding.
+    /// DEPRECATED: Use [`new_typed`] instead.
+    ///
+    /// This constructor predates the turn-level storage architecture (Phase 2).
+    /// "Session" in the name refers to a memory node originating from a conversation
+    /// session — **not** a session-level aggregate embedding. Session-level embeddings
+    /// on `conversation_sessions` were removed in migration 015; this constructor
+    /// creates individual memory nodes (`FractalNode`) each with their own `vector`.
+    ///
+    /// Prefer [`new_typed`] with explicit `MemoryType` and `MemorySource` for clarity.
+    #[deprecated(
+        since = "0.3.0",
+        note = "Use FractalNode::new_typed() instead. This constructor creates individual memory nodes, not session-level embeddings. See migration 015."
+    )]
     pub fn new_session(
         content: String,
         vector: Vec<f32>,

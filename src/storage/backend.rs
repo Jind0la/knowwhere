@@ -19,6 +19,29 @@ pub enum RetrievalProfile {
     FullFidelity,
 }
 
+/// Fusion strategy for combining BM25 and dense vector scores.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum FusionStrategy {
+    /// Weighted linear combination: final = bm25_weight * norm_bm25 + dense_weight * norm_dense
+    WeightedSum {
+        bm25_weight: f32,
+        dense_weight: f32,
+    },
+    /// Reciprocal Rank Fusion with configurable k constant (default k=60).
+    ReciprocalRankFusion { k: f32 },
+    /// Pure BM25 only — skip dense scores entirely.
+    Bm25Only,
+    /// Pure dense only — skip BM25 entirely.
+    DenseOnly,
+}
+
+impl Default for FusionStrategy {
+    fn default() -> Self {
+        FusionStrategy::ReciprocalRankFusion { k: 60.0 }
+    }
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ScoreDebug {
     pub profile: RetrievalProfile,
@@ -34,6 +57,17 @@ pub struct ScoreDebug {
     pub temporal_weight: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub explanation: Option<String>,
+    /// Source-type weighting information for provenance-aware scoring.
+    /// Human-readable composite: "synthetic (0.85x)".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_type: Option<String>,
+    /// The multiplier applied based on the source type classification.
+    /// e.g., 0.85 for synthetic, 1.0 for real.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_weight_applied: Option<f32>,
+    /// The original source classification (e.g., "real", "synthetic", "derived", "unknown").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub original_source: Option<String>,
 }
 
 impl ScoreDebug {
@@ -62,43 +96,99 @@ impl RetrievalProfile {
         !matches!(self, RetrievalProfile::UserFacing) || !node.is_internal_only()
     }
 
-    pub fn score_multiplier(self, node: &FractalNode) -> f32 {
+    pub fn score_multiplier(
+        self,
+        node: &FractalNode,
+        weights: Option<crate::retrieval::source_weighting::SourceTypeWeights>,
+    ) -> f32 {
         let explicit = self.explicit_weight(node);
         let tier = self.tier_multiplier(node.trust_tier());
         let mtype = self.memory_type_multiplier(node);
-        tier * explicit * mtype
+        let w = weights.unwrap_or_default();
+        let source = crate::retrieval::source_weighting::source_multiplier(node, &w);
+        tier * explicit * mtype * source
     }
 
-    fn memory_type_multiplier(self, _node: &FractalNode) -> f32 {
-        1.0 // Neutralized for Reduce-to-Core test (2026-05-12)
+    fn memory_type_multiplier(self, node: &FractalNode) -> f32 {
+        use crate::memory::types::MemoryType;
+        match node.memory_type {
+            // Facts and decisions are high-value — boost them in retrieval.
+            // 1.5x is intentional: Decision nodes are already Synthetic-sourced
+            // (~0.85x penalty), so the net effect vs episodic is ~1.27x, not 1.5x.
+            // This keeps facts prominent without drowning out conversation nodes.
+            MemoryType::Decision => 1.5,
+            // Preferences are valuable but less certain
+            MemoryType::Preference => 1.2,
+            // Procedural knowledge is high-stakes
+            MemoryType::Procedural => 1.15,
+            // Semantic knowledge has moderate value
+            MemoryType::Semantic => 1.05,
+            // Episodic, Meta, MemoryChunk — no boost
+            _ => 1.0,
+        }
     }
 
     fn explicit_weight(self, node: &FractalNode) -> f32 {
         if matches!(self, RetrievalProfile::FullFidelity) {
             return 1.0;
         }
-        node.explicit_trust_weight().unwrap_or(1.0).clamp(0.1, 2.0)
+        // Priority: explicit trust_weight metadata → node.weight field → default 1.0.
+        // Both fact_extraction (inline) and consolidation (L1/L0/claim) set node.weight
+        // for retrieval boosting; this fallback ensures those boosts actually flow into scoring.
+        node.explicit_trust_weight()
+            .or_else(|| {
+                if (node.weight - 1.0).abs() > f64::EPSILON {
+                    Some(node.weight as f32)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(1.0)
+            .clamp(0.1, 2.0)
     }
 
-    fn tier_multiplier(self, _trust_tier: &str) -> f32 {
-        1.0 // Neutralized for Reduce-to-Core test (2026-05-12)
+    fn tier_multiplier(self, trust_tier: &str) -> f32 {
+        match trust_tier {
+            "primary" => 1.3,   // High trust: user statements, decisions, explicit claims
+            "reference" => 1.1,  // Imported data, documents, manuals
+            "derived" => 0.9,    // System-generated summaries, consolidation output
+            "volatile" => 0.7,   // Temporary/uncertain data
+            _ => 1.0,
+        }
     }
 
-    pub fn score_debug(self, base_score: f32, node: &FractalNode) -> ScoreDebug {
+    pub fn score_debug(
+        self,
+        base_score: f32,
+        node: &FractalNode,
+        weights: Option<crate::retrieval::source_weighting::SourceTypeWeights>,
+    ) -> ScoreDebug {
+        let source_type =
+            crate::retrieval::source_weighting::detect_source_type(node).to_string();
+        let w = weights.unwrap_or_default();
+        let source_mult = crate::retrieval::source_weighting::source_multiplier(node, &w);
         ScoreDebug {
             profile: self,
             trust_tier: node.trust_tier().to_string(),
             base_score,
-            multiplier: self.score_multiplier(node),
+            multiplier: self.score_multiplier(node, Some(w)),
             recency_factor: None,
             session_boost: None,
             temporal_weight: None,
             explanation: None,
+            source_type: Some(format!("{source_type} ({source_mult:.2}x)")),
+            source_weight_applied: Some(source_mult),
+            original_source: Some(source_type),
         }
     }
 
-    pub fn score_node(self, base_score: f32, node: FractalNode) -> ScoredNode {
-        let debug = self.score_debug(base_score, &node);
+    pub fn score_node(
+        self,
+        base_score: f32,
+        node: FractalNode,
+        weights: Option<crate::retrieval::source_weighting::SourceTypeWeights>,
+    ) -> ScoredNode {
+        let debug = self.score_debug(base_score, &node, weights);
         ScoredNode {
             id: node.id,
             score: debug.final_score(),
@@ -136,9 +226,19 @@ pub struct HybridQuery {
     /// Recommended: 0.15–0.35 for balanced temporal + semantic retrieval.
     /// When set, applies a global recency factor (exponential decay) combined with semantic score.
     pub temporal_weight: Option<f32>,
-    /// Optional session_id filter / boost — strongly prefers or filters to memories from the same session.
-    /// Reduces session leakage and anchor contamination between different conversations.
-    pub session_id: Option<String>,
+    /// Explicit fusion strategy. When set, overrides auto-routing.
+    /// Default: ReciprocalRankFusion { k: 60.0 } (backward-compatible).
+    #[serde(skip)]
+    pub fusion_strategy: Option<FusionStrategy>,
+    /// Enable automatic query-type routing (keyword vs. semantic vs. hybrid).
+    /// When true AND no explicit fusion_strategy is set, the query text is analyzed
+    /// to choose the optimal strategy. When false, falls back to default RRF.
+    #[serde(skip)]
+    pub query_type_routing: bool,
+    /// Optional per-source-type score multipliers for provenance-aware retrieval.
+    /// When None, uses the default SourceTypeWeights (real=1.0, synthetic=0.85, derived=0.70, unknown=0.95).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_type_weights: Option<crate::retrieval::source_weighting::SourceTypeWeights>,
 }
 
 impl HybridQuery {
@@ -155,7 +255,9 @@ impl HybridQuery {
             multi_query: false,
             recency_boost: None,
             temporal_weight: None,
-            session_id: None,
+            fusion_strategy: Some(FusionStrategy::Bm25Only),
+            query_type_routing: false,
+            source_type_weights: None,
         }
     }
 
@@ -172,7 +274,9 @@ impl HybridQuery {
             multi_query: false,
             recency_boost: None,
             temporal_weight: None,
-            session_id: None,
+            fusion_strategy: Some(FusionStrategy::DenseOnly),
+            query_type_routing: false,
+            source_type_weights: None,
         }
     }
 
@@ -194,7 +298,9 @@ impl HybridQuery {
             multi_query: false,
             recency_boost: None,
             temporal_weight: None,
-            session_id: None,
+            fusion_strategy: None, // default RRF
+            query_type_routing: false,
+            source_type_weights: None,
         }
     }
 
@@ -241,6 +347,30 @@ impl HybridQuery {
     /// more recent memories more aggressively.
     pub fn with_recency_boost(mut self, factor: f32) -> Self {
         self.recency_boost = Some(factor.clamp(0.0, 0.20));
+        self
+    }
+
+    /// Set an explicit fusion strategy (overrides auto-routing).
+    pub fn with_fusion_strategy(mut self, strategy: FusionStrategy) -> Self {
+        self.fusion_strategy = Some(strategy);
+        self
+    }
+
+    /// Enable automatic query-type routing based on query text characteristics.
+    pub fn with_query_type_routing(mut self) -> Self {
+        self.query_type_routing = true;
+        self
+    }
+
+    /// Set custom source-type weights for provenance-aware retrieval.
+    ///
+    /// When set, overrides the default SourceTypeWeights
+    /// (real=1.0, synthetic=0.85, derived=0.70, unknown=0.95).
+    pub fn with_source_type_weights(
+        mut self,
+        weights: crate::retrieval::source_weighting::SourceTypeWeights,
+    ) -> Self {
+        self.source_type_weights = Some(weights);
         self
     }
 }

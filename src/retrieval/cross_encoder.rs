@@ -7,13 +7,71 @@
 //! Feature-gated behind `reranker`. When disabled, the module is empty and
 //! KnowWhere falls back to pure Bi-Encoder retrieval.
 //!
-//! Model: bge-reranker-v2-m3 (568M params, 2.27 GB, multilingual)
-//! Export: `optimum-cli export onnx --model BAAI/bge-reranker-v2-m3 ...`
+//! Supported models (configure via KNOWWHERE_RERANKER_MODEL_FORMAT):
+//!   - gte-modernbert: Alibaba-NLP/gte-reranker-modernbert-base (149M, 8K, rec.)
+//!   - bge-m3:         BAAI/bge-reranker-v2-m3            (568M, 512, multilingual)
+//!   - minilm:         cross-encoder/ms-marco-MiniLM-L6-v2 (22.7M, 512, baseline)
+//!
+//! ONNX export: `optimum-cli export onnx --model <hf-model-id> <output-dir>`
 
 #[cfg(feature = "reranker")]
 use anyhow::{Context, Result};
 #[cfg(feature = "reranker")]
 use std::path::Path;
+
+/// Supported cross-encoder model architectures.
+///
+/// Each variant defines the correct input format for tokenization:
+/// - BGE: `[CLS] {query} [SEP] {document} [SEP]`
+/// - GTE/ModernBERT: standard sentence-transformers format
+/// - MiniLM: standard sentence-transformers format (same as GTE)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RerankerModel {
+    /// BAAI/bge-reranker-v2-m3 (568M, multilingual, 512 tokens).
+    /// Tokenization: `[CLS] query [SEP] document [SEP]`
+    Bge,
+    /// Alibaba-NLP/gte-reranker-modernbert-base (149M, 8K tokens).
+    /// Tokenization: standard sentence-transformers pair encoding
+    GteModernbert,
+    /// cross-encoder/ms-marco-MiniLM-L6-v2 (22.7M, 512 tokens, baseline).
+    /// Tokenization: standard sentence-transformers pair encoding
+    MiniLM,
+}
+
+impl RerankerModel {
+    /// Parse from an env var / config string.
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "bge" | "bge-m3" | "bge-reranker-v2-m3" => Some(Self::Bge),
+            "gte" | "gte-modernbert" | "gte-reranker-modernbert" => Some(Self::GteModernbert),
+            "minilm" | "minilm-l6" | "ms-marco-minilm-l6-v2" => Some(Self::MiniLM),
+            _ => None,
+        }
+    }
+
+    /// Human-readable name.
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::Bge => "bge-reranker-v2-m3",
+            Self::GteModernbert => "gte-reranker-modernbert-base",
+            Self::MiniLM => "ms-marco-MiniLM-L6-v2",
+        }
+    }
+
+    /// Max token length for this model.
+    pub fn default_max_length(&self) -> usize {
+        match self {
+            Self::Bge => 512,
+            Self::GteModernbert => 8192,
+            Self::MiniLM => 512,
+        }
+    }
+
+    /// Whether this model uses BGE-style [CLS]/[SEP] tokenization.
+    pub fn uses_bge_format(&self) -> bool {
+        matches!(self, Self::Bge)
+    }
+}
 
 /// A candidate from Stage 1 (Bi-Encoder) ready for reranking.
 #[derive(Debug, Clone)]
@@ -30,6 +88,21 @@ pub struct RerankedResult {
     pub content: String,
     pub bi_encoder_score: f32,
     pub cross_encoder_score: f32,
+}
+
+/// Timing breakdown for a reranking operation.
+#[derive(Debug, Clone, Default)]
+pub struct RerankTiming {
+    /// Total wall-clock time for the entire rerank call (ms).
+    pub total_ms: f64,
+    /// Time spent in model inference only (ms).
+    pub inference_ms: f64,
+    /// Time spent tokenizing (ms).
+    pub tokenize_ms: f64,
+    /// Number of candidates reranked.
+    pub candidate_count: usize,
+    /// Number of inference batches.
+    pub batch_count: usize,
 }
 
 /// Strategy for merging Bi-Encoder and Cross-Encoder scores.
@@ -52,12 +125,14 @@ pub mod ort_impl {
     use super::*;
     use ort::session::{Session, builder::GraphOptimizationLevel};
     use ort::value::Tensor;
+    use std::time::Instant;
     use tokenizers::Tokenizer;
 
     /// ONNX-based Cross-Encoder reranker.
     pub struct CrossEncoderReranker {
         session: Session,
         tokenizer: Tokenizer,
+        model_format: RerankerModel,
         max_length: usize,
         batch_size: usize,
     }
@@ -68,23 +143,29 @@ pub mod ort_impl {
         /// # Arguments
         /// * `model_path` — path to `model.onnx`
         /// * `tokenizer_path` — path to `tokenizer.json` (HF format)
-        /// * `max_length` — max token length per pair (default: 512)
+        /// * `model_format` — which model architecture this is (BGE, GTE, MiniLM)
+        /// * `max_length` — max token length per pair (default: model-dependent)
         /// * `batch_size` — inference batch size (default: 32)
         pub fn new(
             model_path: impl AsRef<Path>,
             tokenizer_path: impl AsRef<Path>,
+            model_format: RerankerModel,
             max_length: Option<usize>,
             batch_size: Option<usize>,
         ) -> Result<Self> {
             let model_path = model_path.as_ref();
             let tokenizer_path = tokenizer_path.as_ref();
+            let effective_max_len = max_length.unwrap_or_else(|| model_format.default_max_length());
 
             tracing::info!(
                 model = %model_path.display(),
                 tokenizer = %tokenizer_path.display(),
+                format = %model_format.name(),
+                max_length = effective_max_len,
                 "loading cross-encoder reranker"
             );
 
+            let load_start = Instant::now();
             let session = Session::builder()
                 .map_err(|e| anyhow::anyhow!("failed to create session builder: {e}"))?
                 .with_optimization_level(GraphOptimizationLevel::Level3)
@@ -97,16 +178,19 @@ pub mod ort_impl {
             let tokenizer = Tokenizer::from_file(tokenizer_path)
                 .map_err(|e| anyhow::anyhow!("failed to load tokenizer from {}: {e}", tokenizer_path.display()))?;
 
+            let load_ms = load_start.elapsed().as_secs_f64() * 1000.0;
             tracing::info!(
                 input_count = session.inputs().len(),
                 output_count = session.outputs().len(),
+                load_ms = %format!("{load_ms:.1}"),
                 "ONNX session loaded"
             );
 
             Ok(Self {
                 session,
                 tokenizer,
-                max_length: max_length.unwrap_or(512),
+                model_format,
+                max_length: effective_max_len,
                 batch_size: batch_size.unwrap_or(32),
             })
         }
@@ -114,24 +198,43 @@ pub mod ort_impl {
         /// Score a batch of (query, document) pairs.
         ///
         /// Returns relevance scores in [0.0, 1.0] via sigmoid over the model logits.
-        pub fn score_pairs(&mut self, query: &str, documents: &[String]) -> Result<Vec<f32>> {
+        /// Also returns timing breakdown.
+        pub fn score_pairs(&mut self, query: &str, documents: &[String]) -> Result<(Vec<f32>, RerankTiming)> {
+            let mut timing = RerankTiming {
+                candidate_count: documents.len(),
+                ..Default::default()
+            };
+
             if documents.is_empty() {
-                return Ok(vec![]);
+                return Ok((vec![], timing));
             }
 
             let mut all_scores = Vec::with_capacity(documents.len());
+            let mut total_inference_ms = 0.0f64;
+            let mut total_tokenize_ms = 0.0f64;
+            let mut batch_count = 0usize;
 
             for chunk in documents.chunks(self.batch_size) {
+                batch_count += 1;
+
+                // Tokenize
+                let tokenize_start = Instant::now();
                 let encodings: Vec<_> = chunk
                     .iter()
                     .map(|doc| {
-                        self.tokenizer.encode(
-                            format!("[CLS] {} [SEP] {} [SEP]", query, doc),
-                            true,
-                        )
+                        let pair_text = if self.model_format.uses_bge_format() {
+                            // BGE format: [CLS] query [SEP] document [SEP]
+                            format!("[CLS] {} [SEP] {} [SEP]", query, doc)
+                        } else {
+                            // GTE/MiniLM: standard sentence-transformers pair
+                            // The tokenizer handles concatenation
+                            format!("{} [SEP] {}", query, doc)
+                        };
+                        self.tokenizer.encode(pair_text, true)
                     })
-                    .collect::<Result<Vec<_>, _>>()
+                    .collect::<std::result::Result<Vec<_>, _>>()
                     .map_err(|e| anyhow::anyhow!("tokenization failed: {e}"))?;
+                total_tokenize_ms += tokenize_start.elapsed().as_secs_f64() * 1000.0;
 
                 let max_len = encodings
                     .iter()
@@ -178,6 +281,8 @@ pub mod ort_impl {
                 )
                 .context("failed to create token_type_ids tensor")?;
 
+                // Inference
+                let inference_start = Instant::now();
                 let input_count = self.session.inputs().len();
                 let outputs = if input_count >= 3 {
                     self.session.run([
@@ -192,6 +297,7 @@ pub mod ort_impl {
                     ])
                 }
                 .context("ONNX inference failed")?;
+                total_inference_ms += inference_start.elapsed().as_secs_f64() * 1000.0;
 
                 let (shape, logits) = outputs[0]
                     .try_extract_tensor::<f32>()
@@ -205,23 +311,38 @@ pub mod ort_impl {
                 }
             }
 
-            Ok(all_scores)
+            timing.tokenize_ms = total_tokenize_ms;
+            timing.inference_ms = total_inference_ms;
+            timing.total_ms = total_tokenize_ms + total_inference_ms;
+            timing.batch_count = batch_count;
+
+            tracing::debug!(
+                candidates = documents.len(),
+                batches = batch_count,
+                inference_ms = %format!("{:.1}", total_inference_ms),
+                tokenize_ms = %format!("{:.1}", total_tokenize_ms),
+                total_ms = %format!("{:.1}", timing.total_ms),
+                model = self.model_format.name(),
+                "cross-encoder inference complete"
+            );
+
+            Ok((all_scores, timing))
         }
 
-        /// Rerank candidates and return top-n results.
+        /// Rerank candidates and return top-n results with timing.
         pub fn rerank(
             &mut self,
             query: &str,
             candidates: Vec<RerankCandidate>,
             top_n: usize,
             strategy: RerankStrategy,
-        ) -> Result<Vec<RerankedResult>> {
+        ) -> Result<(Vec<RerankedResult>, RerankTiming)> {
             if candidates.is_empty() {
-                return Ok(vec![]);
+                return Ok((vec![], RerankTiming::default()));
             }
 
             let docs: Vec<String> = candidates.iter().map(|c| c.content.clone()).collect();
-            let scores = self.score_pairs(query, &docs)?;
+            let (scores, timing) = self.score_pairs(query, &docs)?;
 
             let mut results: Vec<RerankedResult> = candidates
                 .into_iter()
@@ -266,7 +387,7 @@ pub mod ort_impl {
             }
 
             results.truncate(top_n);
-            Ok(results)
+            Ok((results, timing))
         }
     }
 
@@ -292,6 +413,7 @@ impl CrossEncoderReranker {
     pub fn new(
         _model_path: impl AsRef<std::path::Path>,
         _tokenizer_path: impl AsRef<std::path::Path>,
+        _model_format: RerankerModel,
         _max_length: Option<usize>,
         _batch_size: Option<usize>,
     ) -> anyhow::Result<Self> {
@@ -306,7 +428,7 @@ impl CrossEncoderReranker {
         _candidates: Vec<RerankCandidate>,
         _top_n: usize,
         _strategy: RerankStrategy,
-    ) -> anyhow::Result<Vec<RerankedResult>> {
+    ) -> anyhow::Result<(Vec<RerankedResult>, RerankTiming)> {
         Err(anyhow::anyhow!(
             "reranker feature is not enabled. Rebuild with --features reranker"
         ))
@@ -319,7 +441,11 @@ impl CrossEncoderReranker {
 
 /// Attempt to load a CrossEncoderReranker from environment-configured paths.
 ///
-/// Reads `KNOWWHERE_RERANKER_MODEL_PATH` and `KNOWWHERE_RERANKER_TOKENIZER_PATH`.
+/// Reads:
+///   `KNOWWHERE_RERANKER_MODEL_PATH`     — path to model.onnx
+///   `KNOWWHERE_RERANKER_TOKENIZER_PATH` — path to tokenizer.json
+///   `KNOWWHERE_RERANKER_MODEL_FORMAT`   — "gte", "bge", or "minilm" (default: "bge")
+///
 /// Defaults to `~/.cache/knowwhere/reranker/model.onnx` and
 /// `~/.cache/knowwhere/reranker/tokenizer.json` if env vars are not set.
 ///
@@ -342,6 +468,19 @@ pub fn load_reranker() -> Option<std::sync::Arc<std::sync::Mutex<CrossEncoderRer
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|_| default_dir.join("tokenizer.json"));
 
+    let model_format = std::env::var("KNOWWHERE_RERANKER_MODEL_FORMAT")
+        .ok()
+        .and_then(|s| RerankerModel::from_str(&s))
+        .unwrap_or(RerankerModel::Bge); // default to BGE for backward compat
+
+    let max_length: Option<usize> = std::env::var("KNOWWHERE_RERANKER_MAX_LENGTH")
+        .ok()
+        .and_then(|s| s.parse().ok());
+
+    let batch_size: Option<usize> = std::env::var("KNOWWHERE_RERANKER_BATCH_SIZE")
+        .ok()
+        .and_then(|s| s.parse().ok());
+
     if !model_path.exists() {
         tracing::warn!(
             "reranker model not found at {}. Run scripts/export_reranker_model.py to export. \
@@ -362,12 +501,16 @@ pub fn load_reranker() -> Option<std::sync::Arc<std::sync::Mutex<CrossEncoderRer
     tracing::info!(
         model = %model_path.display(),
         tokenizer = %tokenizer_path.display(),
+        format = %model_format.name(),
         "loading cross-encoder reranker from disk"
     );
 
-    match CrossEncoderReranker::new(&model_path, &tokenizer_path, None, None) {
+    match CrossEncoderReranker::new(&model_path, &tokenizer_path, model_format, max_length, batch_size) {
         Ok(reranker) => {
-            tracing::info!("cross-encoder reranker loaded successfully (bge-reranker-v2-m3)");
+            tracing::info!(
+                format = %model_format.name(),
+                "cross-encoder reranker loaded successfully"
+            );
             Some(Arc::new(Mutex::new(reranker)))
         }
         Err(e) => {
@@ -449,7 +592,7 @@ mod tests {
     #[cfg(not(feature = "reranker"))]
     #[test]
     fn test_stub_returns_error_when_feature_disabled() {
-        let result = CrossEncoderReranker::new("any.onnx", "any.json", None, None);
+        let result = CrossEncoderReranker::new("any.onnx", "any.json", RerankerModel::Bge, None, None);
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("reranker feature is not enabled"));
@@ -496,5 +639,41 @@ mod tests {
         std::env::set_var("KNOWWHERE_RERANKER_TOKENIZER_PATH", "/nonexistent/tokenizer.json");
         let result = load_reranker();
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_reranker_model_from_str() {
+        assert_eq!(RerankerModel::from_str("bge"), Some(RerankerModel::Bge));
+        assert_eq!(RerankerModel::from_str("bge-m3"), Some(RerankerModel::Bge));
+        assert_eq!(RerankerModel::from_str("BGE"), Some(RerankerModel::Bge));
+        assert_eq!(RerankerModel::from_str("gte"), Some(RerankerModel::GteModernbert));
+        assert_eq!(RerankerModel::from_str("gte-modernbert"), Some(RerankerModel::GteModernbert));
+        assert_eq!(RerankerModel::from_str("minilm"), Some(RerankerModel::MiniLM));
+        assert_eq!(RerankerModel::from_str("ms-marco-minilm-l6-v2"), Some(RerankerModel::MiniLM));
+        assert_eq!(RerankerModel::from_str("nonexistent"), None);
+    }
+
+    #[test]
+    fn test_reranker_model_default_max_length() {
+        assert_eq!(RerankerModel::Bge.default_max_length(), 512);
+        assert_eq!(RerankerModel::GteModernbert.default_max_length(), 8192);
+        assert_eq!(RerankerModel::MiniLM.default_max_length(), 512);
+    }
+
+    #[test]
+    fn test_reranker_model_uses_bge_format() {
+        assert!(RerankerModel::Bge.uses_bge_format());
+        assert!(!RerankerModel::GteModernbert.uses_bge_format());
+        assert!(!RerankerModel::MiniLM.uses_bge_format());
+    }
+
+    #[test]
+    fn test_rerank_timing_default() {
+        let t = RerankTiming::default();
+        assert_eq!(t.total_ms, 0.0);
+        assert_eq!(t.inference_ms, 0.0);
+        assert_eq!(t.tokenize_ms, 0.0);
+        assert_eq!(t.candidate_count, 0);
+        assert_eq!(t.batch_count, 0);
     }
 }

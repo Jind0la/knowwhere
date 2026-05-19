@@ -207,10 +207,13 @@ impl DreamMode {
                 .map(|(x, y)| (x + y) / 2.0)
                 .collect();
 
-            let mut meta = FractalNode::new_session(
-                format!("meta-cluster [{id_a} + {id_b}]"),
+            let mut meta = FractalNode::new_typed(
+                Some(format!("meta-cluster [{id_a} + {id_b}]")),
+                None,
                 avg_vec,
                 HashMap::new(),
+                crate::memory::types::MemoryType::Meta,
+                crate::memory::types::MemorySource::Consolidation,
             );
             meta.children = vec![a.clone(), b.clone()];
 

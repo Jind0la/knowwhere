@@ -462,6 +462,7 @@ pub(crate) async fn openai_qa_answer(
 }
 
 #[cfg(test)]
+#[allow(deprecated, reason = "tests intentionally exercise legacy FractalNode::new_session constructor")]
 mod qa_tests {
     use super::*;
 

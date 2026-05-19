@@ -1,4 +1,5 @@
 #[cfg(test)]
+#[allow(deprecated, reason = "tests intentionally exercise legacy FractalNode::new_session constructor")]
 mod tests {
     use std::collections::HashMap;
 
@@ -569,7 +570,7 @@ mod tests {
 
         let query_vec = vec![0.5, 0.5, 0.5, 0.5];
         let results = store
-            .hybrid_retrieve(Some("Frigate Haustuer"), &query_vec, 5, 0, None, None)
+            .hybrid_retrieve(Some("Frigate Haustuer"), &query_vec, 5, 0, None, None, false, None)
             .await;
 
         assert!(!results.is_empty());
@@ -601,9 +602,9 @@ mod tests {
 
         let query_vec = vec![1.0, 0.0, 0.0, 0.0];
         #[cfg(feature = "postgres-storage")]
-        let results = store.hybrid_retrieve(None, &query_vec, 2, 0, None, None).await;
+        let results = store.hybrid_retrieve(None, &query_vec, 2, 0, None, None, false, None).await;
         #[cfg(not(feature = "postgres-storage"))]
-        let results = store.hybrid_retrieve(None, &query_vec, 2, 0, None).await;
+        let results = store.hybrid_retrieve(None, &query_vec, 2, 0, None, None, false).await;
 
         assert!(!results.is_empty());
         assert_eq!(

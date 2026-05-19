@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use axum::body::Bytes;
-use axum::extract::{Extension, Path, State};
+use axum::extract::{Extension, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
 use serde::{Deserialize, Serialize};
@@ -15,6 +15,7 @@ use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 use crate::api::auth::AuthContext;
+use crate::api::turns::{BatchTurnItem, PaginatedSessionTurns, ScoredTurn, SessionTurn, SessionTurnsResponse, TurnContext};
 use crate::api::webhooks::{check_webhook_secret, DedupCache};
 use crate::embedding::router::EmbeddingRouter;
 use crate::embedding::{embed_document, embed_document_batch, embed_query, EmbeddingProvider};
@@ -26,7 +27,9 @@ use crate::memory::{
     DreamMode, Event, EventStore, FractalNode, GovernancePolicy, GovernanceValidator,
     InMemoryEventStore,
 };
+use crate::memory::fact_extraction::{FactExtractionContext, FactExtractor};
 use crate::multimodal::MultimodalData;
+use crate::storage::FusionStrategy;
 use crate::vlm::{SummaryContext, VlmJob, VlmWorkerStatus};
 
 #[path = "routes/governance_events.rs"]
@@ -49,6 +52,13 @@ pub struct RetrievalScoreDebug {
     pub multiplier: f32,
     pub final_score: f32,
     pub explanation: String,
+    /// The multiplier applied based on the source type classification.
+    /// e.g., 0.85 for synthetic, 1.0 for real.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_weight_applied: Option<f32>,
+    /// The original source classification (e.g., "real", "synthetic", "derived", "unknown").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub original_source: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -70,6 +80,12 @@ pub struct ScoredNode {
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub retrieval_profile: RetrievalProfile,
     pub trust_tier: String,
+    /// Source-type weight multiplier applied during scoring (e.g., 0.85 for synthetic).
+    /// Always present — computed from the node when debug info is unavailable.
+    pub source_weight_applied: Option<f32>,
+    /// Original source classification (e.g., "real", "synthetic", "derived", "unknown").
+    /// Always present — computed from the node when debug info is unavailable.
+    pub original_source: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub score_debug: Option<RetrievalScoreDebug>,
     /// Governance fields (populated when Stage 2 governance is applied)
@@ -137,6 +153,15 @@ impl ScoredNode {
         let trust_tier = debug
             .map(|entry| entry.trust_tier.clone())
             .unwrap_or_else(|| n.trust_tier().to_string());
+        // Compute provenance fields: prefer debug info, fall back to node-level detection.
+        let (source_weight_applied, original_source) = match debug {
+            Some(d) => (d.source_weight_applied, d.original_source.clone()),
+            None => {
+                let st = crate::retrieval::source_weighting::detect_source_type(&n);
+                let weights = crate::retrieval::source_weighting::SourceTypeWeights::default();
+                (Some(weights.multiplier(st)), Some(st.to_string()))
+            }
+        };
         Self {
             score,
             id: n.id,
@@ -150,6 +175,8 @@ impl ScoredNode {
                 .map(|entry| entry.profile)
                 .unwrap_or(RetrievalProfile::FullFidelity),
             trust_tier,
+            source_weight_applied,
+            original_source,
             score_debug,
             confidence: None,
             sensitivity: None,
@@ -180,7 +207,7 @@ impl ScoredNode {
 }
 
 /// Strip markdown/table/emoji formatting for cleaner embeddings.
-fn clean_for_embedding(text: &str) -> String {
+pub fn clean_for_embedding(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for line in text.lines() {
         let trimmed = line.trim();
@@ -242,6 +269,30 @@ fn clean_for_embedding(text: &str) -> String {
 }
 use crate::storage::{HybridQuery, RetrievalProfile, StorageBackend};
 
+/// Parse the speaker role from a chunk's first-line prefix.
+/// Returns the canonical role name ("user", "assistant") and strips the prefix
+/// from the content. Returns None if no role prefix is detected.
+fn parse_speaker_role_from_chunk(chunk: &str) -> Option<(&str, &str)> {
+    let first_line = chunk.lines().next()?.trim();
+    let role_map: &[(&str, &str)] = &[
+        ("user:", "user"),
+        ("assistant:", "assistant"),
+        ("human:", "user"),
+        ("ai:", "assistant"),
+        ("User:", "user"),
+        ("Assistant:", "assistant"),
+        ("Human:", "user"),
+        ("AI:", "assistant"),
+    ];
+    for (prefix, role) in role_map {
+        if first_line.starts_with(prefix) {
+            let content = first_line[prefix.len()..].trim();
+            return Some((role, content));
+        }
+    }
+    None
+}
+
 /// Split conversation text into rounds (user+assistant turn pairs).
 /// Falls back to the full text as a single chunk when no role prefixes are detected.
 /// Chunk text into rounds (dialog turns) or semantic chunks.
@@ -250,7 +301,6 @@ use crate::storage::{HybridQuery, RetrievalProfile, StorageBackend};
 /// turn boundaries. Otherwise falls back to the TextChunker for semantic
 /// paragraph/sentence-boundary splitting.
 ///
-/// Returns chunks with overlap when using semantic splitting (non-dialog text).
 fn chunk_into_rounds(text: &str, min_round_chars: usize) -> Vec<String> {
     let role_prefixes = [
         "user:",
@@ -341,6 +391,9 @@ pub struct AppState {
     /// PostgreSQL connection pool for trajectory logging and tiered context (postgres-storage feature).
     #[cfg(feature = "postgres-storage")]
     pub trajectory_pool: Option<std::sync::Arc<sqlx::PgPool>>,
+    /// PostgresStore handle for turn-level storage, retrieval trajectories, tiered context.
+    #[cfg(feature = "postgres-storage")]
+    pub pg_store: Option<std::sync::Arc<crate::storage::PostgresStore>>,
     /// VLM background worker handle for async summarization.
     pub vlm_worker: Option<crate::vlm::VlmWorkerHandle>,
     /// Consolidation scheduler for querying cycle_count in /dream/status.
@@ -363,6 +416,12 @@ pub struct AppState {
     /// take precedence; this is the fallback when the request omits it.
     /// Editable at runtime via GET/POST /config/temporal_weight.
     pub temporal_weight: Arc<RwLock<Option<f32>>>,
+    /// Server-wide default source-type weights for provenance-aware retrieval.
+    /// Per-query overrides via `source_type_weights` in RetrieveFractalRequest
+    /// take precedence; this is the fallback when the request omits it.
+    /// Set via `KNOWWHERE_SOURCE_TYPE_WEIGHTS` env var, or `KNOWWHERE_SOURCE_TYPE_WEIGHTS_FILE`,
+    /// or `source_weights.json` in the working directory (see SourceTypeWeights::from_config).
+    pub default_source_type_weights: Option<crate::retrieval::source_weighting::SourceTypeWeights>,
 }
 
 impl std::fmt::Debug for AppState {
@@ -533,6 +592,8 @@ fn score_debug_response(
         multiplier,
         final_score,
         explanation,
+        source_weight_applied: debug.and_then(|d| d.source_weight_applied),
+        original_source: debug.and_then(|d| d.original_source.clone()),
     }
 }
 
@@ -1248,8 +1309,31 @@ async fn store_session_json(
                     )
                 })?,
         };
+
+        // ── Determine speaker role ──
+        let speaker = parse_speaker_role_from_chunk(&req.content)
+            .map(|(role, _)| role.to_string())
+            .unwrap_or_else(|| "assistant".to_string());
+
+        // ── Turn-level storage (postgres-storage) ──
+        // When session_id is provided, store this as a single turn in
+        // conversation_turns so the turn-level index is populated.
+        // Must run BEFORE FractalNode creation to avoid moving req.content/metadata.
+        #[cfg(feature = "postgres-storage")]
+        if let (Some(pg), Some(ref sid)) = (state.pg_store.as_ref(), req.session_id.as_ref()) {
+            let turn_idx = req.turn_index.map(|t| t as i32).unwrap_or(0);
+            let turn_meta = Some(serde_json::to_value(&req.metadata).unwrap_or_default());
+            let emb_type = state.embedding.name().to_string();
+            let emb_dim = state.embedding.dimension() as i32;
+            match pg.store_turn(sid, turn_idx, &speaker, &cleaned, vector.clone(), turn_meta, &emb_type, emb_dim).await {
+                Ok(turn_id) => tracing::info!(%turn_id, %sid, turn_idx, %speaker, "turn stored (single-chunk session)"),
+                Err(e) => tracing::warn!(%sid, "turn storage failed (non-fatal): {e}"),
+            }
+        }
+
         let mut metadata = req.metadata;
-        // Link turns within a session for crash-safe per-turn storage
+        metadata.insert("speaker_role".to_string(), Value::String(speaker.to_string()));
+        metadata.insert("is_turn".to_string(), Value::Bool(true));
         if let Some(ref sid) = req.session_id {
             metadata.insert("session_id".to_string(), Value::String(sid.clone()));
         }
@@ -1257,10 +1341,12 @@ async fn store_session_json(
             metadata.insert("turn_index".to_string(), Value::Number(ti.into()));
         }
         normalize_node_metadata(memory_type, source, &mut metadata);
+        let content = req.content.clone();
+        let vector_for_node = vector.clone();
         let mut node = FractalNode::new_typed(
             Some(req.content),
             None,
-            vector,
+            vector_for_node,
             metadata,
             memory_type,
             source,
@@ -1276,23 +1362,66 @@ async fn store_session_json(
             .insert(node)
             .await
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-        tracing::info!(%id, ?memory_type, "session node stored");
+        tracing::info!(%id, %speaker, ?memory_type, "turn node stored (single-turn session)");
+        // ── Inline fact extraction (regex-based, no LLM) ──
+        // Extract obvious facts immediately so they're available
+        // before async consolidation runs. Creates Decision-type nodes
+        // with high weight (2.0) for retrieval boosting.
+        if content.len() >= 20 {
+            let dim = state.embedding.dimension();
+            let ctx = FactExtractionContext {
+                session_id: req.session_id.as_deref(),
+                source_node_id: id,
+                embedding_dim: dim,
+            };
+            let fact_nodes = FactExtractor::extract_and_create_nodes(&content, &ctx);
+            let fact_count = fact_nodes.len();
+            if fact_count > 0 {
+                // Embed fact texts and store as Decision nodes
+                for mut fact_node in fact_nodes {
+                    let fact_content = fact_node.content.clone().unwrap_or_default();
+                    match embed_document(&*state.embedding, &fact_content).await {
+                        Ok(emb) => {
+                            fact_node.vector = emb;
+                            match state.store.insert(fact_node).await {
+                                Ok(fact_id) => tracing::debug!(
+                                    %fact_id, source_id = %id,
+                                    "inline fact stored"
+                                ),
+                                Err(e) => tracing::debug!(
+                                    "inline fact store failed: {}",
+                                    e
+                                ),
+                            }
+                        }
+                        Err(e) => tracing::debug!(
+                            "inline fact embed failed: {}",
+                            e
+                        ),
+                    }
+                }
+                tracing::debug!(
+                    %id, fact_count,
+                    "inline facts extracted from turn content"
+                );
+            }
+        }
         // Event-driven consolidation: check if there's enough work to justify a run
         if let Some(ref sched) = state.consolidation {
             sched.trigger_if_needed().await;
         }
+
         return Ok((
             StatusCode::CREATED,
             Json(StoreNodeResponse {
                 id,
-                message: "session node created".to_string(),
+                message: "turn node created".to_string(),
                 chunk_ids: None,
             }),
         ));
     }
 
-    let chunk_count = chunks.len();
-    let session_chunk_id = Uuid::new_v4().to_string();
+    let turn_count = chunks.len();
 
     let cleaned: Vec<(usize, String)> = chunks
         .iter()
@@ -1304,7 +1433,7 @@ async fn store_session_json(
     if cleaned.is_empty() {
         return Err((
             StatusCode::INTERNAL_SERVER_ERROR,
-            "no embeddable chunks".to_string(),
+            "no embeddable turns".to_string(),
         ));
     }
 
@@ -1321,37 +1450,27 @@ async fn store_session_json(
     let mut all_ids: Vec<Uuid> = Vec::with_capacity(cleaned.len());
     for ((idx, _), vector) in cleaned.iter().zip(vectors) {
         let idx = *idx;
+        let original_chunk = &chunks[idx];
+        let (speaker, _) = parse_speaker_role_from_chunk(original_chunk)
+            .unwrap_or(("assistant", original_chunk));
+
         let mut metadata = req.metadata.clone();
-        // Link turns within a session for crash-safe per-turn storage
-        if let Some(ref sid) = req.session_id {
-            metadata.insert("session_id".to_string(), Value::String(sid.clone()));
-        }
-        if let Some(ti) = req.turn_index {
-            metadata.insert("turn_index".to_string(), Value::Number(ti.into()));
-        }
+        metadata.insert("speaker_role".to_string(), Value::String(speaker.to_string()));
+        metadata.insert("is_turn".to_string(), Value::Bool(true));
         metadata.insert(
-            "chunk_index".to_string(),
+            "turn_index".to_string(),
             Value::Number(serde_json::Number::from(idx)),
         );
         metadata.insert(
-            "session_chunk_count".to_string(),
-            Value::Number(serde_json::Number::from(chunk_count)),
+            "turn_count".to_string(),
+            Value::Number(serde_json::Number::from(turn_count)),
         );
-        metadata.insert(
-            "session_chunk_group".to_string(),
-            Value::String(session_chunk_id.clone()),
-        );
-        metadata.insert(
-            "is_chunk".to_string(),
-            Value::Bool(true),
-        );
+        if let Some(ref sid) = req.session_id {
+            metadata.insert("session_id".to_string(), Value::String(sid.clone()));
+        }
         normalize_node_metadata(memory_type, source, &mut metadata);
 
-        let content = if idx == 0 {
-            req.content.clone()
-        } else {
-            chunks[idx].clone()
-        };
+        let content = original_chunk.clone();
 
         let mut node =
             FractalNode::new_typed(Some(content), None, vector, metadata, memory_type, source);
@@ -1369,66 +1488,106 @@ async fn store_session_json(
         all_ids.push(id);
     }
 
-    // ── Gap 1 Fix: Always store a full-content raw node for consolidation ──
-    // The chunked nodes above are for fine-grained retrieval. This raw node
-    // stores the complete turn content, making it a valid consolidation candidate
-    // (content > 500 chars, context_tier=Raw, importance≥3).
-    let raw_vector = embed_document(&*state.embedding, &req.content)
-        .await
-        .unwrap_or_default();
-    let mut raw_metadata = req.metadata.clone();
-    if let Some(ref sid) = req.session_id {
-        raw_metadata.insert("session_id".to_string(), Value::String(sid.clone()));
+    let primary_id = all_ids[0]; // Return first turn as primary
+
+    tracing::info!(%primary_id, ?memory_type, turns = turn_count, "turn nodes stored ({} turns)", turn_count);
+    // ── Inline fact extraction for multi-turn path ──
+    if req.content.len() >= 20 {
+        let dim = state.embedding.dimension();
+        let ctx = FactExtractionContext {
+            session_id: req.session_id.as_deref(),
+            source_node_id: primary_id,
+            embedding_dim: dim,
+        };
+        let fact_nodes = FactExtractor::extract_and_create_nodes(&req.content, &ctx);
+        let fact_count = fact_nodes.len();
+        if fact_count > 0 {
+            for mut fact_node in fact_nodes {
+                let fact_content = fact_node.content.clone().unwrap_or_default();
+                match embed_document(&*state.embedding, &fact_content).await {
+                    Ok(emb) => {
+                        fact_node.vector = emb;
+                        match state.store.insert(fact_node).await {
+                            Ok(fact_id) => tracing::debug!(%fact_id, source_id = %primary_id, "inline fact stored (multi-turn)"),
+                            Err(e) => tracing::debug!("inline fact store failed: {}", e),
+                        }
+                    }
+                    Err(e) => tracing::debug!("inline fact embed failed: {}", e),
+                }
+            }
+            tracing::debug!(%primary_id, fact_count, "inline facts extracted from session content (multi-turn)");
+        }
     }
-    if let Some(ti) = req.turn_index {
-        raw_metadata.insert("turn_index".to_string(), Value::Number(ti.into()));
-    }
-    raw_metadata.insert(
-        "is_full_content".to_string(),
-        Value::Bool(true),
-    );
-    raw_metadata.insert(
-        "chunk_ids".to_string(),
-        Value::Array(all_ids.iter().map(|id| Value::String(id.to_string())).collect()),
-    );
-    normalize_node_metadata(memory_type, source, &mut raw_metadata);
-
-    let mut raw_node = FractalNode::new_typed(
-        Some(req.content.clone()),
-        None,
-        raw_vector,
-        raw_metadata,
-        memory_type,
-        MemorySource::Conversation,
-    );
-    raw_node.context_tier = ContextTier::Raw;
-    raw_node.importance = req.importance.unwrap_or(5).clamp(3, 10); // Always ≥3 for consolidation
-    if let Some(sens) = req.sensitivity {
-        raw_node.sensitivity = sens;
-    }
-
-    let raw_id = state
-        .store
-        .insert(raw_node)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-    let mut all_ids_with_raw = all_ids.clone();
-    all_ids_with_raw.push(raw_id);
-    let primary_id = raw_id; // Return the raw node as primary
-
-    tracing::info!(%primary_id, raw_id = %raw_id, ?memory_type, chunks = chunk_count, "session node stored (batch-embedded + raw node)");
     // Event-driven consolidation
     if let Some(ref sched) = state.consolidation {
         sched.trigger_if_needed().await;
+    }
+
+    // ── Turn-level storage (postgres-storage, multi-turn) ──
+    // Store each chunk as an individual turn in conversation_turns so
+    // the turn-level HNSW index is populated for fine-grained retrieval.
+    #[cfg(feature = "postgres-storage")]
+    if let (Some(pg), Some(ref sid)) = (state.pg_store.as_ref(), req.session_id.as_ref()) {
+        let mut turn_items: Vec<BatchTurnItem> = Vec::with_capacity(chunks.len());
+        let mut turn_texts: Vec<&str> = Vec::with_capacity(chunks.len());
+        for (i, chunk) in chunks.iter().enumerate() {
+            let (speaker, _) = parse_speaker_role_from_chunk(chunk)
+                .unwrap_or(("assistant", ""));
+            turn_items.push(BatchTurnItem {
+                turn_index: i as i32,
+                speaker_role: speaker.to_string(),
+                content: chunk.clone(),
+                metadata: Some(serde_json::to_value(&req.metadata).unwrap_or_default()),
+            });
+            turn_texts.push(chunk.as_str());
+        }
+        // Use cleaned texts for embedding (same as fractal node embeddings)
+        let cleaned_texts: Vec<String> = turn_texts.iter()
+            .map(|t| clean_for_embedding(t))
+            .collect();
+        let cleaned_refs: Vec<&str> = cleaned_texts.iter()
+            .map(|s| s.as_str())
+            .filter(|s| s.len() >= 4)
+            .collect();
+        if !cleaned_refs.is_empty() {
+            match embed_document_batch(&*state.embedding, &cleaned_refs).await {
+                Ok(turn_embeddings) => {
+                    let embeddable_items: Vec<BatchTurnItem> = turn_items.iter()
+                        .filter(|item| {
+                            let cleaned = clean_for_embedding(&item.content);
+                            cleaned.len() >= 4
+                        })
+                        .cloned()
+                        .collect();
+                    if embeddable_items.len() == turn_embeddings.len() {
+                        let emb_type = state.embedding.name().to_string();
+                        let emb_dim = state.embedding.dimension() as i32;
+                        match pg.store_turns_batch(sid, &embeddable_items, turn_embeddings, &emb_type, emb_dim).await {
+                            Ok((session_uuid, turn_ids)) => {
+                                tracing::info!(%session_uuid, turns = turn_ids.len(), "turn-level storage complete (multi-turn session)");
+                            }
+                            Err(e) => tracing::warn!(%sid, "turn batch storage failed (non-fatal): {e}"),
+                        }
+                    } else {
+                        tracing::warn!(%sid, expected = embeddable_items.len(), got = turn_embeddings.len(), "embedding count mismatch, storing individually");
+                        let emb_type = state.embedding.name().to_string();
+                        let emb_dim = state.embedding.dimension() as i32;
+                        for (item, emb) in embeddable_items.iter().zip(turn_embeddings.iter()) {
+                            let _ = pg.store_turn(sid, item.turn_index, &item.speaker_role, &item.content, emb.clone(), item.metadata.clone(), &emb_type, emb_dim).await;
+                        }
+                    }
+                }
+                Err(e) => tracing::warn!(%sid, "turn-level embed failed (non-fatal): {e}"),
+            }
+        }
     }
 
     Ok((
         StatusCode::CREATED,
         Json(StoreNodeResponse {
             id: primary_id,
-            message: format!("session node created ({chunk_count} chunks + raw node)"),
-            chunk_ids: Some(all_ids_with_raw),
+            message: format!("turn nodes created ({turn_count} turns)"),
+            chunk_ids: Some(all_ids),
         }),
     ))
 }
@@ -1524,7 +1683,7 @@ pub struct StoreSessionBatchRequest {
 #[derive(Serialize, ToSchema)]
 pub struct StoreSessionBatchResponse {
     pub results: Vec<StoreNodeResponse>,
-    pub total_chunks: usize,
+    pub total_turns: usize,
     pub total_sessions: usize,
 }
 
@@ -1534,7 +1693,7 @@ pub struct StoreSessionBatchResponse {
     tag = "memory",
     request_body = StoreSessionBatchRequest,
     responses(
-        (status = 201, description = "All session nodes created", body = StoreSessionBatchResponse),
+        (status = 201, description = "All turn nodes created", body = StoreSessionBatchResponse),
         (status = 500, description = "Internal error")
     )
 )]
@@ -1547,13 +1706,14 @@ pub async fn store_session_batch(
         return Err((StatusCode::BAD_REQUEST, "sessions array is empty".into()));
     }
 
-    // Phase 1: Chunk all sessions, collect (session_idx, chunk_text) pairs
-    struct ChunkWork {
+    // Phase 1: Turn-split all sessions, collect (session_idx, cleaned_text, original_chunk) triples
+    struct TurnWork {
         session_idx: usize,
-        text: String,
+        cleaned: String,
+        original: String,
     }
-    let mut all_chunks: Vec<ChunkWork> = Vec::new();
-    let mut session_chunk_ranges: Vec<(usize, usize)> = Vec::with_capacity(sessions.len());
+    let mut all_turns: Vec<TurnWork> = Vec::new();
+    let mut session_turn_ranges: Vec<(usize, usize)> = Vec::with_capacity(sessions.len());
 
     for (s_idx, session) in sessions.iter().enumerate() {
         let cleaned = clean_for_embedding(&session.content);
@@ -1564,28 +1724,29 @@ pub async fn store_session_batch(
             ));
         }
         let chunks = chunk_into_rounds(&session.content, 80);
-        let start = all_chunks.len();
+        let start = all_turns.len();
         for chunk in &chunks {
             let c = clean_for_embedding(chunk);
             if c.len() >= 4 {
-                all_chunks.push(ChunkWork {
+                all_turns.push(TurnWork {
                     session_idx: s_idx,
-                    text: c,
+                    cleaned: c,
+                    original: chunk.clone(),
                 });
             }
         }
-        let end = all_chunks.len();
+        let end = all_turns.len();
         if end == start {
             return Err((
                 StatusCode::BAD_REQUEST,
-                format!("session {} produced no embeddable chunks", s_idx),
+                format!("session {} produced no embeddable turns", s_idx),
             ));
         }
-        session_chunk_ranges.push((start, end));
+        session_turn_ranges.push((start, end));
     }
 
-    // Phase 2: ONE Ollama embed call for ALL chunks
-    let refs: Vec<&str> = all_chunks.iter().map(|c| c.text.as_str()).collect();
+    // Phase 2: ONE Ollama embed call for ALL turns
+    let refs: Vec<&str> = all_turns.iter().map(|c| c.cleaned.as_str()).collect();
     let vectors = embed_document_batch(&*state.embedding, &refs)
         .await
         .map_err(|e| {
@@ -1595,41 +1756,47 @@ pub async fn store_session_batch(
             )
         })?;
 
-    // Phase 3: Build nodes per session and insert
+    // Phase 3: Build turn nodes per session and insert — NO session aggregates
     let mut all_responses: Vec<StoreNodeResponse> = Vec::with_capacity(sessions.len());
 
     for (s_idx, session) in sessions.iter().enumerate() {
-        let (chunk_start, chunk_end) = session_chunk_ranges[s_idx];
+        let (turn_start, turn_end) = session_turn_ranges[s_idx];
         let memory_type = MemoryType::parse(&session.memory_type).unwrap_or(MemoryType::Episodic);
         let source = MemorySource::parse(&session.source).unwrap_or(MemorySource::Conversation);
-        let chunk_count = chunk_end - chunk_start;
+        let turn_count = turn_end - turn_start;
 
-        let mut session_ids: Vec<Uuid> = Vec::with_capacity(chunk_count);
-        for chunk_idx in chunk_start..chunk_end {
-            let vector = vectors[chunk_idx].clone();
+        let mut turn_ids: Vec<Uuid> = Vec::with_capacity(turn_count);
+        for turn_idx in turn_start..turn_end {
+            let vector = vectors[turn_idx].clone();
+            let work = &all_turns[turn_idx];
+            let local_idx = turn_idx - turn_start;
+            let (speaker, _) = parse_speaker_role_from_chunk(&work.original)
+                .unwrap_or(("assistant", &work.original as &str));
+
             let mut metadata = session.metadata.clone();
+            metadata.insert("speaker_role".to_string(), Value::String(speaker.to_string()));
+            metadata.insert("is_turn".to_string(), Value::Bool(true));
             metadata.insert(
-                "chunk_index".to_string(),
-                Value::Number(serde_json::Number::from(chunk_idx - chunk_start)),
+                "turn_index".to_string(),
+                Value::Number(serde_json::Number::from(local_idx)),
             );
             metadata.insert(
-                "session_chunk_count".to_string(),
-                Value::Number(serde_json::Number::from(chunk_count)),
+                "turn_count".to_string(),
+                Value::Number(serde_json::Number::from(turn_count)),
             );
-            metadata.insert(
-                "is_chunk".to_string(),
-                Value::Bool(true),
-            );
+            if let Some(ref sid) = session.session_id {
+                metadata.insert("session_id".to_string(), Value::String(sid.clone()));
+            }
             normalize_node_metadata(memory_type, source, &mut metadata);
 
-            let content = if chunk_idx == chunk_start {
-                session.content.clone()
-            } else {
-                all_chunks[chunk_idx].text.clone()
-            };
-
-            let mut node =
-                FractalNode::new_typed(Some(content), None, vector, metadata, memory_type, source);
+            let mut node = FractalNode::new_typed(
+                Some(work.original.clone()),
+                None,
+                vector,
+                metadata,
+                memory_type,
+                source,
+            );
             if let Some(imp) = session.importance {
                 node.importance = imp.clamp(1, 10);
             }
@@ -1641,105 +1808,18 @@ pub async fn store_session_batch(
                 .insert(node)
                 .await
                 .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-            session_ids.push(id);
+            turn_ids.push(id);
         }
 
-        // ── Gap 1 Fix (batch): Store full-content raw node for consolidation ──
-        let raw_vector = embed_document(&*state.embedding, &session.content)
-            .await
-            .unwrap_or_default();
-        let mut raw_metadata = session.metadata.clone();
-        if let Some(ref sid) = session.session_id {
-            raw_metadata.insert("session_id".to_string(), Value::String(sid.clone()));
-        }
-        if let Some(ti) = session.turn_index {
-            raw_metadata.insert("turn_index".to_string(), Value::Number(ti.into()));
-        }
-        raw_metadata.insert("is_full_content".to_string(), Value::Bool(true));
-        raw_metadata.insert(
-            "chunk_ids".to_string(),
-            Value::Array(session_ids.iter().map(|id| Value::String(id.to_string())).collect()),
-        );
-        normalize_node_metadata(memory_type, source, &mut raw_metadata);
-        let mut raw_node = FractalNode::new_typed(
-            Some(session.content.clone()),
-            None,
-            raw_vector,
-            raw_metadata,
-            memory_type,
-            MemorySource::Conversation,
-        );
-        raw_node.context_tier = ContextTier::Raw;
-        raw_node.importance = session.importance.unwrap_or(5).clamp(3, 10);
-        if let Some(sens) = session.sensitivity {
-            raw_node.sensitivity = sens;
-        }
-        let raw_id = state
-            .store
-            .insert(raw_node)
-            .await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-        session_ids.push(raw_id);
+        let primary_id = turn_ids[0]; // Return first turn as primary
 
-        let primary_id = raw_id; // Return raw node as primary
-
-        tracing::info!(%primary_id, s_idx, ?memory_type, chunks = chunk_count, "session node stored (batch + raw node)");
+        tracing::info!(%primary_id, s_idx, ?memory_type, turns = turn_count, "turn nodes stored (batch, {} turns)", turn_count);
 
         all_responses.push(StoreNodeResponse {
             id: primary_id,
-            message: format!("session node created ({} chunks)", chunk_count),
-            chunk_ids: Some(session_ids),
+            message: format!("turn nodes created ({} turns)", turn_count),
+            chunk_ids: Some(turn_ids),
         });
-    }
-
-    // ── Gap 5 Fix: Session-Overview-Node for lossless sessions ──
-    // Creates a single node that links to all turn raw nodes, enabling
-    // fractal zoom from session → individual turns. Consolidation will
-    // generate L0 summary from this overview.
-    if sessions.len() > 1 {
-        let all_turn_ids: Vec<Uuid> = all_responses.iter().map(|r| r.id).collect();
-        let session_content = sessions
-            .iter()
-            .enumerate()
-            .map(|(i, s)| format!("Turn {}: {}", i, &s.content[..s.content.len().min(200)]))
-            .collect::<Vec<_>>()
-            .join("\n\n");
-
-        let session_vector = embed_document(&*state.embedding, &session_content)
-            .await
-            .unwrap_or_default();
-
-        let mut session_metadata = sessions[0].metadata.clone();
-        session_metadata.insert("is_session_overview".to_string(), Value::Bool(true));
-        session_metadata.insert(
-            "turn_count".to_string(),
-            Value::Number(sessions.len().into()),
-        );
-
-        let mut session_node = FractalNode::new_typed(
-            Some(session_content),
-            None,
-            session_vector,
-            session_metadata,
-            MemoryType::Episodic,
-            MemorySource::Conversation,
-        );
-        session_node.context_tier = ContextTier::Overview;
-        session_node.children_tier_ids = all_turn_ids.clone();
-        session_node.importance = 6; // Higher than individual turns — session is important
-
-        match state.store.insert(session_node).await {
-            Ok(session_id) => {
-                tracing::info!(
-                    %session_id,
-                    turn_count = sessions.len(),
-                    "session overview node created"
-                );
-            }
-            Err(e) => {
-                tracing::warn!(error = %e, "failed to create session overview node (non-fatal)");
-            }
-        }
     }
 
     // Event-driven consolidation after batch store
@@ -1750,7 +1830,7 @@ pub async fn store_session_batch(
     Ok((
         StatusCode::CREATED,
         Json(StoreSessionBatchResponse {
-            total_chunks: all_chunks.len(),
+            total_turns: all_turns.len(),
             total_sessions: sessions.len(),
             results: all_responses,
         }),
@@ -2000,6 +2080,35 @@ pub async fn store_external(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     tracing::info!(%id, ?memory_type, "external pointer node stored");
+    // ── Inline fact extraction for external content ──
+    if let Some(ref content) = req.content {
+        if content.len() >= 20 {
+            let dim = state.embedding.dimension();
+            let ctx = FactExtractionContext {
+                session_id: None,
+                source_node_id: id,
+                embedding_dim: dim,
+            };
+            let fact_nodes = FactExtractor::extract_and_create_nodes(content, &ctx);
+            let fact_count = fact_nodes.len();
+            if fact_count > 0 {
+                for mut fact_node in fact_nodes {
+                    let fact_content = fact_node.content.clone().unwrap_or_default();
+                    match embed_document(&*state.embedding, &fact_content).await {
+                        Ok(emb) => {
+                            fact_node.vector = emb;
+                            match state.store.insert(fact_node).await {
+                                Ok(fact_id) => tracing::debug!(%fact_id, source_id = %id, "inline fact stored (external)"),
+                                Err(e) => tracing::debug!("inline fact store failed: {}", e),
+                            }
+                        }
+                        Err(e) => tracing::debug!("inline fact embed failed: {}", e),
+                    }
+                }
+                tracing::debug!(%id, fact_count, "inline facts extracted from external content");
+            }
+        }
+    }
     // Event-driven consolidation
     if let Some(ref sched) = state.consolidation {
         sched.trigger_if_needed().await;
@@ -2104,6 +2213,14 @@ pub struct RetrieveFractalRequest {
     /// Optional session_id for filtering/boosting to reduce session leakage.
     #[serde(default)]
     pub session_id: Option<String>,
+    /// Optional per-source-type score multipliers for provenance-aware retrieval.
+    /// Overrides the default SourceTypeWeights (real=1.0, synthetic=0.85, derived=0.70, unknown=0.95).
+    #[serde(default)]
+    pub source_type_weights: Option<crate::retrieval::source_weighting::SourceTypeWeights>,
+    /// Explicit fusion strategy for BM25+dense combination.
+    /// When set, overrides auto-routing. Use "dense-only" for pure vector baseline.
+    #[serde(default)]
+    pub fusion_strategy: Option<crate::storage::FusionStrategy>,
 }
 
 fn default_top_k() -> usize {
@@ -2477,6 +2594,12 @@ pub async fn retrieve_fractal(
     };
     tracing::debug!(?temporal_weight, "resolved temporal_weight");
 
+    // Resolve source_type_weights: per-query override > server-wide config default.
+    let source_type_weights = req
+        .source_type_weights
+        .or(state.default_source_type_weights);
+    tracing::debug!(?source_type_weights, "resolved source_type_weights");
+
     // Stage 1: Hybrid retrieval (with optional multi-query expansion)
     let query_vector_for_expand = query_vector.clone();
     let effective_top_k = if req.diversity {
@@ -2485,7 +2608,8 @@ pub async fn retrieve_fractal(
         req.top_k
     };
 
-    let results = if req.multi_query {
+    let query_vector_for_turns = query_vector.clone();
+    let mut results = if req.multi_query {
         // Multi-Query: expand into 2-3 reformulations, retrieve each, RRF-fuse
         let query_text = req.query_text.clone().unwrap_or_default();
         let expansions = crate::retrieval::query_expansion::expand_query(&query_text);
@@ -2513,11 +2637,12 @@ pub async fn retrieve_fractal(
                 multi_query: false, // prevent recursion
                 recency_boost: req.recency_boost,
                 temporal_weight,
-                session_id: req.session_id.clone(),
+                fusion_strategy: req.fusion_strategy,
+                query_type_routing: false,
+                source_type_weights,
             };
-
             let r = state.store.hybrid_retrieve(&q).await.map_err(|e| {
-                tracing::error!("hybrid_retrieve (multi-query {i}) failed: {e}");
+                tracing::error!("expansion {} hybrid_retrieve failed: {}", i, e);
                 (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
             })?;
             tracing::debug!(expansion=i, count=r.len(), query=%expanded_text, "multi-query result");
@@ -2542,7 +2667,7 @@ pub async fn retrieve_fractal(
         for (id, score) in fused {
             if seen.insert(id) {
                 if let Some(node) = by_id.get(&id).cloned() {
-                    merged.push(req.retrieval_profile.score_node(score, node));
+                    merged.push(req.retrieval_profile.score_node(score, node, source_type_weights));
                 }
             }
         }
@@ -2580,7 +2705,9 @@ pub async fn retrieve_fractal(
             multi_query: false,
             recency_boost: req.recency_boost,
             temporal_weight,
-            session_id: req.session_id.clone(),
+            fusion_strategy: req.fusion_strategy,
+            query_type_routing: false,
+            source_type_weights,
         };
         let r = state.store.hybrid_retrieve(&query).await.map_err(|e| {
             tracing::error!("hybrid_retrieve failed: {e}");
@@ -2588,6 +2715,86 @@ pub async fn retrieve_fractal(
         })?;
         r
     };
+
+    // ── Turn-level retrieval (postgres-storage) ──
+    // Primary retrieval path against the turn-level embedding index.
+    // When session_id is provided, results are scoped to that conversation.
+    // This replaces the old WP2 session-level filtering in hybrid_retrieve.
+    #[cfg(feature = "postgres-storage")]
+    if let Some(pg) = state.pg_store.as_ref() {
+        if let Some(ref query_text) = req.query_text {
+            if !query_text.trim().is_empty() {
+                // Resolve session_id string to UUID for turn-level filtering
+                let session_uuid_filter: Option<Uuid> = if let Some(ref sid) = req.session_id {
+                    if let Ok(u) = Uuid::parse_str(sid) {
+                        Some(u)
+                    } else {
+                        pg.find_or_create_session(sid).await.ok()
+                    }
+                } else {
+                    None
+                };
+
+                match pg.retrieve_turns_internal(&query_vector_for_turns, req.top_k, None, session_uuid_filter).await {
+                    Ok(turn_rows) => {
+                        if !turn_rows.is_empty() {
+                            tracing::info!(
+                                turn_count = turn_rows.len(),
+                                "turn-level retrieval from conversation_turns index"
+                            );
+                            for row in turn_rows {
+                                // Build turn-level metadata with session identity
+                                let mut metadata: HashMap<String, Value> = row
+                                    .metadata
+                                    .as_ref()
+                                    .and_then(|v| v.as_object())
+                                    .map(|o| {
+                                        o.iter()
+                                            .map(|(k, v)| (k.clone(), v.clone()))
+                                            .collect()
+                                    })
+                                    .unwrap_or_default();
+
+                                // Turn identity markers — required for temporal ranking
+                                // and turn-level deduplication.
+                                metadata.insert("session_id".to_string(), Value::String(row.session_id.to_string()));
+                                metadata.insert("speaker_role".to_string(), Value::String(row.speaker_role.clone()));
+                                metadata.insert("turn_index".to_string(), Value::Number(serde_json::Number::from(row.turn_index)));
+                                metadata.insert("is_turn".to_string(), Value::Bool(true));
+                                if let Some(ref ext_id) = row.external_session_id {
+                                    metadata.insert("external_session_id".to_string(), Value::String(ext_id.clone()));
+                                }
+
+                                // Carry the turn embedding vector for downstream ranking
+                                // (fractal zoom, cross-encoder reranker)
+                                let vector = row.embedding.unwrap_or_default();
+
+                                let node = FractalNode::new_typed(
+                                    Some(row.content),
+                                    None,
+                                    vector,
+                                    metadata,
+                                    MemoryType::Episodic,
+                                    MemorySource::Conversation,
+                                );
+
+                                results.push(crate::storage::ScoredNode {
+                                    id: row.turn_id,
+                                    score: row.similarity,
+                                    distribution_scores: None,
+                                    debug: None,
+                                    node,
+                                });
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("turn-level internal retrieval failed (non-fatal): {e}");
+                    }
+                }
+            }
+        }
+    }
 
     // Stage 1.5: Expand flat results via fractal zoom (children_tier_ids).
     // Uses the query vector to compute child similarity, prunes branches
@@ -2609,8 +2816,9 @@ pub async fn retrieve_fractal(
 
     // Stage 2: Optional Cross-Encoder reranking (feature-gated)
     #[cfg(feature = "reranker")]
-    let results = {
+    let (results, _rerank_timing_ms) = {
         if let Some(ref reranker_arc) = state.reranker {
+            let rerank_start = std::time::Instant::now();
             let candidates: Vec<crate::retrieval::cross_encoder::RerankCandidate> = results
                 .into_iter()
                 .map(|s| crate::retrieval::cross_encoder::RerankCandidate {
@@ -2632,8 +2840,18 @@ pub async fn retrieve_fractal(
                 )
             }; // MutexGuard dropped here — safe to .await now
 
+            let wall_ms = rerank_start.elapsed().as_secs_f64() * 1000.0;
+
             match reranked_result {
-                Ok(reranked) => {
+                Ok((reranked, timing)) => {
+                    tracing::info!(
+                        wall_ms = %format!("{:.1}", wall_ms),
+                        inference_ms = %format!("{:.1}", timing.inference_ms),
+                        tokenize_ms = %format!("{:.1}", timing.tokenize_ms),
+                        candidates = timing.candidate_count,
+                        batches = timing.batch_count,
+                        "cross-encoder reranking complete"
+                    );
                     let mut mapped = Vec::with_capacity(reranked.len());
                     for r in reranked {
                         if let Ok(Some(node)) = state
@@ -2644,15 +2862,19 @@ pub async fn retrieve_fractal(
                             mapped.push(crate::storage::ScoredNode {
                                 id: node.id,
                                 score: r.cross_encoder_score,
+                                distribution_scores: None,
                                 debug: None,
                                 node,
                             });
                         }
                     }
-                    mapped
+                    (mapped, Some(wall_ms))
                 }
                 Err(e) => {
-                    tracing::warn!("reranking failed, falling back to bi-encoder: {}", e);
+                    tracing::warn!(
+                        wall_ms = %format!("{:.1}", wall_ms),
+                        "reranking failed, falling back to bi-encoder: {}", e
+                    );
                     // Re-retrieve (results was consumed by .into_iter() above)
                     let query_text = req.query_text.clone().unwrap_or_default();
                     let fallback_query = HybridQuery {
@@ -2666,18 +2888,23 @@ pub async fn retrieve_fractal(
                         multi_query: false,
                         recency_boost: req.recency_boost,
                         temporal_weight,
-                        session_id: req.session_id.clone(),
+                        fusion_strategy: None,
+                        query_type_routing: false,
+                        source_type_weights,
                     };
-                    state.store.hybrid_retrieve(&fallback_query).await.map_err(|e| {
-                        tracing::error!("hybrid_retrieve fallback failed: {}", e);
+                    let r = state.store.hybrid_retrieve(&fallback_query).await.map_err(|e| {
+                        tracing::error!("fallback hybrid_retrieve after rerank failure: {}", e);
                         (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
-                    })?
+                    })?;
+                    (r, None)
                 }
             }
         } else {
-            results
+            (results, None)
         }
     };
+    #[cfg(not(feature = "reranker"))]
+    let (results, _rerank_timing_ms) = (results, None::<f64>);
 
     // Stage 2.5: Temporal diversity + contrastive retrieval.
     let mut final_results = results;
@@ -2697,7 +2924,9 @@ pub async fn retrieve_fractal(
                         multi_query: false,
                         recency_boost: req.recency_boost,
                         temporal_weight,
-                        session_id: req.session_id.clone(),
+                        fusion_strategy: None,
+                        query_type_routing: false,
+                        source_type_weights,
                     };
                     if let Ok(extra) = state.store.hybrid_retrieve(&cq_query).await {
                         tracing::info!(contrastive = extra.len(), "contrastive results");
@@ -2930,6 +3159,8 @@ pub async fn retrieve_fractal(
                             created_at: chrono::Utc::now(),
                             retrieval_profile: RetrievalProfile::UserFacing,
                             trust_tier: "primary".to_string(),
+                            source_weight_applied: Some(1.0),
+                            original_source: Some("synthetic".to_string()),
                             score_debug: None,
                             confidence: Some(0.98),
                             sensitivity: Some(Sensitivity::Normal),
@@ -2965,7 +3196,7 @@ pub async fn retrieve_fractal(
     tracing::info!(
         response_len = scored.len(),
         response_meta = scored.iter().filter(|n| n.memory_type == MemoryType::Meta).count(),
-        recency_boost = ?req.recency_boost,
+        recency_boost = req.recency_boost.map(|r| format!("{:.2}", r)),
         "retrieve_fractal response stats"
     );
     Ok(Json(scored))
@@ -3259,7 +3490,7 @@ pub async fn rerank(
         );
 
         let mut reranker = reranker_arc.lock().unwrap();
-        let results = reranker
+        let (results, ce_timing) = reranker
             .rerank(&req.query, candidates, req.top_n, strategy)
             .map_err(|e| {
                 tracing::error!("reranking failed: {}", e);
@@ -3271,9 +3502,7 @@ pub async fn rerank(
         let output: Vec<RerankedResultOutput> = results
             .into_iter()
             .map(|r| {
-                let final_score = match strategy {
-                    _ => Some(r.cross_encoder_score),
-                };
+                let final_score = Some(r.cross_encoder_score);
                 RerankedResultOutput {
                     node_id: r.node_id,
                     content: r.content,
@@ -3286,7 +3515,11 @@ pub async fn rerank(
 
         tracing::info!(
             result_count = output.len(),
-            timing_ms = %format!("{:.1}", timing_ms),
+            wall_ms = %format!("{:.1}", timing_ms),
+            inference_ms = %format!("{:.1}", ce_timing.inference_ms),
+            tokenize_ms = %format!("{:.1}", ce_timing.tokenize_ms),
+            candidates = ce_timing.candidate_count,
+            batches = ce_timing.batch_count,
             "reranking complete"
         );
 
@@ -4956,6 +5189,10 @@ pub async fn namespace_search(
         user_id: None,
         multi_query: false,
         recency_boost: None,
+        temporal_weight: None,
+        fusion_strategy: None,
+        query_type_routing: false,
+        source_type_weights: state.default_source_type_weights,
     };
     let all_results = state.store.hybrid_retrieve(&query).await.map_err(|e| {
         (
@@ -5381,6 +5618,312 @@ pub struct EntityEdge {
     relation_type: String,
     confidence: f64,
     extracted_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+
+// =============================================================================
+// Turn-Level Routes (per-turn embedding pipeline)
+// =============================================================================
+
+/// Validate that a speaker_role string is one of the allowed values.
+fn validate_speaker_role(role: &str) -> Result<&str, (StatusCode, String)> {
+    match role {
+        "user" | "assistant" | "system" | "tool" => Ok(role),
+        other => Err((
+            StatusCode::BAD_REQUEST,
+            format!("invalid speaker_role '{}': expected user, assistant, system, or tool", other),
+        )),
+    }
+}
+
+#[cfg(feature = "postgres-storage")]
+#[derive(Deserialize, ToSchema)]
+pub struct StoreTurnRequest {
+    pub session_id: String,
+    /// 0-based turn index within the session (first turn = 0).
+    pub turn_index: i32,
+    pub speaker_role: String,
+    pub content: String,
+    #[serde(default)]
+    pub vector: Option<Vec<f32>>,
+    #[serde(default)]
+    pub metadata: Option<serde_json::Value>,
+}
+
+#[cfg(feature = "postgres-storage")]
+#[derive(Serialize, ToSchema)]
+pub struct StoreTurnResponse {
+    pub turn_id: Uuid,
+    pub session_id: Uuid,
+    pub turn_index: i32,
+    pub message: String,
+}
+
+/// POST /store_turn — Store a single conversational turn with per-turn embedding.
+#[cfg(feature = "postgres-storage")]
+#[utoipa::path(
+    post,
+    path = "/store_turn",
+    tag = "turn-level",
+    request_body = StoreTurnRequest,
+    responses(
+        (status = 201, description = "Turn stored", body = StoreTurnResponse),
+        (status = 400, description = "Invalid request"),
+        (status = 500, description = "Embedding or storage failed"),
+        (status = 503, description = "postgres-storage not configured")
+    )
+)]
+pub async fn store_turn(
+    State(state): State<AppState>,
+    Json(req): Json<StoreTurnRequest>,
+) -> Result<(StatusCode, Json<StoreTurnResponse>), (StatusCode, String)> {
+    let pg = state.pg_store.as_ref().ok_or((
+        StatusCode::SERVICE_UNAVAILABLE,
+        "postgres-storage not configured".into(),
+    ))?;
+    if req.content.trim().is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "content is empty".into()));
+    }
+    let speaker = validate_speaker_role(&req.speaker_role)?;
+    let cleaned = clean_for_embedding(&req.content);
+    let vector = match req.vector {
+        Some(v) if !v.is_empty() => v,
+        _ => embed_document(&*state.embedding, &cleaned)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("embed failed: {e}")))?,
+    };
+    let emb_type = state.embedding.name().to_string();
+    let emb_dim = state.embedding.dimension() as i32;
+    let turn_id = pg
+        .store_turn(&req.session_id, req.turn_index, speaker, &cleaned, vector, req.metadata, &emb_type, emb_dim)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let session_id = pg
+        .find_or_create_session(&req.session_id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok((StatusCode::CREATED, Json(StoreTurnResponse {
+        turn_id, session_id, turn_index: req.turn_index, message: "turn stored".into(),
+    })))
+}
+
+#[cfg(feature = "postgres-storage")]
+#[derive(Deserialize, ToSchema)]
+pub struct StoreTurnsBatchRequest {
+    pub session_id: String,
+    pub turns: Vec<BatchTurnItem>,
+}
+
+#[cfg(feature = "postgres-storage")]
+#[derive(Serialize, ToSchema)]
+pub struct StoreTurnsBatchResponse {
+    pub session_id: Uuid,
+    pub turn_ids: Vec<Uuid>,
+    pub count: usize,
+    pub message: String,
+}
+
+/// POST /store_turns — Store multiple turns in a single batch.
+#[cfg(feature = "postgres-storage")]
+#[utoipa::path(
+    post,
+    path = "/store_turns",
+    tag = "turn-level",
+    request_body = StoreTurnsBatchRequest,
+    responses(
+        (status = 201, description = "Turns stored", body = StoreTurnsBatchResponse),
+        (status = 400, description = "Invalid request"),
+        (status = 500, description = "Embedding or storage failed"),
+        (status = 503, description = "postgres-storage not configured")
+    )
+)]
+pub async fn store_turns_batch(
+    State(state): State<AppState>,
+    Json(req): Json<StoreTurnsBatchRequest>,
+) -> Result<(StatusCode, Json<StoreTurnsBatchResponse>), (StatusCode, String)> {
+    let pg = state.pg_store.as_ref().ok_or((
+        StatusCode::SERVICE_UNAVAILABLE, "postgres-storage not configured".into(),
+    ))?;
+    if req.turns.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "no turns provided".into()));
+    }
+    for item in &req.turns {
+        validate_speaker_role(&item.speaker_role)?;
+        if item.content.trim().is_empty() {
+            return Err((StatusCode::BAD_REQUEST, "turn content is empty".into()));
+        }
+    }
+    let cleaned: Vec<String> = req.turns.iter().map(|t| clean_for_embedding(&t.content)).collect();
+    let refs: Vec<&str> = cleaned.iter().map(String::as_str).collect();
+    let embeddings = embed_document_batch(&*state.embedding, &refs)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("batch embed failed: {e}")))?;
+    let emb_type = state.embedding.name().to_string();
+    let emb_dim = state.embedding.dimension() as i32;
+    let (session_id, turn_ids) = pg
+        .store_turns_batch(&req.session_id, &req.turns, embeddings, &emb_type, emb_dim)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok((StatusCode::CREATED, Json(StoreTurnsBatchResponse {
+        session_id, turn_ids, count: req.turns.len(), message: "turns batch stored".into(),
+    })))
+}
+
+#[cfg(feature = "postgres-storage")]
+#[derive(Deserialize, ToSchema)]
+pub struct RetrieveTurnsRequest {
+    pub query_text: String,
+    #[serde(default = "default_top_k")]
+    pub top_k: usize,
+    #[serde(default)]
+    pub speaker_filter: Option<String>,
+    #[serde(default)]
+    pub session_id: Option<Uuid>,
+    #[serde(default)]
+    pub external_session_id: Option<String>,
+    #[serde(default)]
+    pub context_window: Option<i32>,
+}
+
+#[cfg(feature = "postgres-storage")]
+#[derive(Serialize, ToSchema)]
+pub struct RetrieveTurnsResponse {
+    pub query: String,
+    pub results: Vec<ScoredTurn>,
+    pub query_time_ms: u64,
+}
+
+/// POST /retrieve/turns — Retrieve turns by semantic similarity.
+#[cfg(feature = "postgres-storage")]
+#[utoipa::path(
+    post,
+    path = "/retrieve/turns",
+    tag = "turn-level",
+    request_body = RetrieveTurnsRequest,
+    responses(
+        (status = 200, description = "Turn retrieval results", body = RetrieveTurnsResponse),
+        (status = 400, description = "Invalid request"),
+        (status = 500, description = "Retrieval failed"),
+        (status = 503, description = "postgres-storage not configured")
+    )
+)]
+pub async fn retrieve_turns(
+    State(state): State<AppState>,
+    Json(req): Json<RetrieveTurnsRequest>,
+) -> Result<Json<RetrieveTurnsResponse>, (StatusCode, String)> {
+    let pg = state.pg_store.as_ref().ok_or((
+        StatusCode::SERVICE_UNAVAILABLE, "postgres-storage not configured".into(),
+    ))?;
+    if req.query_text.trim().is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "query_text is empty".into()));
+    }
+    if let Some(ref speaker) = req.speaker_filter {
+        validate_speaker_role(speaker)?;
+    }
+    let start = std::time::Instant::now();
+    let query_vector = embed_query(&*state.embedding, &req.query_text)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("embed failed: {e}")))?;
+    let mut session_uuid_filter = req.session_id;
+    if let Some(ref ext_id) = req.external_session_id {
+        if session_uuid_filter.is_none() {
+            match pg.find_or_create_session(ext_id).await {
+                Ok(sid) => session_uuid_filter = Some(sid),
+                Err(_) => {}
+            }
+        }
+    }
+    let mut results = pg
+        .retrieve_turns(&query_vector, req.top_k.max(1).min(100), req.speaker_filter.as_deref(), session_uuid_filter)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    if let Some(window) = req.context_window {
+        if window > 0 {
+            for turn in &mut results {
+                if let Ok(adjacent) = pg.get_adjacent_turns(turn.session_id, turn.turn_index, window).await {
+                    if !adjacent.is_empty() {
+                        turn.adjacent_turns = Some(adjacent);
+                    }
+                }
+            }
+        }
+    }
+    let query_time_ms = start.elapsed().as_millis() as u64;
+    Ok(Json(RetrieveTurnsResponse { query: req.query_text, results, query_time_ms }))
+}
+
+/// Query parameters for session turns listing.
+#[cfg(feature = "postgres-storage")]
+#[derive(Deserialize, ToSchema)]
+pub struct SessionTurnsQuery {
+    #[serde(default)]
+    pub offset: Option<i64>,
+    #[serde(default)]
+    pub limit: Option<i64>,
+    /// Order direction: "asc" (default) or "desc".
+    #[serde(default = "default_order")]
+    pub order: String,
+}
+
+#[cfg(feature = "postgres-storage")]
+fn default_order() -> String {
+    "asc".to_string()
+}
+
+/// GET /sessions/:session_id/turns — Get turns for a session with optional pagination.
+/// Without query params, returns all turns (backward compatible).
+/// With ?offset=N&limit=M, returns a paginated window.
+#[cfg(feature = "postgres-storage")]
+#[utoipa::path(
+    get,
+    path = "/sessions/{session_id}/turns",
+    tag = "turn-level",
+    params(
+        ("session_id" = Uuid, Path, description = "Session UUID"),
+        ("offset" = Option<i64>, Query, description = "Pagination offset"),
+        ("limit" = Option<i64>, Query, description = "Page size"),
+        ("order" = Option<String>, Query, description = "Sort order: asc or desc"),
+    ),
+    responses(
+        (status = 200, description = "Session turns", body = PaginatedSessionTurns),
+        (status = 503, description = "postgres-storage not configured")
+    )
+)]
+pub async fn get_session_turns(
+    State(state): State<AppState>,
+    Path(session_id): Path<Uuid>,
+    Query(query): Query<SessionTurnsQuery>,
+) -> Result<Json<PaginatedSessionTurns>, (StatusCode, String)> {
+    let pg = state.pg_store.as_ref().ok_or((
+        StatusCode::SERVICE_UNAVAILABLE, "postgres-storage not configured".into(),
+    ))?;
+
+    let session_row: Option<(Option<String>,)> = sqlx::query_as(
+        "SELECT external_id FROM conversation_sessions WHERE id = $1",
+    )
+    .bind(session_id)
+    .fetch_optional(&pg.pool)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let external_session_id = session_row.and_then(|r| r.0);
+
+    let order_desc = query.order.to_lowercase() == "desc";
+    let limit = query.limit.unwrap_or(1000).clamp(1, 1000);
+    let offset = query.offset.unwrap_or(0).max(0);
+
+    let (turns, total_count) = pg
+        .list_turns_by_session(session_id, offset, limit, order_desc)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(PaginatedSessionTurns {
+        session_id,
+        external_session_id,
+        turns,
+        total_count,
+        offset,
+        limit,
+    }))
 }
 
 #[cfg(test)]

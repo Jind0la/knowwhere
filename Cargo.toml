@@ -41,6 +41,9 @@ utoipa-swagger-ui = { version = "9", features = ["axum"] }
 bm25 = "2.3.2"
 futures = "0.3"
 
+# Lightweight regex-based fact extraction (inline, no LLM required)
+regex = "1"
+
 # Cross-encoder reranking (feature-gated)
 ort = { version = ">=2.0.0-rc.12, <3", optional = true }
 tokenizers = { version = "0.21", optional = true }
@@ -89,3 +92,4 @@ path = "src/bin/longmemeval_qa_eval.rs"
 
 [dev-dependencies]
 http-body-util = "0.1"
+tempfile = "3"

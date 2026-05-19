@@ -32,6 +32,7 @@ use uuid::Uuid;
 use crate::memory::fractal_node::FractalNode;
 use crate::memory::types::{ConflictState, ContextTier, MemorySource, MemoryStatus, Sensitivity};
 use crate::memory::MemoryType;
+use crate::memory::conversation::TurnRow;
 use crate::storage::backend::{HybridQuery, ScoredNode, StorageBackend, UpdateOperation};
 
 /// Hex-encoded BLAKE3 of the plaintext API key — stored in `auth_api_keys.key_hash` for O(1) lookup.
@@ -43,7 +44,67 @@ pub fn stored_api_key_fingerprint(plaintext: &str) -> String {
 /// PostgreSQL-backed storage layer.
 /// Wraps the existing in-memory USearch index with persistent PostgreSQL storage.
 pub struct PostgresStore {
-    pool: PgPool,
+    pub pool: PgPool,
+}
+
+/// SQLx row type for turn-level vector-similarity queries.
+/// Returned by `search_turns()`. Maps raw DB columns to a lightweight struct.
+#[derive(Debug, sqlx::FromRow)]
+pub struct TurnWithScore {
+    pub turn_id: Uuid,
+    pub session_id: Uuid,
+    pub external_session_id: Option<String>,
+    pub turn_index: i32,
+    pub speaker_role: String,
+    pub content: String,
+    pub similarity: f32,
+    pub metadata: Option<serde_json::Value>,
+    pub created_at: DateTime<Utc>,
+    pub embedding_type: Option<String>,
+    pub embedding_dim: Option<i32>,
+}
+
+/// Internal row type for turn retrieval that includes the full embedding vector.
+/// Used by ranking/scoring pipeline when turn-level embedding access is needed.
+#[derive(Debug, sqlx::FromRow)]
+pub(crate) struct TurnWithVector {
+    pub turn_id: Uuid,
+    pub session_id: Uuid,
+    pub external_session_id: Option<String>,
+    pub turn_index: i32,
+    pub speaker_role: String,
+    pub content: String,
+    pub similarity: f32,
+    pub metadata: Option<serde_json::Value>,
+    pub created_at: DateTime<Utc>,
+    pub embedding_type: Option<String>,
+    pub embedding_dim: Option<i32>,
+    pub embedding: Option<Vec<f32>>,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct SessionTurnRow {
+    pub turn_id: Uuid,
+    pub turn_index: i32,
+    pub speaker_role: String,
+    pub content: String,
+    pub content_preview: String,
+    pub token_count: Option<i32>,
+    pub metadata: Option<serde_json::Value>,
+    pub created_at: DateTime<Utc>,
+    pub embedding_type: Option<String>,
+    pub embedding_dim: Option<i32>,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct AdjacentTurnRow {
+    pub turn_id: Uuid,
+    pub turn_index: i32,
+    pub speaker_role: String,
+    pub content: String,
+    pub metadata: Option<serde_json::Value>,
+    pub embedding_type: Option<String>,
+    pub embedding_dim: Option<i32>,
 }
 
 fn allow_internal_meta(filter: Option<MemoryType>) -> bool {
@@ -285,6 +346,17 @@ impl PostgresStore {
     // -------------------------------------------------------------------------
 
     /// Store a session memory node.
+    ///
+    /// DEPRECATED: This method's name is misleading — it stores individual
+    /// memory nodes (`FractalNode`) in the `memories` table, **not** session-level
+    /// aggregate embeddings. Session-level embeddings on `conversation_sessions`
+    /// were removed in migration 015. All nodes inserted here carry their own
+    /// per-node embedding vector.
+    ///
+    /// This is the canonical write path for all memory nodes in Postgres mode
+    /// (used by the [`StorageBackend::insert`] implementation), regardless of
+    /// whether they originated from a session, import, consolidation, or external source.
+    #[allow(deprecated)]
     pub async fn store_session(
         &self,
         content: String,
@@ -1299,6 +1371,451 @@ impl PostgresStore {
         tracing::info!("auth schema migrations completed");
         Ok(())
     }
+
+    // =========================================================================
+    // Turn-Level Storage (per-turn embedding pipeline)
+    // =========================================================================
+
+    /// Find an existing conversation session by external_id, or create one.
+    pub async fn find_or_create_session(&self, external_id: &str) -> Result<Uuid> {
+        let existing: Option<Uuid> = sqlx::query_scalar(
+            "SELECT id FROM conversation_sessions WHERE external_id = $1",
+        )
+        .bind(external_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        if let Some(id) = existing {
+            return Ok(id);
+        }
+        let id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO conversation_sessions (id, external_id, started_at) VALUES ($1, $2, NOW())",
+        )
+        .bind(id)
+        .bind(external_id)
+        .execute(&self.pool)
+        .await?;
+        tracing::info!(%id, external_id, "created conversation session");
+        Ok(id)
+    }
+
+    /// Store a single conversational turn with its embedding.
+    pub async fn store_turn(
+        &self,
+        external_session_id: &str,
+        turn_index: i32,
+        speaker_role: &str,
+        content: &str,
+        embedding: Vec<f32>,
+        metadata: Option<serde_json::Value>,
+        embedding_type: &str,
+        embedding_dim: i32,
+    ) -> Result<Uuid> {
+        let session_id = self.find_or_create_session(external_session_id).await?;
+        let turn_id = Uuid::new_v4();
+        let meta = metadata.unwrap_or(serde_json::json!({}));
+        sqlx::query(
+            r#"INSERT INTO conversation_turns (id, session_id, turn_index, speaker_role, content, embedding, metadata, embedding_type, embedding_dim)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            ON CONFLICT (session_id, turn_index) DO UPDATE SET
+                content = EXCLUDED.content, embedding = EXCLUDED.embedding,
+                speaker_role = EXCLUDED.speaker_role, metadata = EXCLUDED.metadata,
+                embedding_type = EXCLUDED.embedding_type, embedding_dim = EXCLUDED.embedding_dim"#,
+        )
+        .bind(turn_id).bind(session_id).bind(turn_index).bind(speaker_role)
+        .bind(content).bind(&embedding).bind(&meta)
+        .bind(embedding_type).bind(embedding_dim)
+        .execute(&self.pool).await?;
+        sqlx::query(
+            "UPDATE conversation_sessions SET turn_count = (SELECT COUNT(*) FROM conversation_turns WHERE session_id = $1), updated_at = NOW() WHERE id = $1",
+        )
+        .bind(session_id).execute(&self.pool).await?;
+        tracing::info!(%turn_id, %session_id, turn_index, speaker_role, "turn stored");
+        Ok(turn_id)
+    }
+
+    /// Store multiple turns in a single batch.
+    pub async fn store_turns_batch(
+        &self,
+        external_session_id: &str,
+        turns: &[crate::api::turns::BatchTurnItem],
+        embeddings: Vec<Vec<f32>>,
+        embedding_type: &str,
+        embedding_dim: i32,
+    ) -> Result<(Uuid, Vec<Uuid>)> {
+        let session_id = self.find_or_create_session(external_session_id).await?;
+        let mut turn_ids = Vec::with_capacity(turns.len());
+        for (item, emb) in turns.iter().zip(embeddings.iter()) {
+            let turn_id = Uuid::new_v4();
+            let meta = item.metadata.clone().unwrap_or(serde_json::json!({}));
+            sqlx::query(
+                r#"INSERT INTO conversation_turns (id, session_id, turn_index, speaker_role, content, embedding, metadata, embedding_type, embedding_dim)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                ON CONFLICT (session_id, turn_index) DO UPDATE SET
+                    content = EXCLUDED.content, embedding = EXCLUDED.embedding,
+                    speaker_role = EXCLUDED.speaker_role, metadata = EXCLUDED.metadata,
+                    embedding_type = EXCLUDED.embedding_type, embedding_dim = EXCLUDED.embedding_dim"#,
+            )
+            .bind(turn_id).bind(session_id).bind(item.turn_index).bind(&item.speaker_role)
+            .bind(&item.content).bind(emb).bind(&meta)
+            .bind(embedding_type).bind(embedding_dim)
+            .execute(&self.pool).await?;
+            turn_ids.push(turn_id);
+        }
+        sqlx::query(
+            "UPDATE conversation_sessions SET turn_count = (SELECT COUNT(*) FROM conversation_turns WHERE session_id = $1), updated_at = NOW() WHERE id = $1",
+        )
+        .bind(session_id).execute(&self.pool).await?;
+        tracing::info!(%session_id, count = turn_ids.len(), "turns batch stored");
+        Ok((session_id, turn_ids))
+    }
+
+    /// Retrieve turns by vector similarity search, returning API-ready ScoredTurn records.
+    pub async fn retrieve_turns(
+        &self,
+        query_vector: &[f32],
+        top_k: usize,
+        speaker_filter: Option<&str>,
+        session_id_filter: Option<Uuid>,
+    ) -> Result<Vec<crate::api::turns::ScoredTurn>> {
+        if query_vector.is_empty() {
+            return Ok(vec![]);
+        }
+        let k = top_k as i64;
+        let rows = if let Some(sid) = session_id_filter {
+            if let Some(speaker) = speaker_filter {
+                sqlx::query_as::<_, TurnWithScore>(
+                    r#"SELECT ct.id AS turn_id, ct.session_id, ct.turn_index, ct.speaker_role, ct.content, ct.metadata, ct.created_at,
+                    ct.embedding_type, ct.embedding_dim,
+                    (1 - (ct.embedding <=> $1))::FLOAT4 AS similarity, cs.external_id AS external_session_id
+                    FROM conversation_turns ct JOIN conversation_sessions cs ON ct.session_id = cs.id
+                    WHERE ct.session_id = $2 AND ct.speaker_role = $3 AND ct.embedding IS NOT NULL
+                    ORDER BY ct.embedding <=> $1 LIMIT $4"#,
+                ).bind(query_vector).bind(sid).bind(speaker).bind(k).fetch_all(&self.pool).await?
+            } else {
+                sqlx::query_as::<_, TurnWithScore>(
+                    r#"SELECT ct.id AS turn_id, ct.session_id, ct.turn_index, ct.speaker_role, ct.content, ct.metadata, ct.created_at,
+                    ct.embedding_type, ct.embedding_dim,
+                    (1 - (ct.embedding <=> $1))::FLOAT4 AS similarity, cs.external_id AS external_session_id
+                    FROM conversation_turns ct JOIN conversation_sessions cs ON ct.session_id = cs.id
+                    WHERE ct.session_id = $2 AND ct.embedding IS NOT NULL
+                    ORDER BY ct.embedding <=> $1 LIMIT $3"#,
+                ).bind(query_vector).bind(sid).bind(k).fetch_all(&self.pool).await?
+            }
+        } else if let Some(speaker) = speaker_filter {
+            sqlx::query_as::<_, TurnWithScore>(
+                r#"SELECT ct.id AS turn_id, ct.session_id, ct.turn_index, ct.speaker_role, ct.content, ct.metadata, ct.created_at,
+                ct.embedding_type, ct.embedding_dim,
+                (1 - (ct.embedding <=> $1))::FLOAT4 AS similarity, cs.external_id AS external_session_id
+                FROM conversation_turns ct JOIN conversation_sessions cs ON ct.session_id = cs.id
+                WHERE ct.speaker_role = $2 AND ct.embedding IS NOT NULL
+                ORDER BY ct.embedding <=> $1 LIMIT $3"#,
+            ).bind(query_vector).bind(speaker).bind(k).fetch_all(&self.pool).await?
+        } else {
+            sqlx::query_as::<_, TurnWithScore>(
+                r#"SELECT ct.id AS turn_id, ct.session_id, ct.turn_index, ct.speaker_role, ct.content, ct.metadata, ct.created_at,
+                ct.embedding_type, ct.embedding_dim,
+                (1 - (ct.embedding <=> $1))::FLOAT4 AS similarity, cs.external_id AS external_session_id
+                FROM conversation_turns ct JOIN conversation_sessions cs ON ct.session_id = cs.id
+                WHERE ct.embedding IS NOT NULL ORDER BY ct.embedding <=> $1 LIMIT $2"#,
+            ).bind(query_vector).bind(k).fetch_all(&self.pool).await?
+        };
+        Ok(rows.into_iter().map(|r| {
+            let embedding_info = r.embedding_type.map(|provider| crate::memory::conversation::EmbeddingInfo {
+                vector: vec![], // vector not included in scored turn responses (too large)
+                provider,
+                dimension: r.embedding_dim.unwrap_or(0) as usize,
+                metadata: None,
+            });
+            crate::api::turns::ScoredTurn {
+                turn_id: r.turn_id, session_id: r.session_id,
+                external_session_id: r.external_session_id, turn_index: r.turn_index,
+                speaker_role: r.speaker_role, content: r.content, similarity: r.similarity,
+                metadata: r.metadata, created_at: r.created_at, embedding_info, adjacent_turns: None,
+            }
+        }).collect())
+    }
+
+    /// Retrieve turns by vector similarity, returning internal results with full embedding vectors.
+    /// Used by the ranking/scoring pipeline (`retrieve_fractal` augmentation) so turn nodes
+    /// carry their vectors for downstream processing (fractal zoom, reranker, session scoring).
+    pub async fn retrieve_turns_internal(
+        &self,
+        query_vector: &[f32],
+        top_k: usize,
+        speaker_filter: Option<&str>,
+        session_id_filter: Option<Uuid>,
+    ) -> Result<Vec<TurnWithVector>> {
+        if query_vector.is_empty() {
+            return Ok(vec![]);
+        }
+        let k = top_k as i64;
+        if let Some(sid) = session_id_filter {
+            if let Some(speaker) = speaker_filter {
+                sqlx::query_as::<_, TurnWithVector>(
+                    r#"SELECT ct.id AS turn_id, ct.session_id, ct.turn_index, ct.speaker_role, ct.content, ct.metadata, ct.created_at,
+                    ct.embedding_type, ct.embedding_dim, ct.embedding,
+                    (1 - (ct.embedding <=> $1))::FLOAT4 AS similarity, cs.external_id AS external_session_id
+                    FROM conversation_turns ct JOIN conversation_sessions cs ON ct.session_id = cs.id
+                    WHERE ct.session_id = $2 AND ct.speaker_role = $3 AND ct.embedding IS NOT NULL
+                    ORDER BY ct.embedding <=> $1 LIMIT $4"#,
+                ).bind(query_vector).bind(sid).bind(speaker).bind(k).fetch_all(&self.pool).await
+            } else {
+                sqlx::query_as::<_, TurnWithVector>(
+                    r#"SELECT ct.id AS turn_id, ct.session_id, ct.turn_index, ct.speaker_role, ct.content, ct.metadata, ct.created_at,
+                    ct.embedding_type, ct.embedding_dim, ct.embedding,
+                    (1 - (ct.embedding <=> $1))::FLOAT4 AS similarity, cs.external_id AS external_session_id
+                    FROM conversation_turns ct JOIN conversation_sessions cs ON ct.session_id = cs.id
+                    WHERE ct.session_id = $2 AND ct.embedding IS NOT NULL
+                    ORDER BY ct.embedding <=> $1 LIMIT $3"#,
+                ).bind(query_vector).bind(sid).bind(k).fetch_all(&self.pool).await
+            }
+        } else if let Some(speaker) = speaker_filter {
+            sqlx::query_as::<_, TurnWithVector>(
+                r#"SELECT ct.id AS turn_id, ct.session_id, ct.turn_index, ct.speaker_role, ct.content, ct.metadata, ct.created_at,
+                ct.embedding_type, ct.embedding_dim, ct.embedding,
+                (1 - (ct.embedding <=> $1))::FLOAT4 AS similarity, cs.external_id AS external_session_id
+                FROM conversation_turns ct JOIN conversation_sessions cs ON ct.session_id = cs.id
+                WHERE ct.speaker_role = $2 AND ct.embedding IS NOT NULL
+                ORDER BY ct.embedding <=> $1 LIMIT $3"#,
+            ).bind(query_vector).bind(speaker).bind(k).fetch_all(&self.pool).await
+        } else {
+            sqlx::query_as::<_, TurnWithVector>(
+                r#"SELECT ct.id AS turn_id, ct.session_id, ct.turn_index, ct.speaker_role, ct.content, ct.metadata, ct.created_at,
+                ct.embedding_type, ct.embedding_dim, ct.embedding,
+                (1 - (ct.embedding <=> $1))::FLOAT4 AS similarity, cs.external_id AS external_session_id
+                FROM conversation_turns ct JOIN conversation_sessions cs ON ct.session_id = cs.id
+                WHERE ct.embedding IS NOT NULL ORDER BY ct.embedding <=> $1 LIMIT $2"#,
+            ).bind(query_vector).bind(k).fetch_all(&self.pool).await
+        }
+        .map_err(|e| anyhow::anyhow!("retrieve_turns_internal: {e}"))
+    }
+
+    /// Get all turns for a session, ordered by turn_index.
+    pub async fn get_session_turns(&self, session_id: Uuid) -> Result<crate::api::turns::SessionTurnsResponse> {
+        let session_row: Option<(Option<String>,)> = sqlx::query_as(
+            "SELECT external_id FROM conversation_sessions WHERE id = $1",
+        ).bind(session_id).fetch_optional(&self.pool).await?;
+        let external_session_id = session_row.and_then(|r| r.0);
+        let turns: Vec<crate::api::turns::SessionTurn> = sqlx::query_as::<_, SessionTurnRow>(
+            r#"SELECT id AS turn_id, turn_index, speaker_role, content, LEFT(content, 500) AS content_preview,
+            token_count, metadata, created_at, embedding_type, embedding_dim
+            FROM conversation_turns WHERE session_id = $1 ORDER BY turn_index"#,
+        ).bind(session_id).fetch_all(&self.pool).await?.into_iter().map(|r| {
+            let embedding_info = r.embedding_type.map(|provider| crate::memory::conversation::EmbeddingInfo {
+                vector: vec![],
+                provider,
+                dimension: r.embedding_dim.unwrap_or(0) as usize,
+                metadata: None,
+            });
+            crate::api::turns::SessionTurn {
+                turn_id: r.turn_id, turn_index: r.turn_index, speaker_role: r.speaker_role,
+                content: r.content, content_preview: r.content_preview,
+                token_count: r.token_count, metadata: r.metadata, created_at: r.created_at,
+                embedding_info,
+            }
+        }).collect();
+        Ok(crate::api::turns::SessionTurnsResponse { session_id, external_session_id, turns })
+    }
+
+    /// List turns for a session with pagination and ordering.
+    /// Returns (turns, total_count) — total_count is the number of turns in the session.
+    pub async fn list_turns_by_session(
+        &self,
+        session_id: Uuid,
+        offset: i64,
+        limit: i64,
+        order_desc: bool,
+    ) -> Result<(Vec<crate::api::turns::SessionTurn>, i64)> {
+        let total: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM conversation_turns WHERE session_id = $1",
+        )
+        .bind(session_id)
+        .fetch_one(&self.pool)
+        .await?;
+
+        let order_clause = if order_desc { "DESC" } else { "ASC" };
+        let sql = format!(
+            r#"SELECT id AS turn_id, turn_index, speaker_role, content, LEFT(content, 500) AS content_preview,
+            token_count, metadata, created_at, embedding_type, embedding_dim
+            FROM conversation_turns WHERE session_id = $1
+            ORDER BY turn_index {} LIMIT $2 OFFSET $3"#,
+            order_clause,
+        );
+        let turns: Vec<crate::api::turns::SessionTurn> = sqlx::query_as::<_, SessionTurnRow>(&sql)
+            .bind(session_id)
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(&self.pool)
+            .await?
+            .into_iter()
+            .map(|r| {
+                let embedding_info = r.embedding_type.map(|provider| crate::memory::conversation::EmbeddingInfo {
+                    vector: vec![],
+                    provider,
+                    dimension: r.embedding_dim.unwrap_or(0) as usize,
+                    metadata: None,
+                });
+                crate::api::turns::SessionTurn {
+                    turn_id: r.turn_id,
+                    turn_index: r.turn_index,
+                    speaker_role: r.speaker_role,
+                    content: r.content,
+                    content_preview: r.content_preview,
+                    token_count: r.token_count,
+                    metadata: r.metadata,
+                    created_at: r.created_at,
+                    embedding_info,
+                }
+            })
+            .collect();
+        Ok((turns, total))
+    }
+
+    /// Get adjacent turns for context expansion.
+    pub async fn get_adjacent_turns(
+        &self, session_id: Uuid, turn_index: i32, window: i32,
+    ) -> Result<Vec<crate::api::turns::TurnContext>> {
+        let rows: Vec<AdjacentTurnRow> = sqlx::query_as::<_, AdjacentTurnRow>(
+            r#"SELECT id AS turn_id, turn_index, speaker_role, content, metadata, embedding_type, embedding_dim FROM conversation_turns
+            WHERE session_id = $1 AND turn_index BETWEEN ($2 - $3) AND ($2 + $3) AND turn_index != $2 ORDER BY turn_index"#,
+        ).bind(session_id).bind(turn_index).bind(window).fetch_all(&self.pool).await?;
+        Ok(rows.into_iter().map(|r| crate::api::turns::TurnContext {
+            turn_id: r.turn_id, turn_index: r.turn_index, speaker_role: r.speaker_role,
+            content: r.content, metadata: r.metadata,
+        }).collect())
+    }
+
+    // -------------------------------------------------------------------------
+    // Turn CRUD (read, update, delete) — complementing store_turn / retrieve
+    // -------------------------------------------------------------------------
+
+    /// Read a single turn by its UUID.
+    pub async fn get_turn(&self, turn_id: Uuid) -> Result<Option<TurnRow>> {
+        let row = sqlx::query_as::<_, TurnRow>(
+            r#"SELECT id, session_id, turn_index, speaker_role, content,
+                      content_preview, embedding::float4[], embedding_type, embedding_dim,
+                      token_count, metadata, created_at
+               FROM conversation_turns
+               WHERE id = $1"#,
+        )
+        .bind(turn_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row)
+    }
+
+    /// Update an existing turn's content, metadata, embedding, and/or speaker_role.
+    /// When `embedding` is provided, `embedding_type` and `embedding_dim` should
+    /// also be provided to keep embedding metadata consistent with the vector.
+    /// Returns true if a row was updated.
+    pub async fn update_turn(
+        &self,
+        turn_id: Uuid,
+        content: Option<&str>,
+        metadata: Option<serde_json::Value>,
+        embedding: Option<Vec<f32>>,
+        embedding_type: Option<&str>,
+        embedding_dim: Option<i32>,
+        speaker_role: Option<&str>,
+    ) -> Result<bool> {
+        // Build dynamic SET clause — only update fields that are Some
+        let mut set_parts: Vec<String> = Vec::new();
+        let mut idx: usize = 1;
+
+        if content.is_some() {
+            set_parts.push(format!("content = ${idx}", idx = idx));
+            idx += 1;
+        }
+        if metadata.is_some() {
+            set_parts.push(format!("metadata = ${idx}", idx = idx));
+            idx += 1;
+        }
+        if embedding.is_some() {
+            set_parts.push(format!("embedding = ${idx}", idx = idx));
+            idx += 1;
+        }
+        if embedding_type.is_some() {
+            set_parts.push(format!("embedding_type = ${idx}", idx = idx));
+            idx += 1;
+        }
+        if embedding_dim.is_some() {
+            set_parts.push(format!("embedding_dim = ${idx}", idx = idx));
+            idx += 1;
+        }
+        if speaker_role.is_some() {
+            set_parts.push(format!("speaker_role = ${idx}", idx = idx));
+            idx += 1;
+        }
+
+        if set_parts.is_empty() {
+            return Ok(false);
+        }
+
+        let sql = format!(
+            "UPDATE conversation_turns SET {} WHERE id = ${idx}",
+            set_parts.join(", "),
+        );
+
+        let mut query = sqlx::query(&sql);
+        if let Some(c) = content {
+            query = query.bind(c);
+        }
+        if let Some(m) = metadata {
+            query = query.bind(m);
+        }
+        if let Some(e) = embedding.as_ref() {
+            query = query.bind(e);
+        }
+        if let Some(t) = embedding_type {
+            query = query.bind(t);
+        }
+        if let Some(d) = embedding_dim {
+            query = query.bind(d);
+        }
+        if let Some(s) = speaker_role {
+            query = query.bind(s);
+        }
+        query = query.bind(turn_id);
+
+        let result = query.execute(&self.pool).await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    /// Delete a turn by its UUID (hard delete).
+    /// Returns true if a row was deleted.
+    /// Side effects: denormalized turn_count is refreshed.
+    /// Linked memories (via turn_id FK) have their turn_id set to NULL (ON DELETE SET NULL).
+    pub async fn delete_turn(&self, turn_id: Uuid) -> Result<bool> {
+        // Capture session_id before deletion for side-effect maintenance
+        let session_id: Option<Uuid> = sqlx::query_scalar(
+            "SELECT session_id FROM conversation_turns WHERE id = $1",
+        )
+        .bind(turn_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        let result = sqlx::query("DELETE FROM conversation_turns WHERE id = $1")
+            .bind(turn_id)
+            .execute(&self.pool)
+            .await?;
+
+        let deleted = result.rows_affected() > 0;
+        if deleted {
+            if let Some(sid) = session_id {
+                // Refresh denormalized turn_count
+                sqlx::query(
+                    "UPDATE conversation_sessions SET turn_count = (SELECT COUNT(*) FROM conversation_turns WHERE session_id = $1), updated_at = NOW() WHERE id = $1",
+                )
+                .bind(sid)
+                .execute(&self.pool)
+                .await?;
+            }
+            tracing::info!(%turn_id, "turn deleted");
+        }
+        Ok(deleted)
+    }
+
 }
 
 // =============================================================================
@@ -1412,7 +1929,7 @@ impl StorageBackend for PostgresStore {
                         .map_or(true, |mt| node.memory_type == mt);
                     let internal_ok = include_internal_meta || !is_internal_meta_artifact(&node);
                     if query.profile.allows(&node) && type_ok && internal_ok {
-                        scored_nodes.push(query.profile.score_node(score, node));
+                        scored_nodes.push(query.profile.score_node(score, node, query.source_type_weights));
                     }
                 }
             }
@@ -1446,7 +1963,7 @@ impl StorageBackend for PostgresStore {
                                 let internal_ok =
                                     include_internal_meta || !is_internal_meta_artifact(&node);
                                 if query.profile.allows(&node) && type_ok && internal_ok {
-                                    scored_nodes.push(query.profile.score_node(score, node));
+                                    scored_nodes.push(query.profile.score_node(score, node, query.source_type_weights));
                                 }
                             }
                         }
@@ -1477,7 +1994,7 @@ impl StorageBackend for PostgresStore {
                         let row_vector = row.embedding.clone().unwrap_or_default();
                         let sim =
                             crate::memory::fractal_node::cosine_similarity(&row_vector, vector);
-                        scored_nodes.push(query.profile.score_node(sim, node));
+                        scored_nodes.push(query.profile.score_node(sim, node, query.source_type_weights));
                     }
                 }
             }
@@ -1511,7 +2028,7 @@ impl StorageBackend for PostgresStore {
                     .map_or(true, |mt| node.memory_type == mt);
                 let internal_ok = include_internal_meta || !is_internal_meta_artifact(&node);
                 if query.profile.allows(&node) && type_ok && internal_ok {
-                    scored_nodes.push(query.profile.score_node(score, node));
+                    scored_nodes.push(query.profile.score_node(score, node, query.source_type_weights));
                 }
             }
         }
@@ -1530,50 +2047,6 @@ impl StorageBackend for PostgresStore {
         // NEW: Hybrid temporal + semantic scoring (WP1)
         if let Some(w) = query.temporal_weight {
             apply_hybrid_temporal_scoring(&mut scored_nodes, w);
-        }
-
-        // === SQL-Level Session Filtering + Boost (WP2) ===
-        if let Some(ref sid) = query.session_id {
-            let mut has_session_matches = false;
-            
-            for item in &mut scored_nodes {
-                if let Some(node_sid) = item.node.metadata.get("session_id").and_then(|v| v.as_str()) {
-                    if node_sid == sid {
-                        // Strong boost + slight semantic protection
-                        let boost = 1.65;
-                        item.score = item.score * boost + 0.08;
-                        
-                        if let Some(debug) = &mut item.debug {
-                            debug.session_boost = Some(boost);
-                            debug.explanation = Some(format!(
-                                "{} | Session match (+{:.2}x)",
-                                debug.explanation.clone().unwrap_or_default(),
-                                boost
-                            ));
-                        }
-                        has_session_matches = true;
-                    } else {
-                        // Soft penalty for other sessions (reduces leakage)
-                        item.score *= 0.72;
-                        
-                        if let Some(debug) = &mut item.debug {
-                            debug.session_boost = Some(0.72);
-                        }
-                    }
-                }
-            }
-            
-            // Re-sort after session-aware adjustment
-            scored_nodes.sort_by(|a, b| {
-                b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal)
-            });
-            
-            if has_session_matches {
-                tracing::info!(
-                    session_id = %sid,
-                    "SQL-level session filtering applied (strong preference + leakage penalty)"
-                );
-            }
         }
 
         Ok(scored_nodes)

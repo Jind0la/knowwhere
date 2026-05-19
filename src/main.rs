@@ -227,6 +227,16 @@ async fn run() -> anyhow::Result<()> {
         "temporal_weight config (set KNOWWHERE_TEMPORAL_WEIGHT to override, or POST /config/temporal_weight at runtime)"
     );
 
+    // Server-wide default source-type weights for provenance-aware retrieval.
+    // Overridable per-query via RetrieveFractalRequest.source_type_weights.
+    // Loaded from env var first, then config file (see SourceTypeWeights::from_config).
+    let default_source_type_weights =
+        knowwhere_server::retrieval::source_weighting::SourceTypeWeights::from_config();
+    tracing::info!(
+        ?default_source_type_weights,
+        "source_type_weights config (set KNOWWHERE_SOURCE_TYPE_WEIGHTS or KNOWWHERE_SOURCE_TYPE_WEIGHTS_FILE, or place source_weights.json in working directory)"
+    );
+
     let state = routes::AppState {
         store: store.clone(),
         dream_store: store.clone(),
@@ -237,6 +247,8 @@ async fn run() -> anyhow::Result<()> {
         events: InMemoryEventStore::new(),
         #[cfg(feature = "postgres-storage")]
         trajectory_pool,
+        #[cfg(feature = "postgres-storage")]
+        pg_store: pg_store_for_auth.clone(),
         vlm_worker,
         consolidation: consolidation_scheduler,
         #[cfg(feature = "reranker")]
@@ -246,6 +258,7 @@ async fn run() -> anyhow::Result<()> {
         homeassistant_dedup: DedupCache::new(),
         homeassistant_webhook_secret: std::env::var("HASS_WEBHOOK_SECRET").ok(),
         temporal_weight: Arc::new(RwLock::new(temporal_weight)),
+        default_source_type_weights,
     };
 
     let api_key = ApiKey(std::env::var("KNOWWHERE_API_KEY").ok());
@@ -346,7 +359,12 @@ async fn run() -> anyhow::Result<()> {
         .route("/skills/{id}", put(routes::update_skill))
         .route("/skills/{id}", delete(routes::delete_skill))
         .route("/skills/{id}/use", post(routes::use_skill))
-        .route("/skills/match", get(routes::match_skills));
+        .route("/skills/match", get(routes::match_skills))
+        // Turn-level routes (per-turn embedding pipeline)
+        .route("/store_turn", post(routes::store_turn))
+        .route("/store_turns", post(routes::store_turns_batch))
+        .route("/retrieve/turns", post(routes::retrieve_turns))
+        .route("/sessions/{session_id}/turns", get(routes::get_session_turns));
 
     // RATE_LIMIT_MODE=proxy enables IP-based limiting behind reverse proxies.
     // Backward compatibility: RATE_LIMIT=1 behaves like RATE_LIMIT_MODE=proxy.

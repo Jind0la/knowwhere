@@ -38,9 +38,6 @@ CREATE TABLE IF NOT EXISTS memories (
     metadata        JSONB,
     -- Tiered context columns (from migration 003)
     context_tier    VARCHAR(50) DEFAULT 'raw',
-    -- Energy decay columns (from migration 002)
-    energy          DOUBLE PRECISION DEFAULT 1.0,
-    last_energy_update TIMESTAMPTZ DEFAULT NOW(),
     -- Embedding repair tracking (from migration 013)
     embedding_repaired_at TIMESTAMP,
     -- Original pointer for external sources

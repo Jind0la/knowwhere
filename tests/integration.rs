@@ -72,6 +72,9 @@ fn test_state_with_embedding(embedding: Arc<dyn EmbeddingProvider>) -> routes::A
         homeassistant_dedup: DedupCache::new(),
         homeassistant_webhook_secret: std::env::var("HASS_WEBHOOK_SECRET").ok(),
         temporal_weight: Arc::new(RwLock::new(None)),
+        default_source_type_weights: None,
+        #[cfg(feature = "reranker")]
+        reranker: None,
     }
 }
 
@@ -445,7 +448,9 @@ async fn user_facing_retrieval_prioritizes_primary_trust_tiers() {
             multi_query: false,
             recency_boost: None,
             temporal_weight: None,
-            session_id: None,
+            fusion_strategy: None,
+            query_type_routing: false,
+            source_type_weights: None,
         },
     )
     .await
@@ -1499,7 +1504,9 @@ async fn postgres_store_hybrid_retrieve_bm25_only() {
         multi_query: false,
         recency_boost: None,
         temporal_weight: None,
-        session_id: None,
+        fusion_strategy: None,
+        query_type_routing: false,
+        source_type_weights: None,
     };
 
     let results = store
@@ -1653,7 +1660,9 @@ async fn postgres_store_hybrid_retrieve_with_vector() {
         multi_query: false,
         recency_boost: None,
         temporal_weight: None,
-        session_id: None,
+        fusion_strategy: None,
+        query_type_routing: false,
+        source_type_weights: None,
     };
 
     let results = store

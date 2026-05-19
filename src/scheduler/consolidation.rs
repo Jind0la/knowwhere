@@ -667,6 +667,10 @@ impl ConsolidationScheduler {
         l1_node.children_tier_ids = vec![]; // Will be populated when L0 is created
         l1_node.importance = node.importance;
         l1_node.confidence = node.confidence * 0.95; // Slightly lower confidence for derived content
+        if l1_type == MemoryType::Decision {
+            l1_node.weight = 1.8; // Decision nodes get retrieval boost
+            l1_node.importance = l1_node.importance.max(8);
+        }
 
         // Step 2: Store L1 node
         let l1_id = self.store.insert(l1_node).await?;
@@ -723,6 +727,11 @@ impl ConsolidationScheduler {
                             serde_json::Value::String(reason.to_string()),
                         );
                     }
+                    // Explicit trust weight for retrieval boost
+                    metadata.insert(
+                        "trust_weight".to_string(),
+                        serde_json::json!(2.0),
+                    );
                     metadata
                 },
                 MemoryType::Decision,
@@ -730,8 +739,9 @@ impl ConsolidationScheduler {
             );
             claim_node.context_tier = ContextTier::Overview;
             claim_node.parent_tier_id = Some(l1_id); // claim → L1
-            claim_node.importance = node.importance;
+            claim_node.importance = node.importance.max(8); // Ensure high importance for facts
             claim_node.confidence = node.confidence * 0.92; // Slightly lower: derived from derived
+            claim_node.weight = 2.0; // Boost weight for retrieval ranking
 
             match self.store.insert(claim_node).await {
                 Ok(id) => {
@@ -788,6 +798,10 @@ impl ConsolidationScheduler {
         l0_node.children_tier_ids = vec![node_id]; // L0 → L2 (direct, skipping L1 for fast zoom)
         l0_node.importance = node.importance;
         l0_node.confidence = node.confidence * 0.90; // Lower confidence for double-derived
+        if l0_type == MemoryType::Decision {
+            l0_node.weight = 1.5; // Decision nodes get retrieval boost (lower than L1 since more summarized)
+            l0_node.importance = l0_node.importance.max(8);
+        }
 
         // Step 6: Store L0 node
         let l0_id = self.store.insert(l0_node).await?;
