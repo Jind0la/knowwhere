@@ -63,3 +63,4 @@ models/
 /id_map.json
 /benchmarks/baseline-results/baseline_eval_raw.json
 /benchmarks/baseline-results/eval_full_log.txt
+/longmemeval_report_*.json
