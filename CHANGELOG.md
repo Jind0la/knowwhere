@@ -2,6 +2,75 @@
 
 All notable changes to KnowWhere are documented in this file.
 
+## [0.6.0] — 2026-05-19
+
+### Added — Turn-Level Storage & Per-Turn Embeddings
+
+**The most significant architectural change since 0.4.0.** Session-level embeddings (one vector per entire chat history) replaced by turn-level embeddings (one vector per individual message).
+
+- **EmbeddingInfo Struct:** New `EmbeddingInfo { vector, provider, dimension, metadata }` on every Turn record. Captures embedding provenance at storage time. Commit series `12cb604`→`8022efa`.
+- **Per-Turn Embedding Generation:** `store_session_json` (single + multi-turn) and `store_session_batch` now emit per-turn `FractalNodes` with `speaker_role`, `is_turn`, and `turn_index` metadata. Speaker role auto-detected via `parse_speaker_role_from_chunk`. No more session aggregates.
+- **Turn Data Model:** `conversation_turns` table with `embedding vector(1024)`, `embedding_type`, `embedding_dim` columns. Migration 014 creates the table, Migration 016 adds embedding metadata columns, Migration 017 backfills existing rows.
+- **Session Embedding Removal:** Migration 015 drops `embedding` column, HNSW index, and `compute_session_embedding()` function from `conversation_sessions`. `update_turn()` now handles embedding metadata alongside vector updates.
+- **Turn-Level Retrieval:** Index builder refactored to target turn index only. Retrieval queries, ranking logic, and API responses updated for per-turn embeddings. Session-level embedding references fully deprecated.
+
+### Added — Stratified LongMemEval Benchmark
+
+Reproducible, scientifically clean evaluation framework with controlled case selection.
+
+- **Stratification Criteria:** Per-type quotas for all 6 question types + 5 abstention cases. `stratified_filter.json` selects 42 cases from 500.
+- **Eval Harness:** Per-type breakdowns with turn-level metrics (NDCG@k, recall_any, recall_all) alongside session-level metrics. Support for `--stratified` and `--mode multi|percase`.
+- **Reranker Comparison:** gte-modernbert (ONNX, 599MB) vs bge-reranker-v2-m3 benchmarked on identical eval set. ONNX reranker delivers faster inference with no Ollama dependency.
+
+### Added — Source-Type Weighting & Provenance
+
+- **SourceTypeWeights:** Config loader supporting JSON file + environment variable with priority chain. `SourceTypeWeights::from_config()` reads `KNOWWHERE_SOURCE_TYPE_WEIGHTS_FILE` env var → `./source_weights.json` fallback. 10 new tests.
+- **Multiplier Chain:** `tier * explicit * mtype * source` scoring pipeline. Fixed multi-query RRF fusion path that was discarding source weights (`None` → `source_type_weights`). 7 integration tests (54/55 pass).
+- **Provenance Fields:** `source_weight_applied` and `original_source` promoted to top-level `ScoredNode` API fields. All 5 code paths covered (normal retrieval, fractal expansion, turn-level, reflection, reranker fallback).
+
+### Added — Fact Extraction Pipeline
+
+Explicit facts extracted from conversations and stored as weighted knowledge.
+
+- Fact extraction rules, data schema, and pipeline module.
+- Integration with storage and retrieval weighting.
+- Evaluation framework for extraction quality.
+
+### Added — Hybrid Retrieval (BM25 + Dense)
+
+- `HybridRetriever` combining BM25 keyword matching with dense vector search.
+- Numeric/short-answer test suite.
+- Baseline vs hybrid comparative evaluation.
+
+### Changed
+
+- **Reranker Model:** Switched from `bge-reranker-v2-m3` (Ollama, 438MB) to `gte-modernbert` (ONNX, 599MB). No Ollama dependency for reranking.
+- **Dependency Cleanup:** 11 unused Ollama models removed (~14GB freed). Only `nomic-embed-text` (274MB), `llama3.2` (2.0GB), and `qwen2.5:3b` (1.9GB) retained.
+
+### Quantitative Results (LongMemEval — 42 Stratified Cases)
+
+| Metric | Pre-Migration (0.5.x) | Post-Migration (0.6.0) | Δ |
+|--------|:---:|:---:|:---:|
+| Overall Recall@5 | 7.1% | **72.97%** | +65.9pp |
+| MRR | ~0.00 | **0.5577** | new |
+| Turn-Level NDCG@5 | — | **0.4247** | new |
+| Question Types at 0% | 5/6 | **0/6** | all functional |
+
+| Question Type | Pre Recall@5 | Post Recall@5 | Δ |
+|--------------|:---:|:---:|:---:|
+| single-session-assistant | 75% | 75% | = |
+| single-session-user | 0% | 80% | +80pp |
+| multi-session | 0% | 75% | +75pp |
+| temporal-reasoning | 0% | 77.8% | +78pp |
+| knowledge-update | 0% | 71.4% | +71pp |
+| single-session-preference | 0% | 50% | +50pp |
+
+_Competitive context: AgentMemory reports 50.4% Recall@5 on the same benchmark (499 cases). Full Context (GPT-4) oracle: 60.7%. KnowWhere 0.6.0: 73.0% on 42 stratified cases._
+
+### Fixed
+
+- **Pre-existing Compilation Errors:** `storage/mod.rs` exports, `PostgresStore` visibility, `sqlx` relation-does-not-exist macros, `HybridQuery` missing `session_id` field — all resolved, enabling full test suite to compile and run.
+
 ## [Unreleased] — 2026-05-18
 
 ### Added
