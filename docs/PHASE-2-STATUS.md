@@ -1,185 +1,51 @@
-# Phase 2 — Connector Webhooks — Status Report
+# Phase 2 — Retrieval Quality & Benchmarking — Status: ✅ COMPLETE
 
-> Historischer Statusbericht. Fuer den aktuellen Produktstand bitte `README.md`, `docs/BETA-README.md`, `docs/PRD.md` und `docs/ARCHITECTURE.md` verwenden.
-
-**Erstellt:** 2026-03-27
-**Letztes Update:** 2026-03-29
-**Status:** ✅ OpenClaw-Integration funktioniert — README/STATUS waren stale
+**Date:** 2026-05-19  
+**Completion Report:** [`docs/phase2-retrieval-quality-completion.md`](phase2-retrieval-quality-completion.md)  
+**Benchmark Results:** [`benchmarks/reports/LONGMEMEVAL_COMPARISON.md`](../benchmarks/reports/LONGMEMEVAL_COMPARISON.md)
 
 ---
 
-## Update: 2026-03-29 — OpenClaw Plugin E2E Test
+## Status Summary
 
-Das OpenClaw-Plugin (`~/.openclaw/extensions/knowwhere/index.js`) wurde heute einem vollständigen E2E-Test unterzogen.
+| Phase 2 Component | Status | Result |
+|------------------|--------|--------|
+| Turn-Level Storage + Per-Turn Embeddings | ✅ Complete | 26 tasks, Migration 014-017 |
+| Stratified LongMemEval Benchmark | ✅ Complete | 42 cases, 17k nodes |
+| Hybrid BM25 + Dense Retrieval | ✅ Complete | 6 tasks |
+| Source-Type Weighting + Provenance | ✅ Complete | 13 tasks |
+| Cross-Encoder Reranking (gte-modernbert) | ✅ Complete | 11 tasks |
+| Fact Extraction Pipeline | ✅ Complete | 5 tasks |
+| Temporal-Aware Scoring & Recency | ✅ Complete | 5 tasks |
+| Compilation Fixes & Infrastructure | ✅ Complete | multiple tasks |
 
-### Testergebnis
+### Benchmark Results
 
-| Komponente | Status | Details |
-|-----------|--------|---------|
-| **Plugin geladen** | ✅ | Alle 6 Hooks registriert |
-| **`before_prompt_build`** | ✅ FUNKTIONIERT | Memories werden abgerufen + als `prependContext` injiziert |
-| **`message_received`** | ✅ FUNKTIONIERT | Für Gateway-Modus (Telegram, Discord, etc.) |
-| **`gateway_start`** | ✅ FUNKTIONIERT | Importiert 5 Sessions beim Gateway-Start (+bestätigt) |
-| **`before_reset`** | ✅ FUNKTIONIERT | Speichert Session beim `/reset` |
-| **`session_end`** | ✅ FUNKTIONIERT | Für Session-Transitions (Gateway-Modus) |
-| **`agent_end`** | ⚠️ Limited | Feuert nur in Gateway-Modus, nicht in embedded `--local` |
-| **`session_start` (mapping)** | ✅ FUNKTIONIERT | Mappt sessionId → sessionFile für `session_end` |
+| Metric | Pre-Migration | Post-Migration |
+|--------|:------------:|:-------------:|
+| Overall Recall@5 | 7.1% | **72.97%** |
+| MRR | ~0.00 | **0.56** |
+| Turn-Level NDCG@5 | — | **0.42** |
 
-### Verifikation: `before_prompt_build`
-
-```
-$ openclaw agent --local --session-id test-e2e-final \
-  --message "Was weiss du über MilaOS? Wer arbeitet daran?"
-
-[knowwhere] retrieved 5 memories for: "Was weiss du über MilaOS?..."
-```
-
-→ Memories werden korrekt abgerufen und dem Modell als Kontext vorgeschaltet.
-
-### Verifikation: `gateway_start` Import
-
-```
-Gateway neu gestartet → 5 Sessions aus den letzten 7 Tagen importiert
-Node Count: 144 → 150 (+5 Nodes)
-```
-
-### Bekannte Limitationen
-
-**Embedded Mode (`openclaw agent --local`)**:
-- `agent_end` und `session_end` feuern NICERT zwischen Commands
-- Speicher-Lifecycle: Nur via `gateway_start` Import + `before_reset` bei manuellem `/reset`
-- Das ist korrektes OpenClaw-Verhalten — kein Bug
-
-**Lösung dafür**: Der Gateway läuft als Daemon. Beim Start werden alle Sessions der letzten 7 Tage importiert. Beim nächsten `openclaw agent --local` sind alle vergangenen Konversationen als Memories verfügbar.
+All 6 question types functional. [→ Full Report](../benchmarks/reports/LONGMEMEVAL_COMPARISON.md)
 
 ---
 
-## Update: 2026-03-27 — Discovery
+## Historical Phase 2 Content
 
-Der ursprüngliche TEST-REPORT und PHASE-2-STATUS waren **teilweise falsch/inconsistent**:
+> The content below is the original Phase 2 status report from March 2026, preserved for historical context. Phase 2 was originally scoped as "Connector Webhooks" but was rescoped to "Retrieval Quality & Benchmarking" in May 2026.
 
-- ❌ TEST-REPORT behauptete "Hook existiert nicht" → **falsch**: Das Plugin existierte bereits
-- ❌ PHASE-2-STATUS behauptete "Plan ≠ Implementierung" für OpenClaw → **falsch für das Plugin**
-- ✅ Das Plugin war aber veraltet (falsche Events, Recall-Loop-Bug)
+<details>
+<summary>Historical: Phase 2 — Connector Webhooks (March 2026)</summary>
 
-**Was heute gefixt wurde:**
-1. Plugin komplett neu geschrieben mit korrekten OpenClaw Events
-2. Recall-Loop Bug behoben (`## Relevant Memories` wird jetzt aus User-Messages gestrippt)
-3. `gateway_start` Import-Pipeline hinzugefügt
-4. Dokumentation korrigiert
+**Erstellt:** 2026-03-27  
+**Letztes Update:** 2026-03-29  
+**Status:** ✅ OpenClaw-Integration funktioniert
 
----
+- OpenClaw Plugin E2E verified
+- POST /webhooks/frigate implemented
+- POST /webhooks/homeassistant: backlog
+- Google Drive Connector: placeholder
+- Cross-Modal Embedding: placeholder
 
-## Phase 1.5 — OpenClaw Integration: Status ✅ FERTIG
-
-Das Plugin befindet sich in:
-```
-~/.openclaw/extensions/knowwhere/
-├── index.js          # Plugin Code (neu geschrieben 2026-03-29)
-├── index.d.ts        # TypeScript Definitions
-├── openclaw.plugin.json  # Plugin Manifest
-├── package.json
-└── README.md
-```
-
-**Konfiguration in `~/.openclaw/openclaw.json`:**
-```json
-{
-  "plugins": {
-    "allow": ["knowwhere"],
-    "slots": { "memory": "knowwhere" },
-    "entries": {
-      "knowwhere": {
-        "enabled": true,
-        "config": {
-          "endpoint": "http://127.0.0.1:3737",
-          "apiKey": "***",
-          "autoRecall": true,
-          "autoCapture": true,
-          "topK": 5,
-          "importLookbackDays": 7
-        }
-      }
-    }
-  }
-}
-```
-
----
-
-## Phase 2 — Connector Webhooks: Status ⚠️ INKOMPLETT
-
-### Was existiert vs. Plan
-
-| Plan-Punkt | Status | Anmerkung |
-|-----------|--------|-----------|
-| **Webhook-Infrastruktur** (DedupCache, Secret-Check) | ✅ | `src/api/webhooks.rs` existiert |
-| **POST /webhooks/frigate** | ✅ DONE | Implementiert in `routes.rs` + `main.rs` |
-| **POST /webhooks/homeassistant** | ❌ BACKLOG | Route fehlt in `routes.rs` / `main.rs` |
-| **POST /dream/full** Admin-Endpoint | ❌ BACKLOG | Nicht in `routes.rs` |
-| **Google Drive Connector** | ⚠️ PLACEHOLDER | `drive.rs` gibt nur Dummy-Daten |
-| **Cross-Modal Embedding** | ⚠️ PLACEHOLDER | Code-Placeholder, nicht funktional |
-| **OpenAPI + Integration-Tests** | ✅ PARTIAL | OpenAPI Contract Tests existieren (2 tests passing). Chunking/QA Integrationstests fehlen. |
-
-### Was wirklich existiert (Phase 1 + Core)
-
-```
-src/
-├── api/
-│   ├── webhooks.rs      # DedupCache + check_webhook_secret() INFRASTRUKTUR
-│   ├── routes.rs        # Core API: store_session, retrieve_fractal, embed, health
-│   ├── auth.rs
-│   └── docs.rs
-├── connectors/
-│   ├── frigate.rs       # FrigateConnector.poll_events() — Polling-Modus funktioniert
-│   ├── drive.rs         # PLACEHOLDER
-│   └── mod.rs
-├── memory/
-│   ├── dream/           # Dream Mode (Consolidation, Audit, Conflict Detection)
-│   ├── governance.rs
-│   └── types.rs
-├── storage/
-│   ├── in_memory.rs      # USearch + BM25 + RRF
-│   └── postgres_store.rs  # PostgreSQL Backend
-└── main.rs               # Server Setup, Frigate Poller
-```
-
----
-
-## Nächste Schritte
-
-### Phase 2 Connector Webhooks (optional)
-
-Falls externe Connector-Integration gewünscht ist:
-
-1. `POST /webhooks/frigate` in `routes.rs` implementieren
-2. `POST /webhooks/homeassistant` in `routes.rs` implementieren
-3. `POST /dream/full` Admin-Endpoint implementieren
-4. `drive.rs` mit echter Google Drive API verbinden
-5. OpenAPI + Integration-Tests schreiben
-
-### Retrieval Quality Test (empfohlen)
-
-Der Testplan `docs/TESTPLAN-RETRIEVAL-QUALITY.md` existiert, wurde aber noch nicht durchgeführt. Die North Star Metric (30-Day Context Fidelity > 92%) ist damit messbar.
-
----
-
-## Historie
-
-| Datum | Event |
-|-------|-------|
-| 2026-03-21 | Plan erstellt mit 3 Meilensteinen |
-| 2026-03-25 | Beta milestone recorded (core features complete) |
-| 2026-03-27 | Discovery: OpenClaw-Plugin existiert bereits, aber veraltet |
-| 2026-03-28 | BUG-007 + PostgreSQL-Integration gefixt |
-| 2026-03-29 | OpenClaw Plugin komplett neu geschrieben + E2E verifiziert ✅ |
-
----
-
-## Referenzen
-
-- OpenClaw Plugin: `~/.openclaw/extensions/knowwhere/`
-- OpenClaw Docs: https://docs.openclaw.ai/
-- Core API: `http://localhost:3737/swagger-ui/`
-- Bug Tracking: `docs/BUG-TRACKING.md`
-- Retrieval Testplan: `docs/TESTPLAN-RETRIEVAL-QUALITY.md`
+</details>

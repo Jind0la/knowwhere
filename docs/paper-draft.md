@@ -2,7 +2,7 @@
 
 ## Draft Abstract (5-Sentence Formula)
 
-> We introduce **KnowWhere**, a lossless fractal memory architecture for AI agents that preserves every fact with full provenance in a hierarchically searchable L2→L1→L0 structure. Current agent memory systems either lose information through extractive summarization or store knowledge in flat vector databases that cannot capture hierarchical context, causing agents to forget critical details or retrieve irrelevant noise. KnowWhere addresses this through three innovations: (1) a **pointer-first** storage model that references external sources without duplication, (2) **fractal zoom retrieval** that searches across three resolution tiers—atomic facts (L0), paragraph overviews (L1), and full sessions (L2)—with bidirectional links enabling drill-down, and (3) a **trust-aware ranking** system with four auto-detected provenance tiers that weight retrieval scores by information reliability. On the LongMemEval benchmark with 500 queries spanning 948 conversation sessions, KnowWhere achieves **100% Recall@5** and **0.99 MRR**, outperforming extractive baselines that discard 30-60% of original context. We release KnowWhere as open-source software with an OpenClaw agent plugin, demonstrating lossless memory at scale without information sacrifice.
+> We introduce **KnowWhere**, a lossless fractal memory architecture for AI agents that preserves every fact with full provenance in a hierarchically searchable L2→L1→L0 structure. Current agent memory systems either lose information through extractive summarization or store knowledge in flat vector databases that cannot capture hierarchical context, causing agents to forget critical details or retrieve irrelevant noise. KnowWhere addresses this through three innovations: (1) a **turn-level** storage model that generates per-turn embeddings with full metadata instead of coarse session-level vectors, (2) **hybrid retrieval** that combines BM25 keyword search with dense vector search and cross-encoder reranking, and (3) a **multi-signal ranking** system with source-type weighting, temporal recency decay, and trust-aware scoring. On the LongMemEval benchmark with 42 stratified cases spanning 948 conversation sessions, KnowWhere achieves **72.97% Recall@5** and **0.56 MRR** — up from 7.1% pre-migration — outperforming session-level memory approaches and closing the gap to full-context oracle performance.
 
 ---
 
@@ -10,11 +10,11 @@
 
 ### Contribution Bullets
 
-- **Lossless by design.** Unlike extractive memory systems that discard up to 60% of conversation content, KnowWhere preserves all data through fractal tiers—every fact remains accessible at full resolution.
-- **Fractal hierarchy with bidirectional links.** Three context tiers (L0 Summary → L1 Overview → L2 Raw) enable zoom-in retrieval from high-level overviews to atomic facts, with provenance chains that trace every derived summary back to its source.
-- **Trust-aware ranking.** Auto-detected trust tiers (primary, reference, derived, volatile) weight retrieval scores so agent actions are grounded in the most reliable information.
-- **State-of-the-art retrieval.** 100% Recall@5 and 0.99 MRR on LongMemEval, with zero information loss—every benchmark session stored in full.
-- **Production-ready integration.** Open-source Rust implementation with PostgreSQL/pgvector, Docker deployment, and a working OpenClaw plugin that injects retrieved memories into live agent prompts.
+- **Turn-level storage by design.** Unlike session-level memory systems that lose inter-turn context, KnowWhere generates embeddings per conversation turn with full metadata (provider, dimension, speaker role) — enabling precise retrieval at the message level.
+- **Hybrid retrieval with cross-encoder reranking.** BM25 keyword search + dense vector search + gte-modernbert cross-encoder reranking combine to catch queries that pure dense or pure keyword systems miss.
+- **Multi-signal ranking.** Source-type weighting (real > synthetic), temporal recency decay, and trust-tier multipliers give each retrieved result a calibrated score.
+- **State-of-the-art retrieval.** 72.97% Recall@5 and 0.56 MRR on LongMemEval (42 stratified cases) — up from 7.1% pre-migration — outperforming session-level baselines like AgentMemory (50.4%) and approaching full-context oracle performance (60.7%).
+- **Production-ready integration.** Open-source Rust implementation with Ollama embeddings, ONNX cross-encoder, PostgreSQL/pgvector, and a working Hermes agent plugin.
 
 ### Problem Statement (for Abstract context)
 
@@ -28,26 +28,28 @@ KnowWhere's core insight is that memory should be **lossless and addressed, not 
 
 ## Experiment Section Outline
 
-### Benchmark: LongMemEval (500 cases, 948 sessions)
+### Benchmark: LongMemEval (42 stratified cases, 948 sessions)
 
-| Metric | KnowWhere | Mem0* | Hindsight* | Chroma (flat)* |
-|--------|-----------|-------|------------|----------------|
-| Recall@5 | **1.000** | — | — | — |
-| MRR | **0.991** | — | — | — |
-| Top-1 Accuracy | 0.983 | — | — | — |
-| Information Loss | **0%** | 30-60% | 40-70% | 0%† |
+| Metric | KnowWhere (Post-Migration) | AgentMemory† | GPT-4 Full Context‡ |
+|--------|:--------------------------:|:------------:|:-------------------:|
+| Recall@5 | **0.730** | 0.504 | 0.607 |
+| MRR | **0.558** | — | — |
+| Turn-Level NDCG@5 | **0.425** | — | — |
+| Question Types Functional | **6/6** | — | 6/6 |
+| Information Loss | **0%** | extraction-based | 0% |
 
-*Baselines to be measured. †No loss but flat retrieval, no hierarchy.
+†AgentMemory LongMemEval results from their published evaluation (499 cases).
+‡GPT-4 with full conversation history in context — the oracle upper bound (499 cases).
 
 ### Ablation: Architecture Components
 
 | Configuration | Recall@5 | MRR |
 |---|---|---|
-| Full KnowWhere | 1.000 | 0.991 |
-| − Fractal Zoom (L0 only) | ? | ? |
-| − Trust Tiers (uniform weights) | ? | ? |
-| − BM25 (vector only) | ? | ? |
-| − Pointer-First (inline copies) | ? | ? |
+| Full KnowWhere (Post-Migration) | 0.730 | 0.558 |
+| − Turn-Level (Session-Level only) | 0.071 | ~0.00 |
+| − Cross-Encoder Reranker (Dense+BM25 only) | ? | ? |
+| − Source-Type Weighting (uniform weights) | ? | ? |
+| − Temporal Decay (no recency) | ? | ? |
 
 ### Compaction Quality
 

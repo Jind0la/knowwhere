@@ -1,8 +1,11 @@
 # Phase 2 Evaluation — Embedding Upgrade: nomic-embed-text
 
-**Date:** 2026-05-17
-**Run ID:** 199
-**Task:** t_0567f891
+**Date:** 2026-05-17  
+**Run ID:** 199  
+**Task:** t_0567f891  
+**Status:** Historical — model switch benchmark only.
+
+> **Note:** This document records the initial embedding model switch evaluation from May 17. The full Phase 2 completion with post-migration LongMemEval results is in [`docs/phase2-retrieval-quality-completion.md`](phase2-retrieval-quality-completion.md).
 
 ## What Changed
 
@@ -40,7 +43,7 @@ nomic-embed-text is 768-dim vs bge-m3's 1024-dim. The dimensionality reduction y
 - Slightly lower raw scores on PersonaMem (-11.8%)
 - Marginally better scores on temporal queries (+1.2%)
 
-**Recommendation:** The speed-quality trade-off favors nomic-embed-text for KnowWhere's pointer-first architecture. Users retrieve by embedding → zoom to original content. Embedding quality is secondary to speed since the full content is always accessible via pointer. Phase 3 (AgentMemory UX) can proceed.
+**Recommendation:** The speed-quality trade-off favors nomic-embed-text. **Postscript**: The full Phase 2 evaluation on 42 stratified LongMemEval cases confirmed this choice — nomic-embed-text with turn-level storage, hybrid retrieval, and cross-encoder reranking achieves 72.97% Recall@5 (up from 7.1% pre-migration).
 
 ## Artifacts
 

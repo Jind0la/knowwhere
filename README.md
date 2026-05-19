@@ -28,25 +28,24 @@ When an agent asks "why did we decide X three months ago?", other memory systems
 
 ## 🎯 Core Loop Status (May 2026)
 
-> **Verdict: The Core Loop works.** The 25% AMB accuracy was caused by a single misconfigured parameter (RRF k=60), not a structural flaw. With k=5, retrieval produces 7.9× better score separation and 4/5 queries correct on Rank 1.
+> **Verdict: The Core Loop works — and then some.** After the v0.6.0 transformation (Turn-Level Storage, Hybrid Retrieval, Cross-Encoder Reranking, Source-Type Weighting, Temporal-Aware Scoring), KnowWhere achieves **72.97% Recall@5** on LongMemEval — up from 7.1% pre-migration.
 
 | Component | Status | Details |
 |---|---|---|---|
-| Ingestion (Documents) | ✅ Working | Chunk → Embed → Store pipeline intact |
-| Ingestion (Conversations) | ✅ Working | Session turns stored as L0 with provenance |
-| Retrieval (RRF k=5) | ✅ Working | Scores 0.10–0.44 with 60% separation |
-| Scoring (Multipliers) | ✅ Neutralized | All types 1.0× — fair scoring verified |
-| AMB Benchmark | ⏳ Pending | Core Loop proven, needs end-to-end rerun |
+| Ingestion (Conversations) | ✅ Working | **Turn-Level** — per-turn embeddings with EmbeddingInfo (provider, dimension, metadata) |
+| Retrieval | ✅ Working | BM25 + Dense Hybrid + Cross-Encoder (gte-modernbert ONNX) + RRF Fusion |
+| Scoring | ✅ Working | Source-Type Weighting + Temporal Decay + Trust Tiers |
+| Turn-Level Migration | ✅ Complete | 81 tasks, 8 initiatives; Migration 014–017; Session embeddings removed |
+| LongMemEval Benchmark | ✅ Complete | 42 stratified cases, all 6 question types functional [→ Report](benchmarks/reports/LONGMEMEVAL_COMPARISON.md) |
 | Consolidation | ✅ Active | Self-hosted Ollama (qwen2.5:3b), L0→L1→L2 chains |
-| Fractal Hierarchy | ✅ Verified | Document P@3 0.73, Conversation P@3 0.87 |
-| Embedding Model | ⚠️ Upgrade needed | Current: `nomic-embed-text-v2-moe` (512-token truncation). **Recommended: `nomic-embed-text` v1.5** (8192 context, better retrieval, same 768d). See [Model Evaluation](docs/MODEL-EVALUATION.md) |
+| Fact Extraction | ✅ Working | Symbolic facts extracted and weighted separately |
+| Embedding Model | ✅ Stable | `nomic-embed-text` (768d, 8192 context) |
+| Cross-Encoder | ✅ Working | gte-modernbert via ONNX (599 MB, no Ollama needed) |
 
-> **⚠️ Before AMB Benchmark:** Switch embedding model to `nomic-embed-text` (v1.5) and run `POST /nodes/reembed_all`. The current `v2-moe` silently truncates all content beyond ~500 chars — this degrades retrieval quality for document-length nodes.
-
-📊 **Full analysis:** [`docs/ARCHITECTURE-ANALYSIS.md`](docs/ARCHITECTURE-ANALYSIS.md) — complete diagnosis + recommendations  
-🔬 **Pipeline trace:** [`docs/SIGNAL-TRACE.md`](docs/SIGNAL-TRACE.md) — mathematical analysis of all stages  
-🏗️ **Consolidation report:** [`docs/CONSOLIDATION-REPORT.md`](docs/CONSOLIDATION-REPORT.md) — Fractal Hierarchy Activation  
-🧪 **Model evaluation:** [`docs/MODEL-EVALUATION.md`](docs/MODEL-EVALUATION.md) — Embedding & summarization model benchmarks
+📊 **Phase 2 Completion:** [`docs/phase2-retrieval-quality-completion.md`](docs/phase2-retrieval-quality-completion.md)  
+📋 **81-Task Summary:** CHANGELOG v0.6.0 section  
+🏗️ **Architecture:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)  
+🧪 **Evaluation:** [`benchmarks/reports/LONGMEMEVAL_COMPARISON.md`](benchmarks/reports/LONGMEMEVAL_COMPARISON.md)
 
 ---
 
@@ -60,28 +59,32 @@ When an agent asks "why did we decide X three months ago?", other memory systems
 
 ---
 
-## Current status — v0.6.0 (KnowWhere v0.6)
+## Current status — v0.6.0 (Post-Migration)
 
-**Major improvements in this release:**
-- Temporal Memory Layer (recency boost + turn_range)
-- Embedding Upgrade to `nomic-embed-text` v1.5
-- Self-Improving Hook + improved compression UX
-- State Management for multi-agent setups (GH-600 ready)
+**82 tasks across 8 initiatives** — the largest architectural upgrade in KnowWhere's history.
 
-| Category | Status | Details |
-|----------|--------|---------|
-| **Temporal Layer** | ✅ Implemented | Recency boost + selective triggering, 73%+ improvement on temporal queries |
-| **Embedding Model** | ✅ Upgraded | Switched to `nomic-embed-text` v1.5 (8192 context) |
-| **Self-Improving Hook** | ✅ Implemented | Auto memory update loop + compression integration |
-| **Multi-Agent State** | ✅ Implemented | Shared/Private/Restricted layers + provenance |
-| **Hermes Plugin** | ✅ v2 ready | Improved recording, compression prompts, infinite memory UX |
-| **PersonaMem 20q** | ⏳ In Progress | Baseline ~70% → current ~73-80% with temporal boost |
-| **Node Count** | ✅ Stable | 2405+ nodes, no degradation |
+### Major features shipped
 
-**Key Metrics (as of May 2026):**
-- Temporal Queries: +73% score improvement with selective boost
-- AMB: Pending final rerun after embedding upgrade
-- 50-Turn Hermes Session: Self-improving + temporal context verified
+| Initiative | Tasks | What Changed |
+|-----------|:-----:|--------------|
+| **Turn-Level Storage + Per-Turn Embeddings** | 26 | Session-Level → Turn-Level granularity. Every conversation turn gets its own embedding with EmbeddingInfo metadata. Migration 015 drops the old session embedding column. |
+| **Stratified LongMemEval Benchmark** | 12 | 42-case stratified benchmark across all 6 question types. From single-type-only (7.1%) to full coverage (72.97%). |
+| **Hybrid BM25 + Dense Retrieval** | 6 | Keyword + semantic fusion catches queries that pure dense misses. |
+| **Source-Type Weighting** | 13 | Real conversations weighted higher than synthetic injections. Provenance tracking on every result. |
+| **Cross-Encoder Reranking** | 11 | gte-modernbert (ONNX, 599 MB) reranks top-K candidates. No Ollama dependency for reranking. |
+| **Fact Extraction Pipeline** | 5 | Symbolic knowledge extraction from conversations, stored and weighted separately. |
+| **Temporal-Aware Scoring** | 5 | Recency decay: newer information gets higher weights. |
+| **Ollama Slimming** | — | 14 models (18 GB) → 3 models (4.2 GB). Only runtime-required models retained. |
+
+### Benchmark Results (42-case stratified LongMemEval)
+
+| Metric | Pre-Migration | Post-Migration |
+|--------|:------------:|:-------------:|
+| **Overall Recall@5** | 7.1% | **72.97%** |
+| **MRR** | ~0.00 | **0.56** |
+| **Turn-Level NDCG@5** | — | **0.42** |
+
+All 6 question types functional (up from 1/6). [→ Full Comparison](benchmarks/reports/LONGMEMEVAL_COMPARISON.md)
 
 ---
 
