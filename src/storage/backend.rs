@@ -68,6 +68,10 @@ pub struct ScoreDebug {
     /// The original source classification (e.g., "real", "synthetic", "derived", "unknown").
     #[serde(skip_serializing_if = "Option::is_none")]
     pub original_source: Option<String>,
+    /// Ebbinghaus forgetting curve factor applied during retrieval scoring.
+    /// R(m,t) ∈ (0.0, 1.0] — 1.0 = just reviewed, decays toward 0.0 over time.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ebbinghaus_factor: Option<f32>,
 }
 
 impl ScoreDebug {
@@ -106,7 +110,10 @@ impl RetrievalProfile {
         let mtype = self.memory_type_multiplier(node);
         let w = weights.unwrap_or_default();
         let source = crate::retrieval::source_weighting::source_multiplier(node, &w);
-        tier * explicit * mtype * source
+        // Ebbinghaus Forgetting Curve: temporal decay factor based on last review (r_m)
+        // and reinforcement count (n_m). Returns 1.0 at review time, decays toward 0.0.
+        let ebbinghaus = node.ebbinghaus_decay(chrono::Utc::now()) as f32;
+        tier * explicit * mtype * source * ebbinghaus
     }
 
     fn memory_type_multiplier(self, node: &FractalNode) -> f32 {
@@ -179,6 +186,7 @@ impl RetrievalProfile {
             source_type: Some(format!("{source_type} ({source_mult:.2}x)")),
             source_weight_applied: Some(source_mult),
             original_source: Some(source_type),
+            ebbinghaus_factor: Some(node.ebbinghaus_decay(chrono::Utc::now()) as f32),
         }
     }
 

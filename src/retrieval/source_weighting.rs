@@ -324,6 +324,8 @@ mod tests {
             children_tier_ids: vec![],
             summary_content: None,
             overview_content: None,
+            r_m: Utc::now(),
+            n_m: 0,
         }
     }
 

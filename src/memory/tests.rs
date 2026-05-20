@@ -451,7 +451,7 @@ mod tests {
     #[test]
     fn test_node_type_serde_default() {
         use crate::memory::types::MemoryType;
-        let json = r#"{"id":"00000000-0000-0000-0000-000000000000","vector":[],"content":null,"original_pointer":null,"metadata":{},"weight":1.0,"multimodal":null,"children":[],"relations":[],"created_at":"2026-01-01T00:00:00Z","last_accessed":"2026-01-01T00:00:00Z"}"#;
+        let json = r#"{"id":"00000000-0000-0000-0000-000000000000","vector":[],"content":null,"original_pointer":null,"metadata":{},"weight":1.0,"multimodal":null,"children":[],"relations":[],"created_at":"2026-01-01T00:00:00Z","last_accessed":"2026-01-01T00:00:00Z","r_m":"2026-01-01T00:00:00Z"}"#;
         let node: FractalNode = serde_json::from_str(json).expect("deserialize without node_type");
         assert_eq!(
             node.memory_type,
@@ -650,5 +650,129 @@ mod tests {
         // Truncated sim should be within 10% of full sim
         let delta = (full - trunc).abs();
         assert!(delta < 0.15, "matryoshka continuity broken: full={full:.3} trunc={trunc:.3} delta={delta:.3}");
+    }
+
+    // ── Ebbinghaus Forgetting Curve Tests ──
+
+    /// New nodes initialize r_m to creation time and n_m to 0.
+    #[test]
+    fn ebbinghaus_default_values() {
+        let node = FractalNode::new_session(
+            "test".to_string(),
+            vec![0.1, 0.2],
+            HashMap::new(),
+        );
+        assert_eq!(node.n_m, 0, "new node should have zero reinforcements");
+        // r_m should be very close to created_at (within a few seconds)
+        let delta = (node.r_m - node.created_at).num_seconds().abs();
+        assert!(delta < 5, "r_m should be within 5s of created_at, got {delta}s");
+    }
+
+    /// At creation time (t = r_m), decay factor should be 1.0 (no decay).
+    #[test]
+    fn ebbinghaus_no_decay_at_creation() {
+        let node = FractalNode::new_session(
+            "test".to_string(),
+            vec![0.1, 0.2],
+            HashMap::new(),
+        );
+        let factor = node.ebbinghaus_decay(node.r_m);
+        assert!((factor - 1.0).abs() < 1e-10,
+            "decay at r_m should be 1.0, got {factor}");
+    }
+
+    /// t < r_m (time before last review) should return 1.0 (no negative decay).
+    #[test]
+    fn ebbinghaus_time_before_review() {
+        let node = FractalNode::new_session(
+            "test".to_string(),
+            vec![0.1, 0.2],
+            HashMap::new(),
+        );
+        let past = node.r_m - chrono::Duration::hours(24);
+        let factor = node.ebbinghaus_decay(past);
+        assert!((factor - 1.0).abs() < 1e-10,
+            "decay before r_m should be 1.0, got {factor}");
+    }
+
+    /// After τ hours (7 days) with zero reviews, decay should be exactly e^(-1) ≈ 0.368.
+    #[test]
+    fn ebbinghaus_one_tau_without_review() {
+        let node = FractalNode::new_session(
+            "test".to_string(),
+            vec![0.1, 0.2],
+            HashMap::new(),
+        );
+        let future = node.r_m + chrono::Duration::hours(
+            FractalNode::EBBI_TAU as i64
+        );
+        let factor = node.ebbinghaus_decay(future);
+        let expected = (-1.0_f64).exp(); // e^(-1)
+        // Allow 0.1% tolerance for floating point
+        assert!((factor - expected).abs() < 0.001,
+            "after τ hours, decay should be e^(-1) ≈ {expected:.4}, got {factor:.4}");
+    }
+
+    /// After multiple reviews, decay should be slower than without reviews.
+    #[test]
+    fn ebbinghaus_multiple_reviews_slow_decay() {
+        let mut node = FractalNode::new_session(
+            "test".to_string(),
+            vec![0.1, 0.2],
+            HashMap::new(),
+        );
+
+        // Record 5 reinforcements
+        for _ in 0..5 {
+            let now = node.r_m + chrono::Duration::hours(24); // review every 24h
+            node.reinforce(now);
+        }
+
+        assert_eq!(node.n_m, 5, "should have 5 reinforcements");
+        // One τ after the last review
+        let future = node.r_m + chrono::Duration::hours(
+            FractalNode::EBBI_TAU as i64
+        );
+        let factor = node.ebbinghaus_decay(future);
+
+        // With 5 reviews: ln(1+5) ≈ 1.79, η=0.5 → bonus = 1 + 0.5*1.79 ≈ 1.895
+        // denominator = 168 * 1.895 ≈ 318.4
+        // exp(-168/318.4) ≈ exp(-0.528) ≈ 0.590
+        // Without reviews: exp(-1) ≈ 0.368
+        // The reviewed memory should decay much less
+        assert!(factor > 0.55, "with 5 reviews, should decay slower than e^(-1)=0.368, got {factor:.4}");
+    }
+
+    /// Very large time intervals should approach zero.
+    #[test]
+    fn ebbinghaus_very_large_interval() {
+        let node = FractalNode::new_session(
+            "test".to_string(),
+            vec![0.1, 0.2],
+            HashMap::new(),
+        );
+        // 10 years
+        let far_future = node.r_m + chrono::Duration::hours(10 * 365 * 24);
+        let factor = node.ebbinghaus_decay(far_future);
+        assert!(factor < 0.001,
+            "after 10 years, decay should be near zero, got {factor:.6}");
+    }
+
+    /// reinforce() updates both r_m and n_m.
+    #[test]
+    fn ebbinghaus_reinforce_updates_both() {
+        let mut node = FractalNode::new_session(
+            "test".to_string(),
+            vec![0.1, 0.2],
+            HashMap::new(),
+        );
+        let old_r_m = node.r_m;
+        let old_n_m = node.n_m;
+
+        let new_time = old_r_m + chrono::Duration::hours(48);
+        node.reinforce(new_time);
+
+        assert_eq!(node.r_m, new_time, "r_m should update to review time");
+        assert_eq!(node.n_m, old_n_m + 1, "n_m should increment by 1");
     }
 }

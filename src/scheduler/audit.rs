@@ -195,12 +195,15 @@ impl AuditScheduler {
 
     /// Apply weight-based decay to all active in-memory nodes.
     ///
-    /// Uses a simplified Ebbinghaus-inspired model:
-    /// - Each active memory loses `DECAY_RATE` weight per hour since last update
+    /// Uses the Ebbinghaus forgetting curve formula:
+    ///   R(m, t) = exp(-(t - r_m) / (τ · (1 + η · ln(1 + n_m))))
+    ///
+    /// This replaces the previous simple linear decay (DECAY_RATE * hours).
+    /// The Ebbinghaus formula provides more realistic memory decay:
+    /// - Rapid initial decay, slowing over time (exponential)
+    /// - Reviews (n_m) slow the decay rate
     /// - Weight is floored at 0.0
     /// - Memories that hit very low weight (< 0.1) are marked Stale
-    const DECAY_RATE: f64 = 0.01; // 1% weight loss per call (~hourly)
-
     async fn apply_weight_decay_fallback(&self) -> usize {
         let all_nodes = match self.store.list_all().await {
             Ok(nodes) => nodes,
@@ -218,28 +221,25 @@ impl AuditScheduler {
                 continue;
             }
 
-            // Calculate hours since last update
-            let hours_elapsed = (now - node.last_accessed).num_seconds() as f64 / 3600.0;
-            let decay = hours_elapsed * Self::DECAY_RATE;
+            // Calculate Ebbinghaus decay based on last review time (r_m) and reinforcement count (n_m).
+            // This replaces the previous linear weight decay.
+            // NOTE: The Ebbinghaus factor is applied at retrieval time via score_multiplier.
+            // The audit scheduler's job is lifecycle management: marking stale nodes.
+            let ebbinghaus = node.ebbinghaus_decay(now);
 
-            let new_weight = (node.weight - decay).max(0.0);
-
-            // Mark as Stale if weight drops very low
-            let new_status = if new_weight < 0.1 && node.status == MemoryStatus::Active {
+            // Mark as Stale if Ebbinghaus decay drops very low (memory is effectively forgotten)
+            let new_status = if ebbinghaus < 0.1 && node.status == MemoryStatus::Active {
                 Some(MemoryStatus::Stale)
             } else {
                 None
             };
 
-            if new_weight < node.weight {
+            if let Some(status) = new_status {
                 let _ = self
                     .store
                     .update(
                         &node.id,
-                        UpdateOperation::ApplyAudit {
-                            weight: new_weight,
-                            status: new_status,
-                        },
+                        UpdateOperation::SetStatus(status),
                     )
                     .await;
                 updated += 1;

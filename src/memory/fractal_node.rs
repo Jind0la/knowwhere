@@ -159,6 +159,17 @@ pub struct FractalNode {
     /// L1 overview content (paragraph).
     #[serde(default)]
     pub overview_content: Option<String>,
+
+    // -- Ebbinghaus Forgetting Curve fields --
+    /// Last review/reinforcement timestamp (Ebbinghaus `r_m`).
+    /// Defaults to created_at on node construction.
+    #[serde(alias = "r_m", default = "default_r_m")]
+    pub r_m: DateTime<Utc>,
+    /// Reinforcement count (Ebbinghaus `n_m`).
+    /// Number of times this memory has been actively reviewed/retrieved.
+    /// Higher values slow decay per the Ebbinghaus formula.
+    #[serde(default)]
+    pub n_m: i32,
 }
 
 fn default_context_tier() -> ContextTier {
@@ -177,6 +188,10 @@ fn default_importance() -> i32 {
     5
 }
 
+fn default_r_m() -> DateTime<Utc> {
+    Utc::now()
+}
+
 impl FractalNode {
     pub const DERIVATION_KEY: &'static str = "derivation";
     pub const RETRIEVAL_VISIBILITY_KEY: &'static str = "retrieval_visibility";
@@ -188,6 +203,15 @@ impl FractalNode {
     pub const TRUST_REFERENCE: &'static str = "reference";
     pub const TRUST_DERIVED: &'static str = "derived";
     pub const TRUST_VOLATILE: &'static str = "volatile";
+
+    // -- Ebbinghaus Forgetting Curve constants --
+    /// Decay constant τ (tau) in hours — controls the base rate of forgetting.
+    /// Standard: 168.0 (7 days). Matches the existing EnergyDecay half-life.
+    pub const EBBI_TAU: f64 = 168.0;
+    /// Reinforcement factor η (eta) — controls how much each review slows decay.
+    /// Standard: 0.5. Higher values make reviews more effective at slowing forgetting.
+    /// Research range: 0.3–1.0 (H-Mem paper uses 0.5 by default).
+    pub const EBBI_ETA: f64 = 0.5;
 
     fn metadata_text(&self, key: &str) -> Option<&str> {
         self.metadata.get(key).and_then(Value::as_str)
@@ -319,6 +343,43 @@ impl FractalNode {
         Self::TRUST_REFERENCE
     }
 
+    /// Compute the Ebbinghaus forgetting curve robustness factor.
+    ///
+    /// Implements the H-Mem paper formula:
+    ///   R(m, t) = exp(-(t - r_m) / (τ · (1 + η · ln(1 + n_m))))
+    ///
+    /// Returns a value in (0.0, 1.0] where:
+    /// - 1.0 = just reviewed (no decay)
+    /// - → 0.0 = fully forgotten (as t → ∞)
+    ///
+    /// # Parameters
+    /// - `t`: current time (typically `Utc::now()`)
+    /// - Uses `self.r_m` (last review timestamp) and `self.n_m` (reinforcement count)
+    /// - Constants: `EBBI_TAU` (τ, decay time scale) and `EBBI_ETA` (η, reinforcement effect)
+    ///
+    /// # Edge Cases
+    /// - `t <= r_m`: returns 1.0 (no decay into the future or at review moment)
+    /// - `n_m` large: decay slows substantially because ln(1 + n_m) grows
+    /// - `n_m = 0`: base decay rate: exp(-Δt / τ)
+    pub fn ebbinghaus_decay(&self, t: DateTime<Utc>) -> f64 {
+        let hours_elapsed = (t - self.r_m).num_seconds() as f64 / 3600.0;
+        if hours_elapsed <= 0.0 {
+            return 1.0;
+        }
+        let review_bonus = 1.0 + Self::EBBI_ETA * (1.0 + self.n_m as f64).ln();
+        let denominator = Self::EBBI_TAU * review_bonus;
+        (-hours_elapsed / denominator).exp()
+    }
+
+    /// Record a reinforcement (review/retrieval) of this memory.
+    ///
+    /// Sets `r_m` to `now` and increments `n_m`. This slows future decay per the
+    /// Ebbinghaus formula. Called during retrieval when a memory is accessed.
+    pub fn reinforce(&mut self, now: DateTime<Utc>) {
+        self.r_m = now;
+        self.n_m += 1;
+    }
+
     /// DEPRECATED: Use [`new_typed`] instead.
     ///
     /// This constructor predates the turn-level storage architecture (Phase 2).
@@ -365,6 +426,8 @@ impl FractalNode {
             children_tier_ids: Vec::new(),
             summary_content: None,
             overview_content: None,
+            r_m: now,
+            n_m: 0,
         }
     }
 
@@ -403,6 +466,8 @@ impl FractalNode {
             children_tier_ids: Vec::new(),
             summary_content: None,
             overview_content: None,
+            r_m: now,
+            n_m: 0,
         }
     }
 
@@ -442,6 +507,8 @@ impl FractalNode {
             children_tier_ids: Vec::new(),
             summary_content: None,
             overview_content: None,
+            r_m: now,
+            n_m: 0,
         }
     }
 
@@ -482,6 +549,8 @@ impl FractalNode {
             children_tier_ids: Vec::new(),
             summary_content: None,
             overview_content: None,
+            r_m: now,
+            n_m: 0,
         }
     }
 
