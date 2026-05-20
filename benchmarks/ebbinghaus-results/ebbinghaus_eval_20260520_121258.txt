@@ -1,0 +1,36 @@
+Loading dataset: benchmarks/data/longmemeval_s_cleaned.json
+  Stratified filter: 42/500 cases selected
+    single-session-user: 6 cases
+    single-session-assistant: 4 cases
+    single-session-preference: 4 cases
+    multi-session: 10 cases
+    temporal-reasoning: 10 cases
+    knowledge-update: 8 cases
+  Loaded 42 cases
+  Types: {'single-session-user': 5, 'multi-session': 8, 'single-session-preference': 4, 'temporal-reasoning': 9, 'knowledge-update': 7, 'single-session-assistant': 4}
+  Abstention: 5
+  Turn labels: YES (42 cases)
+
+KnowWhere API: http://127.0.0.1:3737
+Mode: multi
+Top-K (old): 20
+
+  ── PHASE 1: Indexing all sessions ──
+    FAIL indexing case=51a45a95: store_session_batch failed 500: error returned from database: expected 1024 dimensions, not 768
+    FAIL indexing case=5d3d2817: store_session_batch failed 500: error returned from database: expected 1024 dimensions, not 768
+    FAIL indexing case=6b168ec8: store_session_batch failed 500: error returned from database: expected 1024 dimensions, not 768
+    FAIL indexing case=545bd2b5: store_session_batch failed 500: error returned from database: expected 1024 dimensions, not 768
+    FAIL indexing case=29f2956b: store_session_batch failed 500: error returned from database: expected 1024 dimensions, not 768
+    FAIL indexing case=6d550036: store_session_batch failed 500: error returned from database: expected 1024 dimensions, not 768
+    FAIL indexing case=gpt4_15e38248: store_session_batch failed 500: error returned from database: expected 1024 dimensions, not 768
+    FAIL indexing case=2318644b: store_session_batch failed 500: error returned from database: expected 1024 dimensions, not 768
+    FAIL indexing case=b3c15d39: store_session_batch failed 500: error returned from database: expected 1024 dimensions, not 768
+    FAIL indexing case=5a7937c8: store_session_batch failed 500: error returned from database: expected 1024 dimensions, not 768
+    FAIL indexing case=bf659f65: store_session_batch failed 500: error returned from database: expected 1024 dimensions, not 768
+    FAIL indexing case=06878be2: store_session_batch failed 500: error returned from database: expected 1024 dimensions, not 768
+    FAIL indexing case=0edc2aef: store_session_batch failed 500: error returned from database: expected 1024 dimensions, not 768
+    FAIL indexing case=35a27287: store_session_batch failed 500: error returned from database: expected 1024 dimensions, not 768
+    FAIL indexing case=0a34ad58: store_session_batch failed 500: error returned from database: expected 1024 dimensions, not 768
+    FAIL indexing case=2311e44b: store_session_batch failed 500: error returned from database: expected 1024 dimensions, not 768
+    FAIL indexing case=681a1674: store_session_batch failed 500: error returned from database: expected 1024 dimensions, not 768
+    FAIL indexing case=71017276: store_session_batch failed 500: error returned from database: expected 1024 dimensions, not 768
