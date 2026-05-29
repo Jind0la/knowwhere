@@ -77,6 +77,52 @@ fn index_options(dimension: usize) -> IndexOptions {
     }
 }
 
+const BINARY_INDEX_VERSION: &str = "0.5.0";
+
+fn index_binary_path(data_dir: &Path, filename: &str) -> PathBuf {
+    data_dir.join(filename)
+}
+
+fn version_file_path(data_dir: &Path) -> PathBuf {
+    data_dir.join("usearch_version.txt")
+}
+
+/// Save a single USearch index to disk. Holds the mutex during the entire save
+/// to prevent concurrent `add()` from corrupting the binary file.
+fn save_index_binary(
+    index: &Mutex<Option<SendableIndex>>,
+    path: &Path,
+) -> Result<()> {
+    let guard = index.lock().unwrap();
+    if let Some(ref idx) = *guard {
+        let path_str = path.to_string_lossy().to_string();
+        idx.save(&path_str)
+            .map_err(|e| anyhow::anyhow!("failed to save binary index to {}: {e}", path.display()))?;
+        tracing::debug!("binary index saved to {}", path.display());
+    }
+    Ok(())
+}
+
+/// Load a USearch index from a binary file. Returns `true` if successfully loaded,
+/// `false` if the file doesn't exist. Returns `Err` if the file exists but is corrupt
+/// or has wrong dimensions.
+fn load_index_binary(
+    index: &Mutex<Option<SendableIndex>>,
+    path: &Path,
+    dim: usize,
+) -> Result<bool> {
+    if !path.exists() {
+        return Ok(false);
+    }
+    let new_idx = SendableIndex::new(&index_options(dim))?;
+    let path_str = path.to_string_lossy().to_string();
+    new_idx.load(&path_str)
+        .map_err(|e| anyhow::anyhow!("failed to load binary index from {}: {e}", path.display()))?;
+    let mut guard = index.lock().unwrap();
+    *guard = Some(new_idx);
+    Ok(true)
+}
+
 struct CachedBm25 {
     embedder: Embedder,
     scorer: Scorer<Uuid>,
@@ -110,12 +156,10 @@ impl SendableIndex {
         }
     }
 
-    #[allow(dead_code)]
     fn save(&self, path: &str) -> Result<()> {
         self.0.save(path).map_err(|e| anyhow::anyhow!("{e}"))
     }
 
-    #[allow(dead_code)]
     fn load(&self, path: &str) -> Result<()> {
         self.0.load(path).map_err(|e| anyhow::anyhow!("{e}"))
     }
@@ -509,7 +553,17 @@ impl MemoryStore {
         let state_path = dir.join("state.json");
         if state_path.exists() {
             match store.load_state(&state_path) {
-                Ok(count) => tracing::info!(count, "loaded persisted state"),
+                Ok(count) => {
+                    tracing::info!(count, "loaded persisted state");
+                    // Auto-save binary indices after rebuild so next startup is fast.
+                    // Spawn because we're inside the tokio runtime — can't block_on here.
+                    let store_clone = store.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = store_clone.save_to_disk().await {
+                            tracing::warn!("failed to save binary indices after load: {e}");
+                        }
+                    });
+                }
                 Err(e) => tracing::warn!("failed to load persisted state: {e}"),
             }
         }
@@ -525,35 +579,93 @@ impl MemoryStore {
         let count = state.nodes.len();
         self.next_key = Arc::new(AtomicU64::new(state.next_key));
 
-        // Rebuild USearch index from vectors
+        // Determine data directory from state.json path
+        let data_dir = path.parent().unwrap();
+
+        // --- Try binary USearch index load for fast startup ---
         let dimension = dominant_dimension(&state.nodes);
+        let binary_available = version_file_path(data_dir).exists()
+            && std::fs::read_to_string(version_file_path(data_dir))
+                .map(|v| v.trim() == BINARY_INDEX_VERSION)
+                .unwrap_or(false);
 
-        if let Some(dim) = dimension {
-            if let Ok(index) = SendableIndex::new(&index_options(dim)) {
-                let cap = state.nodes.len().max(1024);
-                let _ = index.reserve(cap);
-                let mut skipped = 0usize;
+        let mut used_binary = false;
 
-                for (&uuid, &key) in &state.uuid_to_key {
-                    if let Some(node) = state.nodes.get(&uuid) {
-                        if node_dimension(node) == Some(dim) {
-                            if let Err(e) = index.add(key, &node.vector) {
-                                tracing::warn!(%uuid, "rebuild index skip: {e}");
-                            }
-                        } else if node_dimension(node).is_some() {
-                            skipped += 1;
-                        }
+        if binary_available {
+            if let Some(dim) = dimension {
+                let main_loaded = load_index_binary(
+                    &self.usearch_index,
+                    &index_binary_path(data_dir, "usearch.bin"),
+                    dim,
+                );
+                let coarse_loaded = load_index_binary(
+                    &self.coarse_index,
+                    &index_binary_path(data_dir, "usearch_coarse.bin"),
+                    COARSE_DIM,
+                );
+                let ultra_loaded = load_index_binary(
+                    &self.ultra_coarse_index,
+                    &index_binary_path(data_dir, "usearch_ultra.bin"),
+                    ULTRA_COARSE_DIM,
+                );
+
+                if let (Ok(true), Ok(_), Ok(_)) = (&main_loaded, &coarse_loaded, &ultra_loaded) {
+                    // All three binary indices loaded successfully
+                    *self.index_dimension.lock().unwrap() = Some(dim);
+                    tracing::info!("binary USearch indices loaded — skipping vector rebuild");
+                    used_binary = true;
+                } else {
+                    // At least one binary load failed — log details and fall through to rebuild
+                    if let Err(ref e) = main_loaded {
+                        tracing::warn!("binary usearch index load failed, falling back to rebuild: {e}");
                     }
+                    if let Err(ref e) = coarse_loaded {
+                        tracing::warn!("binary coarse index load failed, falling back to rebuild: {e}");
+                    }
+                    if let Err(ref e) = ultra_loaded {
+                        tracing::warn!("binary ultra-coarse index load failed, falling back to rebuild: {e}");
+                    }
+                    // Reset any partially-loaded indices
+                    *self.usearch_index.lock().unwrap() = None;
+                    *self.coarse_index.lock().unwrap() = None;
+                    *self.ultra_coarse_index.lock().unwrap() = None;
                 }
-
-                *self.usearch_index.lock().unwrap() = Some(index);
-                *self.index_dimension.lock().unwrap() = Some(dim);
-                tracing::info!(dim, skipped, "usearch index rebuilt from persisted state");
             }
         }
 
-        // Rebuild coarse 256d index from persisted mappings
-        {
+        // --- Fallback: Rebuild USearch index from vectors ---
+        if !used_binary {
+            if let Some(dim) = dimension {
+                if let Ok(index) = SendableIndex::new(&index_options(dim)) {
+                    let cap = state.nodes.len().max(1024);
+                    let _ = index.reserve(cap);
+                    let mut skipped = 0usize;
+                    let total = state.uuid_to_key.len();
+
+                    for (i, (&uuid, &key)) in state.uuid_to_key.iter().enumerate() {
+                        if (i + 1) % 1000 == 0 {
+                            tracing::info!(i = i + 1, total, "rebuilding usearch index from vectors...");
+                        }
+                        if let Some(node) = state.nodes.get(&uuid) {
+                            if node_dimension(node) == Some(dim) {
+                                if let Err(e) = index.add(key, &node.vector) {
+                                    tracing::warn!(%uuid, "rebuild index skip: {e}");
+                                }
+                            } else if node_dimension(node).is_some() {
+                                skipped += 1;
+                            }
+                        }
+                    }
+
+                    *self.usearch_index.lock().unwrap() = Some(index);
+                    *self.index_dimension.lock().unwrap() = Some(dim);
+                    tracing::info!(dim, skipped, "usearch index rebuilt from persisted state");
+                }
+            }
+        }
+
+        // --- Coarse index: binary or rebuild ---
+        if !used_binary {
             let coarse_uuids = state.coarse_uuid_to_key.clone();
             if !coarse_uuids.is_empty() {
                 let coarse_dim = COARSE_DIM;
@@ -561,7 +673,11 @@ impl MemoryStore {
                     let cap = coarse_uuids.len().max(1024);
                     let _ = coarse_idx.reserve(cap);
                     let mut coarse_skipped = 0usize;
-                    for (&uuid, &key) in &coarse_uuids {
+                    let coarse_total = coarse_uuids.len();
+                    for (i, (&uuid, &key)) in coarse_uuids.iter().enumerate() {
+                        if (i + 1) % 1000 == 0 {
+                            tracing::info!(i = i + 1, total = coarse_total, "rebuilding coarse index from vectors...");
+                        }
                         if let Some(node) = state.nodes.get(&uuid) {
                             if node.vector.len() >= coarse_dim {
                                 let vec: Vec<f32> = node.vector[..coarse_dim].to_vec();
@@ -578,12 +694,12 @@ impl MemoryStore {
                     tracing::info!(coarse_dim, coarse_skipped, "coarse usearch index rebuilt from persisted state");
                 }
             }
-            self.coarse_uuid_to_key = Arc::new(RwLock::new(state.coarse_uuid_to_key));
-            self.coarse_key_to_uuid = Arc::new(RwLock::new(state.coarse_key_to_uuid));
         }
+        self.coarse_uuid_to_key = Arc::new(RwLock::new(state.coarse_uuid_to_key));
+        self.coarse_key_to_uuid = Arc::new(RwLock::new(state.coarse_key_to_uuid));
 
-        // Rebuild ultra-coarse 64d index from persisted mappings
-        {
+        // --- Ultra-coarse index: binary or rebuild ---
+        if !used_binary {
             let ultra_uuids = state.ultra_coarse_uuid_to_key.clone();
             if !ultra_uuids.is_empty() {
                 let ultra_dim = ULTRA_COARSE_DIM;
@@ -591,7 +707,11 @@ impl MemoryStore {
                     let cap = ultra_uuids.len().max(1024);
                     let _ = ultra_idx.reserve(cap);
                     let mut ultra_skipped = 0usize;
-                    for (&uuid, &key) in &ultra_uuids {
+                    let ultra_total = ultra_uuids.len();
+                    for (i, (&uuid, &key)) in ultra_uuids.iter().enumerate() {
+                        if (i + 1) % 1000 == 0 {
+                            tracing::info!(i = i + 1, total = ultra_total, "rebuilding ultra-coarse index from vectors...");
+                        }
                         if let Some(node) = state.nodes.get(&uuid) {
                             if node.vector.len() >= ultra_dim {
                                 let vec: Vec<f32> = node.vector[..ultra_dim].to_vec();
@@ -608,9 +728,9 @@ impl MemoryStore {
                     tracing::info!(ultra_dim, ultra_skipped, "ultra-coarse usearch index rebuilt from persisted state");
                 }
             }
-            self.ultra_coarse_uuid_to_key = Arc::new(RwLock::new(state.ultra_coarse_uuid_to_key));
-            self.ultra_coarse_key_to_uuid = Arc::new(RwLock::new(state.ultra_coarse_key_to_uuid));
         }
+        self.ultra_coarse_uuid_to_key = Arc::new(RwLock::new(state.ultra_coarse_uuid_to_key));
+        self.ultra_coarse_key_to_uuid = Arc::new(RwLock::new(state.ultra_coarse_key_to_uuid));
 
         // Load persisted BM25 corpus directly — survives restart for external nodes.
         // Backward compat: if bm25_corpus is empty (old state file), rebuild from nodes.
@@ -672,6 +792,15 @@ impl MemoryStore {
         let writer = std::io::BufWriter::new(file);
         serde_json::to_writer(writer, &state)?;
         std::fs::rename(&tmp_path, &final_path)?;
+
+        // Save binary USearch indices for fast startup
+        save_index_binary(&self.usearch_index, &index_binary_path(dir, "usearch.bin"))?;
+        save_index_binary(&self.coarse_index, &index_binary_path(dir, "usearch_coarse.bin"))?;
+        save_index_binary(&self.ultra_coarse_index, &index_binary_path(dir, "usearch_ultra.bin"))?;
+
+        // Write version marker for format detection on load
+        let ver_path = version_file_path(dir);
+        std::fs::write(&ver_path, BINARY_INDEX_VERSION)?;
 
         Ok(())
     }
