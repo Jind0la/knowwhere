@@ -305,12 +305,17 @@ impl TextChunker {
 
         while cursor + self.config.max_chunk_chars < text_len {
             let ideal_split = cursor + self.config.max_chunk_chars;
-            let search_end = (ideal_split + self.config.split_window).min(text_len);
-            let search_start = if cursor > self.config.split_window {
+            let search_end_raw = (ideal_split + self.config.split_window).min(text_len);
+            let search_start_raw = if cursor > self.config.split_window {
                 ideal_split.saturating_sub(self.config.split_window)
             } else {
                 cursor
             };
+
+            // Ensure byte indices land on valid UTF-8 character boundaries.
+            // Multi-byte characters (e.g. CJK) can straddle byte-index calculations.
+            let search_start = text.floor_char_boundary(search_start_raw);
+            let search_end = text.ceil_char_boundary(search_end_raw);
 
             let split_at = self.find_best_split(&text[search_start..search_end], search_start, ideal_split);
 
