@@ -383,8 +383,8 @@ impl HybridQuery {
     }
 }
 
-/// Operations for updating a node — used by DreamMode, ConsolidationScheduler,
-/// and AuditScheduler. This enum-based approach is dyn Trait-compatible
+/// Operations for updating a node — used by DreamMode and AuditScheduler.
+/// This enum-based approach is dyn Trait-compatible
 /// (unlike closure-based update_node which doesn't work with Arc<dyn StorageBackend>).
 #[derive(Debug, Clone, serde::Serialize)]
 pub enum UpdateOperation {
@@ -392,15 +392,11 @@ pub enum UpdateOperation {
     MultiplyWeight(f64),
     /// Set the weight directly (used by AuditScheduler).
     SetWeight(f64),
-    /// Set parent_tier_id if not already set (used by ConsolidationScheduler as pending marker).
+    /// Set parent_tier_id if not already set.
     SetParentTierId(Uuid),
     /// Set the node status (used by AuditScheduler).
     SetStatus(MemoryStatus),
-    /// Set the overview_content for L1 tier (used by ConsolidationScheduler).
-    SetOverviewContent(String),
-    /// Set the summary_content for L0 tier (used by ConsolidationScheduler).
-    SetSummaryContent(String),
-    /// Add a child tier ID to children_tier_ids (used by ConsolidationScheduler for fractal linking).
+    /// Add a child tier ID to children_tier_ids (fractal linking).
     AddChildTierId(Uuid),
     /// Composite operation: set weight + optionally status (used by AuditScheduler).
     /// This must be atomic — both changes happen together.
@@ -427,12 +423,6 @@ impl UpdateOperation {
             }
             UpdateOperation::SetStatus(status) => {
                 node.status = *status;
-            }
-            UpdateOperation::SetOverviewContent(content) => {
-                node.overview_content = Some(content.clone());
-            }
-            UpdateOperation::SetSummaryContent(content) => {
-                node.summary_content = Some(content.clone());
             }
             UpdateOperation::AddChildTierId(child_id) => {
                 if !node.children_tier_ids.contains(child_id) {

@@ -6,8 +6,6 @@ pub mod events;
 pub mod fact_extraction;
 pub mod fractal_node;
 pub mod governance;
-#[cfg(feature = "postgres-storage")]
-pub mod tiered;
 pub mod types;
 
 #[cfg(feature = "postgres-storage")]
@@ -38,8 +36,6 @@ pub use fractal_node::{cosine_similarity, FractalNode, NodeType, Relation};
 pub use governance::{
     GovernanceCandidate, GovernancePolicy, GovernanceValidator, GovernedScoredNode,
 };
-#[cfg(feature = "postgres-storage")]
-pub use tiered::TieredCompactionWorker;
 pub use types::{ConflictState, ContextTier, MemorySource, MemoryStatus, MemoryType, Sensitivity};
 
 #[cfg(feature = "postgres-storage")]

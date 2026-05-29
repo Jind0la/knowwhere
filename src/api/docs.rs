@@ -5,7 +5,6 @@ use crate::memory::dream::DreamStatus;
 use crate::memory::types::{MemorySource, MemoryType};
 use crate::memory::{FractalNode, Relation};
 use crate::multimodal::MultimodalData;
-use crate::vlm::VlmWorkerStatus;
 
 #[cfg(feature = "postgres-storage")]
 use crate::memory::self_healing::{HealingStats, HealthCheckResult};
@@ -34,8 +33,6 @@ mod conditional_schemas {
             routes::purge_dummy,
             routes::reembed_all,
             routes::dream_status,
-            routes::vlm_status,
-            routes::vlm_enqueue,
             routes::list_events,
             routes::get_governance_policy,
             routes::update_governance_policy,
@@ -65,9 +62,6 @@ mod conditional_schemas {
             Relation,
             MultimodalData,
             DreamStatus,
-            routes::VlmEnqueueRequest,
-            routes::VlmEnqueueResponse,
-            VlmWorkerStatus,
             routes::UpdatePolicyRequest,
             routes::UpdatePolicyResponse,
             routes::FrigateWebhookEvent,
@@ -98,8 +92,6 @@ mod conditional_schemas {
             routes::purge_dummy,
             routes::reembed_all,
             routes::dream_status,
-            routes::vlm_status,
-            routes::vlm_enqueue,
             routes::list_events,
             routes::get_governance_policy,
             routes::update_governance_policy,
@@ -161,9 +153,6 @@ mod conditional_schemas {
             ReindexResponse,
             HealthCheckResult,
             HealingStats,
-            routes::VlmEnqueueRequest,
-            routes::VlmEnqueueResponse,
-            VlmWorkerStatus,
             routes::UpdatePolicyRequest,
             routes::UpdatePolicyResponse,
             routes::FrigateWebhookEvent,

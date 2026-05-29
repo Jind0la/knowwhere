@@ -49,10 +49,6 @@ ort = { version = ">=2.0.0-rc.12, <3", optional = true }
 tokenizers = { version = "0.21", optional = true }
 ndarray = { version = "0.17", optional = true }
 
-# Local summarization for tiered compaction
-# Uses Ollama HTTP API (no extra dependencies — reqwest already included)
-# Feature flag allows disabling if Ollama not available
-
 [features]
 default = []
 # Enable PostgreSQL-backed storage layer (requires DATABASE_URL env var at runtime)
@@ -63,11 +59,6 @@ postgres-storage = []
 # reqwest is always included (Ollama also needs it).
 openai-provider = []
 grok-provider = []
-
-# Enable local summarization via Ollama for L2→L1→L0 compaction
-# Requires Ollama installed: https://ollama.com
-# Default model: llama3.2 (3B parameters, fast on CPU)
-summarizer = []
 
 # Enable cross-encoder reranking (ONNX Runtime via ort)
 # Requires bge-reranker-v2-m3 ONNX model + tokenizer

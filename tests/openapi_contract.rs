@@ -37,8 +37,6 @@ fn openapi_contains_beta_core_routes() {
         "/dream/status",
         "/events",
         "/governance/policy",
-        "/vlm/status",
-        "/vlm/summarize",
         "/webhooks/frigate",
     ];
 

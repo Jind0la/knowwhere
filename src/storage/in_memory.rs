@@ -373,12 +373,7 @@ impl StorageBackend for MemoryStore {
         Ok(report)
     }
 
-    /// Expand flat results into fractal children via `children_tier_ids`.
-    ///
-    /// Bridges the gap between consolidation-built UUID links and the old
-    /// synchronous `zoom_retrieve()` (which only traversed the unused
-    /// `self.children` field). Uses `self.nodes` HashMap for O(1) UUID
-    /// resolution — synchronous after acquiring the read lock.
+    /// Matryoshka fractal zoom-out: expand via truncated embedding search.
     async fn expand_fractal(
         &self,
         nodes: Vec<ScoredNode>,
@@ -386,70 +381,69 @@ impl StorageBackend for MemoryStore {
         max_depth: usize,
         pruning_threshold: f32,
     ) -> anyhow::Result<Vec<ScoredNode>> {
+        use crate::memory::fractal_node::{cosine_similarity, truncate_vector};
+
         if max_depth == 0 || query_vector.is_empty() {
             return Ok(nodes);
         }
 
+        const EXPAND_FRACTAL_MAX_EXTRA: usize = 100;
+        let max_depth = max_depth.min(2);
+        let mut expanded: Vec<ScoredNode> = nodes.clone();
+        let mut seen: HashSet<Uuid> = nodes.iter().map(|s| s.node.id).collect();
+        let max_total = nodes.len().saturating_add(EXPAND_FRACTAL_MAX_EXTRA);
+
         let all_nodes = self.nodes.read().await;
-        let mut expanded = Vec::with_capacity(nodes.len() * 2);
 
-        for scored in nodes {
-            expanded.push(scored.clone());
-
-            let node = &scored.node;
-            let mut visited: HashSet<Uuid> = HashSet::new();
-            visited.insert(node.id);
-
-            if !node.children_tier_ids.is_empty() {
-                // Direct expansion: this node IS a parent, expand children
-                self.expand_children(
-                    &all_nodes,
-                    &node.children_tier_ids,
-                    query_vector,
-                    max_depth - 1,
-                    pruning_threshold,
-                    &mut visited,
-                    &mut expanded,
-                );
-            } else if let Some(ref parent_id) = node.parent_tier_id {
-                // Bridge expansion: this node is a CHILD (e.g. L1 summary).
-                // Semantic search naturally finds compact summary nodes,
-                // but they are leaves, not roots. Climb UP to the parent
-                // (L0 raw) and expand its children_tier_ids (siblings).
-                if let Some(parent) = all_nodes.get(parent_id) {
-                    visited.insert(*parent_id);
-
-                    // Add the parent itself if above threshold
-                    let parent_sim = crate::memory::fractal_node::cosine_similarity(
-                        &parent.vector, query_vector,
-                    );
-                    if parent_sim >= pruning_threshold {
+        if max_depth >= 1 {
+            if let Some(coarse_256) = truncate_vector(query_vector, 256) {
+                let neighbors =
+                    Self::search_by_truncated_vector(&all_nodes, &coarse_256, 256, 10);
+                for n in neighbors {
+                    if expanded.len() >= max_total {
+                        break;
+                    }
+                    if !seen.insert(n.id) {
+                        continue;
+                    }
+                    let sim = cosine_similarity(&n.vector, query_vector);
+                    if sim >= pruning_threshold {
                         expanded.push(ScoredNode {
-                            id: parent.id,
-                            score: parent_sim,
+                            id: n.id,
+                            score: sim,
                             distribution_scores: None,
                             debug: None,
-                            node: parent.clone(),
+                            node: n,
                         });
-                    }
-
-                    // Now expand parent's other children (siblings of original node)
-                    if !parent.children_tier_ids.is_empty() {
-                        self.expand_children(
-                            &all_nodes,
-                            &parent.children_tier_ids,
-                            query_vector,
-                            max_depth - 1,
-                            pruning_threshold,
-                            &mut visited,
-                            &mut expanded,
-                        );
                     }
                 }
             }
         }
 
-        // Sort all results by score descending
+        if max_depth >= 2 {
+            if let Some(coarse_64) = truncate_vector(query_vector, 64) {
+                let clusters = Self::search_by_truncated_vector(&all_nodes, &coarse_64, 64, 5);
+                for c in clusters {
+                    if expanded.len() >= max_total {
+                        break;
+                    }
+                    if !seen.insert(c.id) {
+                        continue;
+                    }
+                    let sim = cosine_similarity(&c.vector, query_vector);
+                    if sim >= pruning_threshold * 0.8 {
+                        expanded.push(ScoredNode {
+                            id: c.id,
+                            score: sim,
+                            distribution_scores: None,
+                            debug: None,
+                            node: c,
+                        });
+                    }
+                }
+            }
+        }
+
         expanded.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(Ordering::Equal));
         Ok(expanded)
     }
@@ -1640,63 +1634,167 @@ impl MemoryStore {
             .collect()
     }
 
-    /// Recursively expand `children_tier_ids` into scored results.
-    ///
-    /// Called by `expand_fractal`. Traverses UUID-based fractal links
-    /// (the data structure that consolidation actually builds) instead
-    /// of the unused `self.children` field.
-    fn expand_children(
-        &self,
+    /// In-memory Matryoshka search: rank nodes by truncated cosine similarity.
+    fn search_by_truncated_vector(
         all_nodes: &HashMap<Uuid, FractalNode>,
-        child_ids: &[Uuid],
-        query_vector: &[f32],
-        depth: usize,
-        threshold: f32,
-        visited: &mut HashSet<Uuid>,
-        results: &mut Vec<ScoredNode>,
-    ) {
-        if depth == 0 {
-            return;
-        }
+        query: &[f32],
+        trunc_dim: usize,
+        limit: usize,
+    ) -> Vec<FractalNode> {
+        use crate::memory::fractal_node::{cosine_similarity, truncate_vector};
 
-        for child_id in child_ids {
-            if visited.contains(child_id) {
-                continue;
-            }
-
-            let Some(child) = all_nodes.get(child_id) else {
-                continue;
-            };
-
-            let sim = crate::memory::fractal_node::cosine_similarity(&child.vector, query_vector);
-            visited.insert(*child_id);
-
-            results.push(ScoredNode {
-                id: child.id,
-                score: sim,
-                distribution_scores: None,
-                debug: None,
-                node: child.clone(),
-            });
-
-            if sim >= threshold && !child.children_tier_ids.is_empty() {
-                self.expand_children(
-                    all_nodes,
-                    &child.children_tier_ids,
-                    query_vector,
-                    depth - 1,
-                    threshold,
-                    visited,
-                    results,
-                );
-            }
-        }
+        let mut scored: Vec<(f32, FractalNode)> = all_nodes
+            .values()
+            .filter_map(|node| {
+                let trunc = truncate_vector(&node.vector, trunc_dim)?;
+                let sim = cosine_similarity(query, &trunc);
+                Some((sim, node.clone()))
+            })
+            .collect();
+        scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(Ordering::Equal));
+        scored.into_iter().take(limit).map(|(_, n)| n).collect()
     }
 }
 
 impl Default for MemoryStore {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Matryoshka expand_fractal Unit Tests
+// ═══════════════════════════════════════════════════════════════════════
+
+#[cfg(test)]
+#[allow(deprecated, reason = "tests intentionally exercise legacy FractalNode::new_session constructor")]
+mod expand_fractal_tests {
+    use super::*;
+    use crate::memory::fractal_node::FractalNode;
+    use crate::memory::types::{MemorySource, MemoryType};
+    use crate::storage::{ScoredNode, StorageBackend};
+
+    fn vec768(first: f32, second: f32) -> Vec<f32> {
+        let mut v = vec![0.0f32; 768];
+        v[0] = first;
+        v[1] = second;
+        v
+    }
+
+    #[tokio::test]
+    async fn expand_fractal_max_depth_zero_returns_unchanged() {
+        let store = MemoryStore::new();
+        let node = FractalNode::new_typed(
+            Some("seed".into()),
+            None,
+            vec768(1.0, 0.0),
+            Default::default(),
+            MemoryType::Semantic,
+            MemorySource::Conversation,
+        );
+        let seed = ScoredNode {
+            id: node.id,
+            score: 0.9,
+            distribution_scores: None,
+            debug: None,
+            node: node.clone(),
+        };
+
+        let result = store
+            .expand_fractal(vec![seed.clone()], &vec768(1.0, 0.0), 0, 0.5)
+            .await
+            .unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].id, seed.id);
+    }
+
+    #[tokio::test]
+    async fn expand_fractal_empty_query_returns_unchanged() {
+        let store = MemoryStore::new();
+        let node = FractalNode::new_typed(
+            Some("seed".into()),
+            None,
+            vec768(1.0, 0.0),
+            Default::default(),
+            MemoryType::Semantic,
+            MemorySource::Conversation,
+        );
+        let seed = ScoredNode {
+            id: node.id,
+            score: 0.9,
+            distribution_scores: None,
+            debug: None,
+            node,
+        };
+
+        let result = store
+            .expand_fractal(vec![seed.clone()], &[], 2, 0.5)
+            .await
+            .unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].id, seed.id);
+    }
+
+    #[tokio::test]
+    async fn expand_fractal_finds_cluster_neighbors_at_256d() {
+        let store = MemoryStore::new();
+
+        let seed_node = FractalNode::new_typed(
+            Some("seed".into()),
+            None,
+            vec768(1.0, 0.0),
+            Default::default(),
+            MemoryType::Semantic,
+            MemorySource::Conversation,
+        );
+        let seed_id = seed_node.id;
+
+        let mut neighbor = FractalNode::new_typed(
+            Some("neighbor".into()),
+            None,
+            vec768(0.99, 0.01),
+            Default::default(),
+            MemoryType::Semantic,
+            MemorySource::Conversation,
+        );
+        neighbor.id = uuid::Uuid::new_v4();
+
+        let mut distant = FractalNode::new_typed(
+            Some("distant".into()),
+            None,
+            vec768(0.0, 1.0),
+            Default::default(),
+            MemoryType::Semantic,
+            MemorySource::Conversation,
+        );
+        distant.id = uuid::Uuid::new_v4();
+
+        store.insert(seed_node.clone()).await.unwrap();
+        store.insert(neighbor.clone()).await.unwrap();
+        store.insert(distant).await.unwrap();
+
+        let seed = ScoredNode {
+            id: seed_id,
+            score: 0.95,
+            distribution_scores: None,
+            debug: None,
+            node: seed_node,
+        };
+
+        let expanded = store
+            .expand_fractal(vec![seed], &vec768(1.0, 0.0), 1, 0.5)
+            .await
+            .unwrap();
+
+        let ids: HashSet<_> = expanded.iter().map(|s| s.id).collect();
+        assert!(ids.contains(&seed_id), "seed missing: {:?}", ids);
+        assert!(
+            ids.contains(&neighbor.id),
+            "256d cluster neighbor missing: {:?}",
+            ids
+        );
     }
 }
 

@@ -222,66 +222,56 @@ impl PostgresStore {
             .collect())
     }
 
-    /// Iterative fractal child expansion (matches `MemoryStore::expand_children` semantics).
-    async fn expand_children_pg(
+    /// Matryoshka zoom-out search: compare truncated query against stored embedding prefix.
+    async fn search_by_truncated_vector(
         &self,
-        child_ids: &[Uuid],
-        query_vector: &[f32],
-        depth: usize,
-        threshold: f32,
-        visited: &mut HashSet<Uuid>,
-        expanded: &mut Vec<ScoredNode>,
-        max_total: usize,
-    ) -> anyhow::Result<()> {
-        let mut stack: Vec<(Vec<Uuid>, usize)> = vec![(child_ids.to_vec(), depth)];
+        vector: &[f32],
+        trunc_dim: usize,
+        limit: usize,
+    ) -> anyhow::Result<Vec<FractalNode>> {
+        let vec_str = format!(
+            "[{}]",
+            vector
+                .iter()
+                .map(|f| f.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
+        );
 
-        while let Some((ids, d)) = stack.pop() {
-            if d == 0 || expanded.len() >= max_total {
-                continue;
-            }
+        // trunc_dim is always 64 or 256 from expand_fractal — safe to interpolate for pg slice.
+        let sql = format!(
+            r#"
+            SELECT
+                id, memory_type,
+                content, content_preview,
+                importance, confidence,
+                sensitivity, status,
+                superseded_by, conflict_state,
+                source, source_id, provenance,
+                parent_id, depth, access_count,
+                last_accessed, created_at, updated_at,
+                deleted_at, metadata, entities,
+                COALESCE(tags, ARRAY[]::TEXT[]) AS tags,
+                embedding::float4[],
+                context_tier::text, parent_tier_id,
+                COALESCE(children_tier_ids, ARRAY[]::uuid[]) AS children_tier_ids,
+                summary_content, overview_content
+            FROM memories
+            WHERE status = 'active'
+              AND embedding IS NOT NULL
+              AND vector_dims(embedding) >= {trunc_dim}
+            ORDER BY (embedding::vector)[1:{trunc_dim}] <=> $1::vector
+            LIMIT $2
+            "#
+        );
 
-            let fetch_ids: Vec<Uuid> = ids
-                .into_iter()
-                .filter(|id| !visited.contains(id))
-                .collect();
-            if fetch_ids.is_empty() {
-                continue;
-            }
+        let rows: Vec<MemoryRow> = sqlx::query_as::<_, MemoryRow>(&sql)
+            .bind(&vec_str)
+            .bind(limit as i64)
+            .fetch_all(&self.pool)
+            .await?;
 
-            let loaded = self.get_fractal_nodes_any(&fetch_ids).await?;
-
-            for id in fetch_ids {
-                if expanded.len() >= max_total {
-                    break;
-                }
-                if visited.contains(&id) {
-                    continue;
-                }
-                visited.insert(id);
-
-                let Some(child) = loaded.get(&id) else {
-                    tracing::debug!(node_id = %id, "expand_fractal: child id missing or deleted");
-                    continue;
-                };
-
-                let sim =
-                    crate::memory::fractal_node::cosine_similarity(&child.vector, query_vector);
-
-                expanded.push(ScoredNode {
-                    id: child.id,
-                    score: sim,
-                    distribution_scores: None,
-                    debug: None,
-                    node: child.clone(),
-                });
-
-                if sim >= threshold && !child.children_tier_ids.is_empty() {
-                    stack.push((child.children_tier_ids.clone(), d.saturating_sub(1)));
-                }
-            }
-        }
-
-        Ok(())
+        Ok(rows.into_iter().map(memory_row_to_fractal_node).collect())
     }
 
     // -------------------------------------------------------------------------
@@ -2075,65 +2065,66 @@ impl StorageBackend for PostgresStore {
         max_depth: usize,
         pruning_threshold: f32,
     ) -> anyhow::Result<Vec<ScoredNode>> {
+        use crate::memory::fractal_node::{cosine_similarity, truncate_vector};
+
         if max_depth == 0 || query_vector.is_empty() {
             return Ok(nodes);
         }
 
+        let max_depth = max_depth.min(2);
+        let mut expanded: Vec<ScoredNode> = nodes.clone();
+        let mut seen: HashSet<Uuid> = nodes.iter().map(|s| s.node.id).collect();
         let max_total = nodes
             .len()
             .saturating_add(Self::PG_EXPAND_FRACTAL_MAX_EXTRA);
-        let mut expanded: Vec<ScoredNode> = Vec::with_capacity(nodes.len().saturating_mul(2));
 
-        for scored in nodes {
-            if expanded.len() >= max_total {
-                break;
-            }
-            expanded.push(scored.clone());
-
-            let node = &scored.node;
-            let mut visited: HashSet<Uuid> = HashSet::new();
-            visited.insert(node.id);
-
-            if !node.children_tier_ids.is_empty() {
-                self.expand_children_pg(
-                    &node.children_tier_ids,
-                    query_vector,
-                    max_depth.saturating_sub(1),
-                    pruning_threshold,
-                    &mut visited,
-                    &mut expanded,
-                    max_total,
-                )
-                .await?;
-            } else if let Some(pid) = node.parent_tier_id {
-                let loaded = self.get_fractal_nodes_any(&[pid]).await?;
-                if let Some(parent) = loaded.get(&pid) {
-                    visited.insert(parent.id);
-                    let parent_sim = crate::memory::fractal_node::cosine_similarity(
-                        &parent.vector,
-                        query_vector,
-                    );
-                    if parent_sim >= pruning_threshold && expanded.len() < max_total {
+        if max_depth >= 1 {
+            if let Some(coarse_256) = truncate_vector(query_vector, 256) {
+                let neighbors = self
+                    .search_by_truncated_vector(&coarse_256, 256, 10)
+                    .await?;
+                for n in neighbors {
+                    if expanded.len() >= max_total {
+                        break;
+                    }
+                    if !seen.insert(n.id) {
+                        continue;
+                    }
+                    let sim = cosine_similarity(&n.vector, query_vector);
+                    if sim >= pruning_threshold {
                         expanded.push(ScoredNode {
-                            id: parent.id,
-                            score: parent_sim,
+                            id: n.id,
+                            score: sim,
                             distribution_scores: None,
                             debug: None,
-                            node: parent.clone(),
+                            node: n,
                         });
                     }
+                }
+            }
+        }
 
-                    if !parent.children_tier_ids.is_empty() {
-                        self.expand_children_pg(
-                            &parent.children_tier_ids,
-                            query_vector,
-                            max_depth.saturating_sub(1),
-                            pruning_threshold,
-                            &mut visited,
-                            &mut expanded,
-                            max_total,
-                        )
-                        .await?;
+        if max_depth >= 2 {
+            if let Some(coarse_64) = truncate_vector(query_vector, 64) {
+                let clusters = self
+                    .search_by_truncated_vector(&coarse_64, 64, 5)
+                    .await?;
+                for c in clusters {
+                    if expanded.len() >= max_total {
+                        break;
+                    }
+                    if !seen.insert(c.id) {
+                        continue;
+                    }
+                    let sim = cosine_similarity(&c.vector, query_vector);
+                    if sim >= pruning_threshold * 0.8 {
+                        expanded.push(ScoredNode {
+                            id: c.id,
+                            score: sim,
+                            distribution_scores: None,
+                            debug: None,
+                            node: c,
+                        });
                     }
                 }
             }
@@ -2200,18 +2191,6 @@ impl StorageBackend for PostgresStore {
                 )
                 .bind(parent_id)
                 .bind(*id);
-                query.execute(&self.pool).await?;
-            }
-            UpdateOperation::SetOverviewContent(content) => {
-                let query = sqlx::query("UPDATE memories SET overview_content = $1 WHERE id = $2")
-                    .bind(content)
-                    .bind(*id);
-                query.execute(&self.pool).await?;
-            }
-            UpdateOperation::SetSummaryContent(content) => {
-                let query = sqlx::query("UPDATE memories SET summary_content = $1 WHERE id = $2")
-                    .bind(content)
-                    .bind(*id);
                 query.execute(&self.pool).await?;
             }
             UpdateOperation::SetStatus(status) => {

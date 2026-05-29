@@ -24,10 +24,9 @@ use knowwhere_server::embedding::router::EmbeddingRouter;
 use knowwhere_server::embedding::{AudioProvider, ClipProvider};
 use knowwhere_server::memory::events::InMemoryEventStore;
 use knowwhere_server::memory::{DreamMode, GovernancePolicy};
-use knowwhere_server::scheduler::{AuditScheduler, ConsolidationScheduler, SchedulerConfig};
+use knowwhere_server::scheduler::{AuditScheduler, SchedulerConfig};
 #[cfg(feature = "postgres-storage")]
 use knowwhere_server::storage::PostgresStore;
-use knowwhere_server::vlm::{VlmConfig, VlmWorker, VlmWorkerHandle};
 use lazy_limit::{init_rate_limiter, Duration, RuleConfig};
 use runtime::{init_embedding_provider, rate_limit_mode_from_env, RateLimitMode};
 
@@ -159,62 +158,25 @@ async fn run() -> anyhow::Result<()> {
     #[cfg(feature = "postgres-storage")]
     let trajectory_pool = runtime::init_trajectory_pool().await;
 
-    // -- VLM Background Worker (4-stage fallback: GPT-5-nano → GPT-4o-mini → Grok-4-fast → Ollama) --
-    #[cfg(feature = "summarizer")]
-    let vlm_worker: Option<VlmWorkerHandle>;
-    #[cfg(feature = "summarizer")]
-    let _vlm_join: Option<tokio::task::JoinHandle<()>>;
-    #[cfg(feature = "summarizer")]
-    {
-        let vlm_config = VlmConfig::from_env();
-        let (w, j) = if vlm_config.is_configured() {
-            let (h, jh) = VlmWorker::spawn(store.clone(), embedding.clone(), vlm_config);
-            tracing::info!("VLM summarization worker started (OPENAI_API_KEY, GROK_API_KEY, or OLLAMA_VLM_MODEL detected)");
-            (Some(h), Some(jh))
-        } else {
-            tracing::warn!("no OPENAI_API_KEY, GROK_API_KEY, or OLLAMA_VLM_MODEL found — VLM summarization disabled");
-            (None, None)
-        };
-        vlm_worker = w;
-        _vlm_join = j;
-    }
-    #[cfg(not(feature = "summarizer"))]
-    let vlm_worker: Option<VlmWorkerHandle> = None;
-
-    // -- Dream Mode Background Schedulers --
-    #[cfg(feature = "summarizer")]
-    let consolidation_scheduler: Option<Arc<ConsolidationScheduler>>;
-    #[cfg(not(feature = "summarizer"))]
-    let consolidation_scheduler: Option<Arc<ConsolidationScheduler>> = None;
-    
-    #[cfg(feature = "summarizer")]
+    // -- Dream Mode Audit Scheduler (quality monitoring, NOT summarization) --
+    #[cfg(feature = "postgres-storage")]
     {
         let scheduler_config = SchedulerConfig::from_env();
         if scheduler_config.is_enabled() {
-            let consolidation = ConsolidationScheduler::new(
-                store.clone(),
-                vlm_worker.clone(),
-                embedding.clone(),
-                scheduler_config.clone(),
-            );
-            let (scheduler, _) = consolidation.start_safety_net();
-            consolidation_scheduler = Some(scheduler);
-            
-            #[cfg(feature = "postgres-storage")]
             let audit = AuditScheduler::new(
                 store.clone(),
                 trajectory_pool.clone(),
                 scheduler_config.clone(),
             );
-            #[cfg(not(feature = "postgres-storage"))]
-            let audit = AuditScheduler::new(store.clone(), scheduler_config.clone());
             audit.spawn();
-            
-            tracing::info!("Dream Mode scheduler started");
+            tracing::info!("Dream Mode audit scheduler started");
         } else {
-            consolidation_scheduler = None;
             tracing::info!("Dream Mode scheduler disabled (DREAM_ENABLED=false)");
         }
+    }
+    #[cfg(not(feature = "postgres-storage"))]
+    {
+        tracing::info!("postgres-storage not enabled — audit scheduler skipped");
     }
     // Server-wide temporal_weight default from env, or None.
     // Per-query override via RetrieveFractalRequest.temporal_weight takes precedence.
@@ -249,8 +211,6 @@ async fn run() -> anyhow::Result<()> {
         trajectory_pool,
         #[cfg(feature = "postgres-storage")]
         pg_store: pg_store_for_auth.clone(),
-        vlm_worker,
-        consolidation: consolidation_scheduler,
         #[cfg(feature = "reranker")]
         reranker: knowwhere_server::retrieval::cross_encoder::load_reranker(),
         frigate_dedup: DedupCache::new(),
@@ -290,10 +250,6 @@ async fn run() -> anyhow::Result<()> {
         .route("/nodes/batch_delete", post(routes::batch_delete_nodes))
         .route("/nodes/deduplicate", post(routes::deduplicate_nodes))
         .route("/dream/status", get(routes::dream_status))
-        .route("/consolidation/force", post(routes::force_consolidation))
-        // -- VLM Summarization Worker (3-stage fallback) --
-        .route("/vlm/status", get(routes::vlm_status))
-        .route("/vlm/summarize", post(routes::vlm_enqueue))
         // -- System routes --
         .route("/events", get(routes::list_events))
         // -- Governance routes --

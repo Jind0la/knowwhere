@@ -30,14 +30,13 @@ use crate::memory::{
 use crate::memory::fact_extraction::{FactExtractionContext, FactExtractor};
 use crate::multimodal::MultimodalData;
 use crate::storage::FusionStrategy;
-use crate::vlm::{SummaryContext, VlmJob, VlmWorkerStatus};
 
 #[path = "routes/governance_events.rs"]
 mod governance_events;
 pub use governance_events::*;
-#[path = "routes/vlm_webhooks.rs"]
-mod vlm_webhooks;
-pub use vlm_webhooks::*;
+#[path = "routes/webhooks.rs"]
+mod webhook_routes;
+pub use webhook_routes::*;
 
 use crate::api::subconscious_qa::{
     is_multi_session_type, is_temporal_question, openai_qa_answer, qa_answer, qa_context_limit,
@@ -377,7 +376,7 @@ fn chunk_into_rounds(text: &str, min_round_chars: usize) -> Vec<String> {
 pub struct AppState {
     /// Primary storage backend (trait object for flexibility).
     pub store: Arc<dyn StorageBackend>,
-    /// DreamMode and consolidation scheduler need a StorageBackend.
+    /// DreamMode needs a StorageBackend.
     pub dream_store: Arc<dyn StorageBackend>,
     pub dream: DreamMode,
     pub embedding: Arc<dyn EmbeddingProvider>,
@@ -394,10 +393,6 @@ pub struct AppState {
     /// PostgresStore handle for turn-level storage, retrieval trajectories, tiered context.
     #[cfg(feature = "postgres-storage")]
     pub pg_store: Option<std::sync::Arc<crate::storage::PostgresStore>>,
-    /// VLM background worker handle for async summarization.
-    pub vlm_worker: Option<crate::vlm::VlmWorkerHandle>,
-    /// Consolidation scheduler for querying cycle_count in /dream/status.
-    pub consolidation: Option<std::sync::Arc<crate::scheduler::ConsolidationScheduler>>,
     /// Cross-encoder reranker for two-stage retrieval (feature-gated).
     #[cfg(feature = "reranker")]
     pub reranker: Option<
@@ -1406,11 +1401,6 @@ async fn store_session_json(
                 );
             }
         }
-        // Event-driven consolidation: check if there's enough work to justify a run
-        if let Some(ref sched) = state.consolidation {
-            sched.trigger_if_needed().await;
-        }
-
         return Ok((
             StatusCode::CREATED,
             Json(StoreNodeResponse {
@@ -1518,11 +1508,6 @@ async fn store_session_json(
             tracing::debug!(%primary_id, fact_count, "inline facts extracted from session content (multi-turn)");
         }
     }
-    // Event-driven consolidation
-    if let Some(ref sched) = state.consolidation {
-        sched.trigger_if_needed().await;
-    }
-
     // ── Turn-level storage (postgres-storage, multi-turn) ──
     // Store each chunk as an individual turn in conversation_turns so
     // the turn-level HNSW index is populated for fine-grained retrieval.
@@ -1658,11 +1643,6 @@ async fn store_session_binary(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     tracing::info!(%id, %content_type, payload_bytes = body.len(), "binary session node stored");
-    // Event-driven consolidation
-    if let Some(ref sched) = state.consolidation {
-        sched.trigger_if_needed().await;
-    }
-
     Ok((
         StatusCode::CREATED,
         Json(StoreNodeResponse {
@@ -1820,11 +1800,6 @@ pub async fn store_session_batch(
             message: format!("turn nodes created ({} turns)", turn_count),
             chunk_ids: Some(turn_ids),
         });
-    }
-
-    // Event-driven consolidation after batch store
-    if let Some(ref sched) = state.consolidation {
-        sched.trigger_if_needed().await;
     }
 
     Ok((
@@ -2109,11 +2084,6 @@ pub async fn store_external(
             }
         }
     }
-    // Event-driven consolidation
-    if let Some(ref sched) = state.consolidation {
-        sched.trigger_if_needed().await;
-    }
-
     Ok((
         StatusCode::CREATED,
         Json(StoreNodeResponse {
@@ -3878,93 +3848,7 @@ pub async fn repair_embeddings(
     )
 )]
 pub async fn dream_status(State(state): State<AppState>) -> Json<DreamStatus> {
-    let mut status = state.dream.status().await;
-    if let Some(ref scheduler) = state.consolidation {
-        status.cycle_count = scheduler.cycle_count();
-        scheduler.populate_dream_status(&mut status);
-    }
-    Json(status)
-}
-
-// -- Consolidation Force --
-
-/// Response for POST /consolidation/force.
-#[derive(Serialize, ToSchema)]
-pub struct ForceConsolidationResponse {
-    pub accepted: bool,
-    pub candidates_found: usize,
-    pub total_nodes: usize,
-    pub message: String,
-}
-
-/// POST /consolidation/force — trigger full re-consolidation of all pending nodes.
-///
-/// Bypasses the space-amplification ratio and timer safety-net. Processes ALL
-/// eligible candidates (no cap). The consolidation runs in a background task;
-/// this endpoint returns immediately with 202 Accepted.
-///
-/// Use GET /dream/status to monitor progress via `cycle_count`.
-#[utoipa::path(
-    post,
-    path = "/consolidation/force",
-    tag = "system",
-    responses(
-        (status = 202, description = "Consolidation started in background", body = ForceConsolidationResponse),
-        (status = 200, description = "No pending candidates", body = ForceConsolidationResponse),
-        (status = 503, description = "Consolidation scheduler not available", body = String)
-    )
-)]
-pub async fn force_consolidation(
-    State(state): State<AppState>,
-) -> Result<(StatusCode, Json<ForceConsolidationResponse>), (StatusCode, String)> {
-    let scheduler = match &state.consolidation {
-        Some(s) => s.clone(),
-        None => {
-            return Err((
-                StatusCode::SERVICE_UNAVAILABLE,
-                "consolidation scheduler not available (DREAM_ENABLED=false?)".into(),
-            ));
-        }
-    };
-
-    let (candidates, total) = scheduler.pending_count().await;
-
-    if candidates == 0 {
-        return Ok((
-            StatusCode::OK,
-            Json(ForceConsolidationResponse {
-                accepted: false,
-                candidates_found: 0,
-                total_nodes: total,
-                message: "no pending consolidation candidates".into(),
-            }),
-        ));
-    }
-
-    // Spawn consolidation in background — the HTTP response returns immediately
-    tokio::spawn(async move {
-        let (enqueued, failed, elapsed_ms) = scheduler.force_run().await;
-        tracing::info!(
-            enqueued,
-            failed,
-            elapsed_ms,
-            "force_consolidation: background task complete"
-        );
-    });
-
-    Ok((
-        StatusCode::ACCEPTED,
-        Json(ForceConsolidationResponse {
-            accepted: true,
-            candidates_found: candidates,
-            total_nodes: total,
-            message: format!(
-                "consolidation started — {} candidates out of {} total nodes. \
-                 Monitor via GET /dream/status",
-                candidates, total
-            ),
-        }),
-    ))
+    Json(state.dream.status().await)
 }
 
 // -- Retrieval Trajectory Endpoints (postgres-storage feature) --
@@ -4184,68 +4068,19 @@ pub struct CompactMemoryResponse {
         ("id" = Uuid, Path, description = "Memory UUID to compact")
     ),
     responses(
-        (status = 200, description = "Memory compacted", body = CompactMemoryResponse),
-        (status = 404, description = "Memory not found", body = String),
-        (status = 500, description = "Internal error", body = String)
+        (status = 410, description = "Compaction disabled", body = String)
     )
 )]
 pub async fn compact_memory(
-    State(state): State<AppState>,
-    Path(id): Path<Uuid>,
-    axum::extract::Query(q): axum::extract::Query<CompactMemoryQuery>,
+    State(_state): State<AppState>,
+    Path(_id): Path<Uuid>,
+    axum::extract::Query(_q): axum::extract::Query<CompactMemoryQuery>,
 ) -> Result<Json<CompactMemoryResponse>, (StatusCode, String)> {
-    use crate::memory::{ContextTier, TieredCompactionWorker};
-
-    let pool = match &state.trajectory_pool {
-        Some(p) => p.clone(),
-        None => {
-            return Err((
-                StatusCode::SERVICE_UNAVAILABLE,
-                "postgres-storage not configured".into(),
-            ))
-        }
-    };
-
-    let target_tier = q.tier.as_ref().and_then(|s| ContextTier::parse(s));
-
-    let worker = TieredCompactionWorker::new(
-        (*pool).clone(),
-        state.embedding.clone(),
-        state.vlm_worker.clone(),
-    );
-    match worker.compact_memory(id, target_tier).await {
-        Ok(new_id) => {
-            let tier_str = if new_id == id {
-                id.to_string() // no new tier created
-            } else {
-                target_tier
-                    .map(|t| t.to_string())
-                    .unwrap_or_else(|| "next".to_string())
-            };
-            Ok(Json(CompactMemoryResponse {
-                id: new_id,
-                tier: tier_str,
-                message: if new_id == id {
-                    "memory already at target tier".to_string()
-                } else {
-                    format!(
-                        "compacted to {}",
-                        target_tier
-                            .map(|t| t.to_string())
-                            .unwrap_or_else(|| "next tier".to_string())
-                    )
-                },
-            }))
-        }
-        Err(e) => {
-            let msg = e.to_string();
-            if msg.contains("not found") {
-                Err((StatusCode::NOT_FOUND, msg))
-            } else {
-                Err((StatusCode::INTERNAL_SERVER_ERROR, msg))
-            }
-        }
-    }
+    Err((
+        StatusCode::GONE,
+        "Compaction disabled — LLM summarizer removed. Use Matryoshka embedding tiers for retrieval."
+            .to_string(),
+    ))
 }
 
 /// GET /memories/{id} — retrieve a memory node with optional tier loading.

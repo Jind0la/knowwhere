@@ -65,8 +65,6 @@ fn test_state_with_embedding(embedding: Arc<dyn EmbeddingProvider>) -> routes::A
         events: InMemoryEventStore::new(),
         #[cfg(feature = "postgres-storage")]
         trajectory_pool: None,
-        vlm_worker: None,
-        consolidation: None,
         frigate_dedup: DedupCache::new(),
         frigate_webhook_secret: std::env::var("FRIGATE_WEBHOOK_SECRET").ok(),
         homeassistant_dedup: DedupCache::new(),
@@ -852,13 +850,13 @@ async fn retrieve_fractal_current_state_intent_prefers_current_context() {
 }
 
 #[tokio::test]
-async fn memory_store_expand_fractal_includes_sibling_via_parent_bridge() {
+async fn memory_store_expand_fractal_finds_matryoshka_neighbors() {
     use knowwhere_server::memory::fractal_node::FractalNode;
     use knowwhere_server::memory::types::{MemorySource, MemoryType};
     use knowwhere_server::storage::{MemoryStore, ScoredNode, StorageBackend};
 
     let store = MemoryStore::new();
-    let dim = 8usize;
+    let dim = 768usize;
     let v = |a: f32, b: f32| -> Vec<f32> {
         let mut x = vec![0.0f32; dim];
         x[0] = a;
@@ -866,64 +864,66 @@ async fn memory_store_expand_fractal_includes_sibling_via_parent_bridge() {
         x
     };
 
-    let pid = uuid::Uuid::new_v4();
-    let c1 = uuid::Uuid::new_v4();
-    let c2 = uuid::Uuid::new_v4();
+    let seed_id = uuid::Uuid::new_v4();
+    let neighbor_id = uuid::Uuid::new_v4();
 
-    let mut parent = FractalNode::new_typed(
-        Some("parent raw".into()),
+    let mut seed = FractalNode::new_typed(
+        Some("seed".into()),
         None,
         v(1.0, 0.0),
         Default::default(),
-        MemoryType::Episodic,
+        MemoryType::Semantic,
         MemorySource::Conversation,
     );
-    parent.id = pid;
-    parent.children_tier_ids = vec![c1, c2];
+    seed.id = seed_id;
 
-    let mut child1 = FractalNode::new_typed(
-        Some("child1 summary".into()),
+    let mut neighbor = FractalNode::new_typed(
+        Some("cluster neighbor".into()),
         None,
         v(0.98, 0.01),
         Default::default(),
         MemoryType::Semantic,
         MemorySource::Conversation,
     );
-    child1.id = c1;
-    child1.parent_tier_id = Some(pid);
+    neighbor.id = neighbor_id;
 
-    let mut child2 = FractalNode::new_typed(
-        Some("child2 summary".into()),
+    let distant = FractalNode::new_typed(
+        Some("orthogonal".into()),
         None,
-        v(0.96, 0.02),
+        v(0.0, 1.0),
         Default::default(),
         MemoryType::Semantic,
         MemorySource::Conversation,
     );
-    child2.id = c2;
-    child2.parent_tier_id = Some(pid);
 
-    store.insert(parent).await.unwrap();
-    store.insert(child1.clone()).await.unwrap();
-    store.insert(child2.clone()).await.unwrap();
-
-    let seed = ScoredNode {
-        id: c1,
-        score: 0.9,
-        distribution_scores: None,
-        debug: None,
-        node: child1,
-    };
+    store.insert(seed.clone()).await.unwrap();
+    store.insert(neighbor.clone()).await.unwrap();
+    store.insert(distant).await.unwrap();
 
     let qv = v(1.0, 0.0);
     let expanded = store
-        .expand_fractal(vec![seed], &qv, 3, 0.05)
+        .expand_fractal(
+            vec![ScoredNode {
+                id: seed_id,
+                score: 0.9,
+                distribution_scores: None,
+                debug: None,
+                node: seed,
+            }],
+            &qv,
+            1,
+            0.5,
+        )
         .await
         .unwrap();
 
     let ids: std::collections::HashSet<_> = expanded.iter().map(|s| s.id).collect();
-    assert!(ids.contains(&pid), "parent missing: {:?}", ids);
-    assert!(ids.contains(&c2), "sibling missing: {:?}", ids);
+    assert!(ids.contains(&seed_id), "seed missing: {:?}", ids);
+    assert!(
+        ids.contains(&neighbor_id),
+        "matryoshka neighbor missing: {:?}",
+        ids
+    );
 }
 
 #[tokio::test]
@@ -1532,7 +1532,7 @@ async fn postgres_store_hybrid_retrieve_bm25_only() {
 
 #[tokio::test]
 #[cfg(feature = "postgres-storage")]
-async fn postgres_store_expand_fractal_loads_parent_and_sibling() {
+async fn postgres_store_expand_fractal_finds_matryoshka_neighbors() {
     use knowwhere_server::memory::fractal_node::FractalNode;
     use knowwhere_server::memory::types::{MemorySource, MemoryType};
     use knowwhere_server::storage::postgres_store::PostgresStore;
@@ -1546,76 +1546,77 @@ async fn postgres_store_expand_fractal_loads_parent_and_sibling() {
         .expect("failed to connect to PostgreSQL");
 
     let dim = 768usize;
-    let v = |a: f32| -> Vec<f32> {
+    let v = |a: f32, b: f32| -> Vec<f32> {
         let mut x = vec![0.0f32; dim];
         x[0] = a;
+        x[1] = b;
         x
     };
 
-    let mut parent = FractalNode::new_typed(
-        Some("pg fractal parent".into()),
+    let seed = FractalNode::new_typed(
+        Some("pg matryoshka seed".into()),
         None,
-        v(1.0),
-        Default::default(),
-        MemoryType::Episodic,
-        MemorySource::Conversation,
-    );
-    parent.children_tier_ids = vec![];
-
-    let pid = store.insert(parent).await.expect("insert parent");
-
-    let mut child1 = FractalNode::new_typed(
-        Some("pg fractal child1".into()),
-        None,
-        v(0.99),
+        v(1.0, 0.0),
         Default::default(),
         MemoryType::Semantic,
         MemorySource::Conversation,
     );
-    child1.parent_tier_id = Some(pid);
+    let seed_id = store.insert(seed.clone()).await.expect("insert seed");
 
-    let mut child2 = FractalNode::new_typed(
-        Some("pg fractal child2".into()),
+    let neighbor = FractalNode::new_typed(
+        Some("pg matryoshka neighbor".into()),
         None,
-        v(0.97),
+        v(0.98, 0.01),
         Default::default(),
         MemoryType::Semantic,
         MemorySource::Conversation,
     );
-    child2.parent_tier_id = Some(pid);
+    let neighbor_id = store.insert(neighbor).await.expect("insert neighbor");
 
-    let c1 = store.insert(child1).await.expect("insert c1");
-    let c2 = store.insert(child2).await.expect("insert c2");
-    store
-        .update(&pid, knowwhere_server::storage::UpdateOperation::AddChildTierId(c1))
-        .await
-        .expect("attach c1");
-    store
-        .update(&pid, knowwhere_server::storage::UpdateOperation::AddChildTierId(c2))
-        .await
-        .expect("attach c2");
+    let distant = FractalNode::new_typed(
+        Some("pg matryoshka distant".into()),
+        None,
+        v(0.0, 1.0),
+        Default::default(),
+        MemoryType::Semantic,
+        MemorySource::Conversation,
+    );
+    let distant_id = store.insert(distant).await.expect("insert distant");
 
-    let qv = v(1.0);
-    let child1_loaded = store.get(&c1).await.expect("load c1").expect("c1 exists");
-    let seed = ScoredNode {
-        id: c1,
-        score: 0.9,
-        debug: None,
-        node: child1_loaded,
-    };
+    let seed_loaded = store
+        .get(&seed_id)
+        .await
+        .expect("load seed")
+        .expect("seed exists");
+    let qv = v(1.0, 0.0);
 
     let expanded = store
-        .expand_fractal(vec![seed], &qv, 4, 0.05)
+        .expand_fractal(
+            vec![ScoredNode {
+                id: seed_id,
+                score: 0.9,
+                distribution_scores: None,
+                debug: None,
+                node: seed_loaded,
+            }],
+            &qv,
+            1,
+            0.5,
+        )
         .await
         .expect("expand_fractal");
 
     let ids: std::collections::HashSet<_> = expanded.iter().map(|s| s.id).collect();
-    assert!(ids.contains(&pid), "parent missing: {:?}", ids);
-    assert!(ids.contains(&c2), "sibling missing: {:?}", ids);
+    assert!(ids.contains(&seed_id), "seed missing: {:?}", ids);
+    assert!(
+        ids.contains(&neighbor_id),
+        "matryoshka neighbor missing: {:?}",
+        ids
+    );
 
-    store.delete(pid).await.ok();
-    store.delete(c1).await.ok();
-    store.delete(c2).await.ok();
+    store.delete(seed_id).await.ok();
+    store.delete(neighbor_id).await.ok();
+    store.delete(distant_id).await.ok();
 }
 
 #[tokio::test]
