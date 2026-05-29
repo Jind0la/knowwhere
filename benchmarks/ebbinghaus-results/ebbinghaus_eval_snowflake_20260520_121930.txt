@@ -1,0 +1,26 @@
+Loading dataset: benchmarks/data/longmemeval_s_cleaned.json
+  Stratified filter: 42/500 cases selected
+    single-session-user: 6 cases
+    single-session-assistant: 4 cases
+    single-session-preference: 4 cases
+    multi-session: 10 cases
+    temporal-reasoning: 10 cases
+    knowledge-update: 8 cases
+  Loaded 42 cases
+  Types: {'single-session-user': 5, 'multi-session': 8, 'single-session-preference': 4, 'temporal-reasoning': 9, 'knowledge-update': 7, 'single-session-assistant': 4}
+  Abstention: 5
+  Turn labels: YES (42 cases)
+
+KnowWhere API: http://127.0.0.1:3737
+Mode: multi
+Top-K (old): 20
+
+  ── PHASE 1: Indexing all sessions ──
+    Indexed 10/37 cases (4580 total nodes)
+    Indexed 20/37 cases (9250 total nodes)
+    FAIL indexing case=2698e78f: 
+    Indexed 30/37 cases (13477 total nodes)
+    Indexed 37/37 cases (16695 total nodes)
+    Indexed 16695 nodes total
+
+  ── PHASE 2: Querying all cases ──

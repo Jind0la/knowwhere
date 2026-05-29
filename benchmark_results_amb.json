@@ -1,11 +1,11 @@
 {
   "benchmark": "KnowWhere AMB-Standard v0.5",
-  "methodology": "Same judge prompt as AMB (agentmemorybenchmark.ai), OpenAI gpt-4.1-nano judge",
-  "timestamp": "2026-05-06T10:30:51Z",
-  "accuracy": 0.25,
+  "methodology": "Same judge prompt as AMB (agentmemorybenchmark.ai), DeepSeek-chat judge",
+  "timestamp": "2026-05-29T11:24:46Z",
+  "accuracy": 0.0,
   "total": 12,
-  "correct": 3,
-  "retrieve_p50_ms": 9583.9,
-  "retrieve_p95_ms": 20034.9,
+  "correct": 0,
+  "retrieve_p50_ms": 454.9,
+  "retrieve_p95_ms": 742.5,
   "comparison": "AMB leaderboard: agentmemorybenchmark.ai"
 }

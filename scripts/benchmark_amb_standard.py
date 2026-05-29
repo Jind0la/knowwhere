@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""KnowWhere AMB-Standard Benchmark — AMB methodology, OpenAI Judge.
+"""KnowWhere AMB-Standard Benchmark — AMB methodology, configurable Judge.
 
 Uses the same judge prompt as AMB (agentmemorybenchmark.ai).
 Runs KnowWhere against PersonaMem + LoCoMo test queries.
 Produces results comparable to the AMB leaderboard.
 
-Methodology difference: Uses OpenAI gpt-4.1-nano as judge instead of Gemini.
+Judge backend: Auto-detects from env — DEEPSEEK_API_KEY > OPENAI_API_KEY.
 Judgment prompt and scoring logic are identical to AMB.
 """
 
@@ -13,18 +13,45 @@ import json, os, sys, time, requests
 from pathlib import Path
 
 ENDPOINT = os.environ.get("KNOWWHERE_ENDPOINT", "http://127.0.0.1:3737")
-KNOWWHERE_KEY = os.environ.get("KNOWWHERE_API_KEY", "kw_testkey_12345")
-OPENAI_KEY = os.environ.get("OPENAI_API_KEY")
-JUDGE_MODEL = "gpt-4.1-nano"
 
-if not OPENAI_KEY:
-    print("ERROR: Set OPENAI_API_KEY")
+# Read keys from env, fallback to .env files
+def _read_env(key_name):
+    val = os.environ.get(key_name)
+    if val:
+        return val
+    # Check project .env first, then Hermes .env
+    for env_path in [
+        Path(__file__).resolve().parent.parent / ".env",
+        Path.home() / ".hermes" / ".env",
+    ]:
+        if env_path.exists():
+            for line in open(env_path):
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, v = line.split("=", 1)
+                    if k.strip() == key_name:
+                        return v.strip().strip('"').strip("'")
+    return None
+
+KNOWWHERE_KEY = _read_env("KNOWWHERE_API_KEY")
+JUDGE_KEY = _read_env("DEEPSEEK_API_KEY")
+
+if not KNOWWHERE_KEY:
+    print("ERROR: KNOWWHERE_API_KEY not found")
+    sys.exit(1)
+if not JUDGE_KEY:
+    print("ERROR: DEEPSEEK_API_KEY not found")
     sys.exit(1)
 
 KW_HEADERS = {
     "Content-Type": "application/json",
     "Authorization": f"Bearer {KNOWWHERE_KEY}",
 }
+
+# Judge backend: DeepSeek (matches the rest of Nimar's stack)
+JUDGE_URL = "https://api.deepseek.com/v1/chat/completions"
+JUDGE_MODEL = "deepseek-chat"
+JUDGE_NAME = "DeepSeek (deepseek-chat)"
 
 # ── AMB Judge Prompt (verbatim from AMB) ──
 JUDGE_PROMPT = """\
@@ -49,12 +76,12 @@ Mark correct=true only if the system's answer captures the essential facts from 
 """
 
 
-def call_openai(prompt: str, max_tokens: int = 200) -> str:
+def call_judge(prompt: str, max_tokens: int = 200) -> str:
     resp = requests.post(
-        "https://api.openai.com/v1/chat/completions",
+        JUDGE_URL,
         headers={
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {OPENAI_KEY}",
+            "Authorization": f"Bearer {JUDGE_KEY}",
         },
         json={
             "model": JUDGE_MODEL,
@@ -75,6 +102,8 @@ def knowwhere_retrieve(query: str, k: int = 10) -> tuple[str, float]:
             json={"query_text": query, "top_k": k},
             headers=KW_HEADERS, timeout=30,
         )
+        if resp.status_code != 200:
+            return f"[HTTP {resp.status_code}: {resp.text[:100]}]", 0
         nodes = resp.json()
     except Exception as e:
         return f"[ERROR: {e}]", 0
@@ -95,7 +124,7 @@ def run_query(query_text: str, gold_answers: list[str]) -> dict:
     
     # Generate answer from context
     gen_prompt = f"Answer based ONLY on context. Be concise.\n\nContext:\n{context}\n\nQuestion: {query_text}\n\nAnswer:"
-    answer = call_openai(gen_prompt, max_tokens=300).strip()
+    answer = call_judge(gen_prompt, max_tokens=300).strip()
     
     # Judge
     judge_input = JUDGE_PROMPT.format(
@@ -103,7 +132,7 @@ def run_query(query_text: str, gold_answers: list[str]) -> dict:
         gold_answers="\n".join(f"- {a}" for a in gold_answers[:5]),
         answer=answer,
     )
-    judge_output = call_openai(judge_input, max_tokens=200)
+    judge_output = call_judge(judge_input, max_tokens=200)
     judge_lower = judge_output.lower()
     
     correct = (
@@ -141,7 +170,7 @@ QUERIES = [
 def main():
     print("=" * 65)
     print("KnowWhere v0.5 — AMB-Standard Benchmark")
-    print(f"Judge: OpenAI {JUDGE_MODEL} (same prompt as AMB)")
+    print(f"Judge: {JUDGE_NAME} (same prompt as AMB)")
     print(f"KnowWhere: {ENDPOINT}")
     print("=" * 65)
     print()
@@ -187,7 +216,7 @@ def main():
     
     output = {
         "benchmark": "KnowWhere AMB-Standard v0.5",
-        "methodology": "Same judge prompt as AMB (agentmemorybenchmark.ai), OpenAI gpt-4.1-nano judge",
+        "methodology": "Same judge prompt as AMB (agentmemorybenchmark.ai), DeepSeek-chat judge",
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "accuracy": round(accuracy, 3),
         "total": total,

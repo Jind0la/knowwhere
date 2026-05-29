@@ -1748,6 +1748,7 @@ pub async fn store_session_batch(
         let mut turn_ids: Vec<Uuid> = Vec::with_capacity(turn_count);
         for turn_idx in turn_start..turn_end {
             let vector = vectors[turn_idx].clone();
+            let pg_vector = vector.clone(); // Clone for PostgreSQL turn storage
             let work = &all_turns[turn_idx];
             let local_idx = turn_idx - turn_start;
             let (speaker, _) = parse_speaker_role_from_chunk(&work.original)
@@ -1789,6 +1790,28 @@ pub async fn store_session_batch(
                 .await
                 .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
             turn_ids.push(id);
+
+            // ── Turn-level PostgreSQL storage ──
+            // Store each turn in conversation_turns so session_id-filtered
+            // retrieval works via retrieve_turns_internal.
+            #[cfg(feature = "postgres-storage")]
+            if let (Some(pg), Some(ref sid)) = (state.pg_store.as_ref(), session.session_id.as_ref()) {
+                let emb_type = state.embedding.name().to_string();
+                let emb_dim = state.embedding.dimension() as i32;
+                let turn_meta = Some(serde_json::to_value(&session.metadata).unwrap_or_default());
+                if let Err(e) = pg.store_turn(
+                    sid,
+                    local_idx as i32,
+                    speaker,
+                    &work.cleaned,
+                    pg_vector,
+                    turn_meta,
+                    &emb_type,
+                    emb_dim,
+                ).await {
+                    tracing::warn!(%sid, turn = local_idx, "turn storage in pg failed (non-fatal): {e}");
+                }
+            }
         }
 
         let primary_id = turn_ids[0]; // Return first turn as primary
@@ -2689,7 +2712,9 @@ pub async fn retrieve_fractal(
     // ── Turn-level retrieval (postgres-storage) ──
     // Primary retrieval path against the turn-level embedding index.
     // When session_id is provided, results are scoped to that conversation.
-    // This replaces the old WP2 session-level filtering in hybrid_retrieve.
+    // Turn results are collected separately so they can REPLACE hybrid_retrieve
+    // results when session_id filtering is active.
+    let mut _turn_results: Vec<crate::storage::ScoredNode> = Vec::new();
     #[cfg(feature = "postgres-storage")]
     if let Some(pg) = state.pg_store.as_ref() {
         if let Some(ref query_text) = req.query_text {
@@ -2710,6 +2735,7 @@ pub async fn retrieve_fractal(
                         if !turn_rows.is_empty() {
                             tracing::info!(
                                 turn_count = turn_rows.len(),
+                                has_session_filter = req.session_id.is_some(),
                                 "turn-level retrieval from conversation_turns index"
                             );
                             for row in turn_rows {
@@ -2748,7 +2774,7 @@ pub async fn retrieve_fractal(
                                     MemorySource::Conversation,
                                 );
 
-                                results.push(crate::storage::ScoredNode {
+                                turn_results.push(crate::storage::ScoredNode {
                                     id: row.turn_id,
                                     score: row.similarity,
                                     distribution_scores: None,
@@ -2764,6 +2790,24 @@ pub async fn retrieve_fractal(
                 }
             }
         }
+    }
+
+    // Post-hoc session_id filter: filter hybrid_retrieve results by metadata.session_id.
+    // No PostgreSQL dependency — uses the metadata that's populated during ingest.
+    if let Some(ref sid) = req.session_id {
+        let before = results.len();
+        results.retain(|sn| {
+            sn.node.metadata
+                .get("session_id")
+                .and_then(|v| v.as_str())
+                .is_some_and(|s| s == sid.as_str())
+        });
+        tracing::info!(
+            before = before,
+            after = results.len(),
+            session_id = %sid,
+            "post-hoc session_id filter applied"
+        );
     }
 
     // Stage 1.5: Expand flat results via fractal zoom (children_tier_ids).

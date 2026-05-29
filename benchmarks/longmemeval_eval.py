@@ -41,6 +41,21 @@ if _here not in sys.path:
 
 import aiohttp
 
+
+def _read_env(key_name, env_file):
+    """Read key from env file as fallback. Also checks ~/.hermes/.env."""
+    paths = [env_file, Path.home() / ".hermes" / ".env"]
+    for p in paths:
+        if p.exists():
+            for line in open(p):
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, v = line.split("=", 1)
+                    if k.strip() == key_name:
+                        return v.strip().strip('"').strip("'")
+    return ""
+
+
 from longmemeval_reporting import (
     K_VALUES,
     QUESTION_TYPES,
@@ -657,7 +672,7 @@ def parse_args():
     )
     p.add_argument(
         "--api-key",
-        default=os.environ.get("KNOWWHERE_API_KEY", ""),
+        default=os.environ.get("KNOWWHERE_API_KEY") or _read_env("KNOWWHERE_API_KEY", Path(__file__).resolve().parent.parent / ".env"),
         help="KnowWhere API key",
     )
     p.add_argument(

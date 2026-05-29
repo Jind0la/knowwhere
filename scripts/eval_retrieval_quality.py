@@ -21,6 +21,7 @@ from typing import List, Dict, Any
 from collections import defaultdict
 
 SERVER_URL = "http://localhost:3738"
+
 API_KEY = "kw_bench_key_12345"
 HEADERS = {
     "Content-Type": "application/json",

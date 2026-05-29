@@ -50,7 +50,7 @@ tokenizers = { version = "0.21", optional = true }
 ndarray = { version = "0.17", optional = true }
 
 [features]
-default = []
+default = ["reranker"]
 # Enable PostgreSQL-backed storage layer (requires DATABASE_URL env var at runtime)
 postgres-storage = []
 
