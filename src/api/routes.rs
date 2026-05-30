@@ -1331,6 +1331,9 @@ async fn store_session_json(
         metadata.insert("is_turn".to_string(), Value::Bool(true));
         if let Some(ref sid) = req.session_id {
             metadata.insert("session_id".to_string(), Value::String(sid.clone()));
+        } else if let Some(Value::String(sid)) = metadata.get("session_id").cloned() {
+            // Fallback: session_id passed inside metadata object (benchmark scripts)
+            metadata.insert("session_id".to_string(), Value::String(sid));
         }
         if let Some(ti) = req.turn_index {
             metadata.insert("turn_index".to_string(), Value::Number(ti.into()));
@@ -1457,6 +1460,8 @@ async fn store_session_json(
         );
         if let Some(ref sid) = req.session_id {
             metadata.insert("session_id".to_string(), Value::String(sid.clone()));
+        } else if let Some(Value::String(sid)) = metadata.get("session_id").cloned() {
+            metadata.insert("session_id".to_string(), Value::String(sid));
         }
         normalize_node_metadata(memory_type, source, &mut metadata);
 
@@ -1748,7 +1753,6 @@ pub async fn store_session_batch(
         let mut turn_ids: Vec<Uuid> = Vec::with_capacity(turn_count);
         for turn_idx in turn_start..turn_end {
             let vector = vectors[turn_idx].clone();
-            let pg_vector = vector.clone(); // Clone for PostgreSQL turn storage
             let work = &all_turns[turn_idx];
             let local_idx = turn_idx - turn_start;
             let (speaker, _) = parse_speaker_role_from_chunk(&work.original)
@@ -1804,7 +1808,7 @@ pub async fn store_session_batch(
                     local_idx as i32,
                     speaker,
                     &work.cleaned,
-                    pg_vector,
+                    vector,
                     turn_meta,
                     &emb_type,
                     emb_dim,
