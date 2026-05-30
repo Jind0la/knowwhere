@@ -468,10 +468,35 @@ pub fn load_reranker() -> Option<std::sync::Arc<std::sync::Mutex<CrossEncoderRer
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|_| default_dir.join("tokenizer.json"));
 
-    let model_format = std::env::var("KNOWWHERE_RERANKER_MODEL_FORMAT")
+    let model_format = match std::env::var("KNOWWHERE_RERANKER_MODEL_FORMAT")
         .ok()
         .and_then(|s| RerankerModel::from_str(&s))
-        .unwrap_or(RerankerModel::Bge); // default to BGE for backward compat
+        .or_else(|| {
+            // Auto-detect from model path to avoid format mismatch hangs.
+            let path_str = model_path.to_string_lossy().to_lowercase();
+            if path_str.contains("gte") || path_str.contains("modernbert") {
+                tracing::info!("auto-detected reranker format: gte-modernbert from model path");
+                Some(RerankerModel::GteModernbert)
+            } else if path_str.contains("minilm") {
+                tracing::info!("auto-detected reranker format: minilm from model path");
+                Some(RerankerModel::MiniLM)
+            } else if path_str.contains("bge") {
+                Some(RerankerModel::Bge)
+            } else {
+                None
+            }
+        }) {
+        Some(fmt) => fmt,
+        None => {
+            tracing::warn!(
+                "KNOWWHERE_RERANKER_MODEL_FORMAT not set and could not auto-detect from path '{}'. \
+                 Set KNOWWHERE_RERANKER_MODEL_FORMAT to one of: bge, gte, minilm. \
+                 Retrieval will use Bi-Encoder only.",
+                model_path.display()
+            );
+            return None;
+        }
+    };
 
     let max_length: Option<usize> = std::env::var("KNOWWHERE_RERANKER_MAX_LENGTH")
         .ok()

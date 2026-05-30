@@ -19,7 +19,10 @@ use crate::storage::backend::EmbeddingRepairReport;
 use crate::storage::{FusionStrategy, HybridQuery, ScoredNode, StorageBackend, UpdateOperation};
 
 const USEARCH_THRESHOLD: usize = 50;
-const SAVE_DEBOUNCE_SECS: u64 = 5;
+const SAVE_DEBOUNCE_SECS: u64 = 60;
+/// Only write binary indexes every Nth state save — they're large (USearch 100-900MB)
+/// and rarely change structure. State (JSON) is written on every debounced save.
+const BINARY_SAVE_EVERY_N: u64 = 10;
 
 fn node_dimension(node: &FractalNode) -> Option<usize> {
     (!node.vector.is_empty()).then_some(node.vector.len())
@@ -196,6 +199,7 @@ pub struct MemoryStore {
     next_key: Arc<AtomicU64>,
     data_dir: Option<PathBuf>,
     last_save: Arc<Mutex<Instant>>,
+    save_count: Arc<AtomicU64>,
     bm25_corpus: Arc<RwLock<Vec<(Uuid, String)>>>,
     bm25_cache: Arc<Mutex<Option<CachedBm25>>>,
     bm25_dirty: Arc<Mutex<bool>>,
@@ -510,6 +514,7 @@ impl MemoryStore {
             next_key: Arc::new(AtomicU64::new(1)),
             data_dir: None,
             last_save: Arc::new(Mutex::new(Instant::now())),
+            save_count: Arc::new(AtomicU64::new(0)),
             bm25_corpus: Arc::new(RwLock::new(Vec::new())),
             bm25_cache: Arc::new(Mutex::new(None)),
             bm25_dirty: Arc::new(Mutex::new(true)),
@@ -537,6 +542,7 @@ impl MemoryStore {
             next_key: Arc::new(AtomicU64::new(1)),
             data_dir: Some(dir.clone()),
             last_save: Arc::new(Mutex::new(Instant::now())),
+            save_count: Arc::new(AtomicU64::new(0)),
             bm25_corpus: Arc::new(RwLock::new(Vec::new())),
             bm25_cache: Arc::new(Mutex::new(None)),
             bm25_dirty: Arc::new(Mutex::new(true)),
@@ -793,16 +799,39 @@ impl MemoryStore {
         serde_json::to_writer(writer, &state)?;
         std::fs::rename(&tmp_path, &final_path)?;
 
-        // Save binary USearch indices for fast startup
-        save_index_binary(&self.usearch_index, &index_binary_path(dir, "usearch.bin"))?;
-        save_index_binary(&self.coarse_index, &index_binary_path(dir, "usearch_coarse.bin"))?;
-        save_index_binary(&self.ultra_coarse_index, &index_binary_path(dir, "usearch_ultra.bin"))?;
+        // Save binary USearch indices — expensive (100-900MB each), only every Nth save.
+        // Rapid inserts (benchmarks, batch loads) would otherwise trigger macOS
+        // disk-write limits (52+ MB/s) and kernel kills (see Bug #5 crash report).
+        let count = self.save_count.fetch_add(1, AtomicOrdering::Relaxed) + 1;
+        if count % BINARY_SAVE_EVERY_N == 0 {
+            save_index_binary(&self.usearch_index, &index_binary_path(dir, "usearch.bin"))?;
+            save_index_binary(&self.coarse_index, &index_binary_path(dir, "usearch_coarse.bin"))?;
+            save_index_binary(&self.ultra_coarse_index, &index_binary_path(dir, "usearch_ultra.bin"))?;
 
-        // Write version marker for format detection on load
-        let ver_path = version_file_path(dir);
-        std::fs::write(&ver_path, BINARY_INDEX_VERSION)?;
+            // Write version marker for format detection on load
+            let ver_path = version_file_path(dir);
+            std::fs::write(&ver_path, BINARY_INDEX_VERSION)?;
+        }
 
         Ok(())
+    }
+
+    /// Force-save binary USearch indices. Call on graceful shutdown.
+    pub fn save_binaries_sync(&self) {
+        let dir = match &self.data_dir {
+            Some(d) => d,
+            None => return,
+        };
+        let dir = dir.clone();
+        if let Err(e) = (|| -> Result<()> {
+            save_index_binary(&self.usearch_index, &index_binary_path(&dir, "usearch.bin"))?;
+            save_index_binary(&self.coarse_index, &index_binary_path(&dir, "usearch_coarse.bin"))?;
+            save_index_binary(&self.ultra_coarse_index, &index_binary_path(&dir, "usearch_ultra.bin"))?;
+            std::fs::write(version_file_path(&dir), BINARY_INDEX_VERSION)?;
+            Ok(())
+        })() {
+            tracing::warn!("shutdown: failed to save binary indexes: {e}");
+        }
     }
 
     async fn maybe_save(&self) {
