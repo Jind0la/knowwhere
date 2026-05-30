@@ -1,0 +1,747 @@
+{
+  "benchmark": "KnowWhere Session-ID Match \u2014 100 cases \u2014 GTE + filter",
+  "reranker": "gte-reranker-modernbert-base",
+  "recall_at_5_all": 30.0,
+  "recall_at_5_eval": 37.0,
+  "hits": 30,
+  "total": 100,
+  "empty": 19,
+  "evaluable": 81,
+  "hindsight_30_baseline": 94.6,
+  "previous_30_gte_filter": 96.7,
+  "query_time_s": 25,
+  "misses": [
+    {
+      "qid": "e47becba",
+      "query": "What degree did I graduate with?",
+      "user_id": "e47becba",
+      "gold": "e47becba_answer_280352e9",
+      "retrieved": [
+        "29f2956b_abs_503b2761",
+        "86f00804_35c5419d_abs_3"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "118b2229",
+      "query": "How long is my daily commute to work?",
+      "user_id": "118b2229",
+      "gold": "118b2229_answer_40a90d51",
+      "retrieved": [
+        "2ce6a0f2_4925a1aa",
+        "7024f17c_20b1b65f_1",
+        "3f1e9474_954d4451_2"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "1e043500",
+      "query": "What is the name of the playlist I created on Spotify?",
+      "user_id": "1e043500",
+      "gold": "1e043500_answer_3e012175",
+      "retrieved": [
+        "2318644b_e491f2d4_2",
+        "29f2956b_90f7041a_3",
+        "51a45a95_98c198fb"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "c5e8278d",
+      "query": "What was my last name before I changed it?",
+      "user_id": "c5e8278d",
+      "gold": "c5e8278d_answer_f6168136",
+      "retrieved": [
+        "N/A",
+        "51a45a95_4679a05c",
+        "76d63226_1b0d77b0"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "6ade9755",
+      "query": "Where do I take yoga classes?",
+      "user_id": "6ade9755",
+      "gold": "6ade9755_answer_9398da02",
+      "retrieved": [
+        "0862e8bf_abs_89a9f6f5",
+        "4100d0a0_665c09b1_1",
+        "7024f17c_answer_a21f3697_3"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "f8c5f88b",
+      "query": "Where did I buy my new tennis racket from?",
+      "user_id": "f8c5f88b",
+      "gold": "f8c5f88b_answer_c3567066",
+      "retrieved": [],
+      "empty": true
+    },
+    {
+      "qid": "5d3d2817",
+      "query": "What was my previous occupation?",
+      "user_id": "5d3d2817",
+      "gold": "5d3d2817_answer_235eb6fb",
+      "retrieved": [],
+      "empty": true
+    },
+    {
+      "qid": "7527f7e2",
+      "query": "How much did I spend on a designer handbag?",
+      "user_id": "7527f7e2",
+      "gold": "7527f7e2_answer_7cb94507",
+      "retrieved": [
+        "577d4d32_a46d10a2_3",
+        "86b68151_0abaca24_1",
+        "7024f17c_b5ef63be_2"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "c960da58",
+      "query": "How many playlists do I have on Spotify?",
+      "user_id": "c960da58",
+      "gold": "c960da58_answer_e05e4612",
+      "retrieved": [
+        "2318644b_e491f2d4_2",
+        "6b168ec8_b729da5f_1",
+        "66f24dbb_fce8bb8a_2"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "726462e0",
+      "query": "What was the discount I got on my first purchase from the new clothing brand?",
+      "user_id": "726462e0",
+      "gold": "726462e0_answer_f38f679b",
+      "retrieved": [],
+      "empty": true
+    },
+    {
+      "qid": "94f70d80",
+      "query": "How long did it take me to assemble the IKEA bookshelf?",
+      "user_id": "94f70d80",
+      "gold": "94f70d80_answer_c63c0458",
+      "retrieved": [
+        "25e5aa4f_a459d477",
+        "0a995998_afbd7193_2"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "ad7109d1",
+      "query": "What speed is my new internet plan?",
+      "user_id": "ad7109d1",
+      "gold": "ad7109d1_answer_679840f8",
+      "retrieved": [],
+      "empty": true
+    },
+    {
+      "qid": "af8d2e46",
+      "query": "How many shirts did I pack for my 5-day trip to Costa Rica?",
+      "user_id": "af8d2e46",
+      "gold": "af8d2e46_answer_82a04f59",
+      "retrieved": [
+        "2e6d26dc_29695e1c_1",
+        "80ec1f4f_b909542d_1"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "dccbc061",
+      "query": "What was my previous stance on spirituality?",
+      "user_id": "dccbc061",
+      "gold": "dccbc061_answer_8f276838",
+      "retrieved": [],
+      "empty": true
+    },
+    {
+      "qid": "c8c3f81d",
+      "query": "What brand are my favorite running shoes?",
+      "user_id": "c8c3f81d",
+      "gold": "c8c3f81d_answer_761acef8",
+      "retrieved": [
+        "6b168ec8_518d26d3_5"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "75499fd8",
+      "query": "What breed is my dog?",
+      "user_id": "75499fd8",
+      "gold": "75499fd8_answer_723bf11f",
+      "retrieved": [],
+      "empty": true
+    },
+    {
+      "qid": "95bcc1c8",
+      "query": "How many amateur comedians did I watch perform at the open mic night?",
+      "user_id": "95bcc1c8",
+      "gold": "95bcc1c8_answer_cb742a61",
+      "retrieved": [
+        "58ef2f1c_eb0d8dc1_6"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "a06e4cfe",
+      "query": "What is my preferred gin-to-vermouth ratio for a classic gin martini?",
+      "user_id": "a06e4cfe",
+      "gold": "a06e4cfe_answer_6fe9fb49",
+      "retrieved": [
+        "118b2229_9ee69ca6_2",
+        "N/A",
+        "8550ddae_answer_c8354ae9"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "b86304ba",
+      "query": "How much is the painting of a sunset worth in terms of the amount I paid for it?",
+      "user_id": "b86304ba",
+      "gold": "b86304ba_answer_645b0329",
+      "retrieved": [
+        "86f00804_e4a1b565_2"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "d52b4f67",
+      "query": "Where did I attend my cousin's wedding?",
+      "user_id": "d52b4f67",
+      "gold": "d52b4f67_answer_0df6aa4b",
+      "retrieved": [
+        "6ade9755_28621d6a_2"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "25e5aa4f",
+      "query": "Where did I complete my Bachelor's degree in Computer Science?",
+      "user_id": "25e5aa4f",
+      "gold": "25e5aa4f_answer_986de8c3",
+      "retrieved": [
+        "29f2956b_abs_503b2761",
+        "0862e8bf_a8179676",
+        "86f00804_35c5419d_abs_1"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "caf9ead2",
+      "query": "How long did it take to move to the new apartment?",
+      "user_id": "caf9ead2",
+      "gold": "caf9ead2_answer_0714183a",
+      "retrieved": [
+        "N/A",
+        "66f24dbb_9ca3534f_2"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "8550ddae",
+      "query": "What type of cocktail recipe did I try last weekend?",
+      "user_id": "8550ddae",
+      "gold": "8550ddae_answer_c8354ae9",
+      "retrieved": [
+        "0862e8bf_abs_33401191_2",
+        "1faac195_6ccadc2b",
+        "28dc39ac_6ccadc2b"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "60d45044",
+      "query": "What type of rice is my favorite?",
+      "user_id": "60d45044",
+      "gold": "60d45044_answer_9cddca88",
+      "retrieved": [
+        "3d86fd0a_402e0082_1",
+        "N/A",
+        "N/A"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "ec81a493",
+      "query": "How many copies of my favorite artist's debut album were released worldwide?",
+      "user_id": "ec81a493",
+      "gold": "ec81a493_answer_ed1982fc",
+      "retrieved": [],
+      "empty": true
+    },
+    {
+      "qid": "e01b8e2f",
+      "query": "Where did I go on a week-long trip with my family?",
+      "user_id": "e01b8e2f",
+      "gold": "e01b8e2f_answer_5ca6cd28",
+      "retrieved": [
+        "88432d0a_fe05973d_1",
+        "3d86fd0a_5ca6cd28",
+        "4100d0a0_ea3db78e_1"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "bc8a6e93",
+      "query": "What did I bake for my niece's birthday party?",
+      "user_id": "bc8a6e93",
+      "gold": "bc8a6e93_answer_e6143162",
+      "retrieved": [
+        "4fd1909e_ad2135af"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "ccb36322",
+      "query": "What is the name of the music streaming service have I been using lately?",
+      "user_id": "ccb36322",
+      "gold": "ccb36322_answer_f1fbb330",
+      "retrieved": [
+        "1e043500_answer_3e012175",
+        "88432d0a_ultrachat_528370",
+        "2ce6a0f2_74b0227e_1"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "b320f3f8",
+      "query": "What type of action figure did I buy from a thrift store?",
+      "user_id": "b320f3f8",
+      "gold": "b320f3f8_answer_5cc9b056",
+      "retrieved": [
+        "8550ddae_c81897cd_5",
+        "88432d0a_fc44c3d2",
+        "8ebdbe50_326f41d8"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "19b5f2b3",
+      "query": "How long was I in Japan for?",
+      "user_id": "19b5f2b3",
+      "gold": "19b5f2b3_answer_5ff494b9",
+      "retrieved": [],
+      "empty": true
+    },
+    {
+      "qid": "4fd1909e",
+      "query": "Where did I attend the Imagine Dragons concert?",
+      "user_id": "4fd1909e",
+      "gold": "4fd1909e_answer_2952aee4",
+      "retrieved": [
+        "58ef2f1c_b17c7f18",
+        "577d4d32_ultrachat_400774",
+        "7527f7e2_f2835879_2"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "76d63226",
+      "query": "What size is my new Samsung TV?",
+      "user_id": "76d63226",
+      "gold": "76d63226_answer_bbdc7b0a",
+      "retrieved": [
+        "N/A"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "86f00804",
+      "query": "What book am I currently reading?",
+      "user_id": "86f00804",
+      "gold": "86f00804_answer_96b8c9ee",
+      "retrieved": [],
+      "empty": true
+    },
+    {
+      "qid": "311778f1",
+      "query": "How many hours did I spend watching documentaries on Netflix last month?",
+      "user_id": "311778f1",
+      "gold": "311778f1_answer_e40b054e",
+      "retrieved": [
+        "8550ddae_fa3c1896",
+        "118b2229_afe04238_1",
+        "19b5f2b3_abs_45c29267"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "c19f7a0b",
+      "query": "What time do I usually get home from work on weeknights?",
+      "user_id": "c19f7a0b",
+      "gold": "c19f7a0b_answer_f442ccbe",
+      "retrieved": [
+        "2e6d26dc_d0a53420",
+        "2ce6a0f2_4925a1aa",
+        "86b68151_26e99766_1"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "1faac195",
+      "query": "Where does my sister Emily live?",
+      "user_id": "1faac195",
+      "gold": "1faac195_answer_d01949bf",
+      "retrieved": [],
+      "empty": true
+    },
+    {
+      "qid": "faba32e5",
+      "query": "How long did Alex marinate the BBQ ribs in special sauce?",
+      "user_id": "faba32e5",
+      "gold": "faba32e5_answer_39b12014",
+      "retrieved": [
+        "3b6f954b_f30b5d33"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "f4f1d8a4",
+      "query": "Who gave me a new stand mixer as a birthday gift?",
+      "user_id": "f4f1d8a4",
+      "gold": "f4f1d8a4_answer_f5b33470",
+      "retrieved": [
+        "N/A",
+        "N/A",
+        "6b168ec8_f5b33470_abs"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "c14c00dd",
+      "query": "What brand of shampoo do I currently use?",
+      "user_id": "c14c00dd",
+      "gold": "c14c00dd_answer_304511ce",
+      "retrieved": [
+        "28dc39ac_4ed9cd1b_1",
+        "3b6f954b_4ed9cd1b_1",
+        "2e6d26dc_sharegpt_GGpItd5_0"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "36580ce8",
+      "query": "What health issue did I initially think was just a cold?",
+      "user_id": "36580ce8",
+      "gold": "36580ce8_answer_93e1bd22",
+      "retrieved": [
+        "N/A",
+        "N/A",
+        "N/A"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "3d86fd0a",
+      "query": "Where did I meet Sophia?",
+      "user_id": "3d86fd0a",
+      "gold": "3d86fd0a_answer_19c24c11",
+      "retrieved": [
+        "6d550036_25b2b29d"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "a82c026e",
+      "query": "What game did I finally beat last weekend?",
+      "user_id": "a82c026e",
+      "gold": "a82c026e_answer_787e6a6d",
+      "retrieved": [
+        "3a704032_sharegpt_7LvIy1y_15"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "0862e8bf_abs",
+      "query": "What is the name of my hamster?",
+      "user_id": "0862e8bf_abs",
+      "gold": "N/A",
+      "retrieved": [
+        "726462e0_ee7f5084_2",
+        "0862e8bf_abs_answer_c6fd8ebd_abs"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "15745da0_abs",
+      "query": "How long have I been collecting vintage films?",
+      "user_id": "15745da0_abs",
+      "gold": "N/A",
+      "retrieved": [
+        "15745da0_abs_answer_586de428_abs",
+        "88432d0a_fc44c3d2"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "bc8a6e93_abs",
+      "query": "What did I bake for my uncle's birthday party?",
+      "user_id": "bc8a6e93_abs",
+      "gold": "N/A",
+      "retrieved": [],
+      "empty": true
+    },
+    {
+      "qid": "19b5f2b3_abs",
+      "query": "How long was I in Korea for?",
+      "user_id": "19b5f2b3_abs",
+      "gold": "N/A",
+      "retrieved": [],
+      "empty": true
+    },
+    {
+      "qid": "29f2956b_abs",
+      "query": "How much time do I dedicate to practicing violin every day?",
+      "user_id": "29f2956b_abs",
+      "gold": "N/A",
+      "retrieved": [
+        "29f2956b_abs_answer_7cc5362f_abs",
+        "0862e8bf_b209867b",
+        "29f2956b_answer_7cc5362f"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "f4f1d8a4_abs",
+      "query": "What did my dad gave me as a birthday gift?",
+      "user_id": "f4f1d8a4_abs",
+      "gold": "N/A",
+      "retrieved": [],
+      "empty": true
+    },
+    {
+      "qid": "6d550036",
+      "query": "How many projects have I led or am currently leading?",
+      "user_id": "6d550036",
+      "gold": "6d550036_answer_ec904b3c_1",
+      "retrieved": [
+        "6d550036_sharegpt_zciCXP1_12",
+        "5d3d2817_59f7fff7_1"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "gpt4_59c863d7",
+      "query": "How many model kits have I worked on or bought?",
+      "user_id": "gpt4_59c863d7",
+      "gold": "gpt4_59c863d7_answer_593bdffd_",
+      "retrieved": [
+        "1faac195_067bbe0b",
+        "6cb6f249_5edfe253_1",
+        "0862e8bf_f31033c0_2"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "b5ef892d",
+      "query": "How many days did I spend on camping trips in the United States this year?",
+      "user_id": "b5ef892d",
+      "gold": "b5ef892d_answer_a8b4290f_1",
+      "retrieved": [
+        "0862e8bf_abs_0e69d205_1",
+        "88432d0a_fe05973d_1"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "e831120c",
+      "query": "How many weeks did it take me to watch all the Marvel Cinematic Universe movies ",
+      "user_id": "e831120c",
+      "gold": "e831120c_answer_86c505e7_1",
+      "retrieved": [
+        "58bf7951_5b83c26e_1",
+        "6b168ec8_afffd8ec_3",
+        "29f2956b_abs_edd89480_1"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "3a704032",
+      "query": "How many plants did I acquire in the last month?",
+      "user_id": "3a704032",
+      "gold": "3a704032_answer_c2204106_2",
+      "retrieved": [],
+      "empty": true
+    },
+    {
+      "qid": "gpt4_d84a3211",
+      "query": "How much total money have I spent on bike-related expenses since the start of th",
+      "user_id": "gpt4_d84a3211",
+      "gold": "gpt4_d84a3211_answer_2880eb6c_",
+      "retrieved": [],
+      "empty": true
+    },
+    {
+      "qid": "aae3761f",
+      "query": "How many hours in total did I spend driving to my three road trip destinations c",
+      "user_id": "aae3761f",
+      "gold": "aae3761f_answer_526354c8_1",
+      "retrieved": [
+        "25e5aa4f_48f804a3",
+        "28dc39ac_4ed9cd1b_1",
+        "60d45044_fcc6d66d_1"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "gpt4_f2262a51",
+      "query": "How many different doctors did I visit?",
+      "user_id": "gpt4_f2262a51",
+      "gold": "gpt4_f2262a51_answer_55a6940c_",
+      "retrieved": [],
+      "empty": true
+    },
+    {
+      "qid": "dd2973ad",
+      "query": "What time did I go to bed on the day before I had a doctor's appointment?",
+      "user_id": "dd2973ad",
+      "gold": "dd2973ad_answer_f9de4602_2",
+      "retrieved": [
+        "1faac195_06fe8cfb_2",
+        "8550ddae_295dc1ab_1",
+        "N/A"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "c4a1ceb8",
+      "query": "How many different types of citrus fruits have I used in my cocktail recipes?",
+      "user_id": "c4a1ceb8",
+      "gold": "c4a1ceb8_answer_56d02cab_3",
+      "retrieved": [
+        "8550ddae_71cf5aeb_3",
+        "58ef2f1c_dbcfab21",
+        "2ce6a0f2_575bdd6b"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "gpt4_a56e767c",
+      "query": "How many movie festivals that I attended?",
+      "user_id": "gpt4_a56e767c",
+      "gold": "gpt4_a56e767c_answer_cf9e3940_",
+      "retrieved": [
+        "88432d0a_ca0553dd_1",
+        "60d45044_ultrachat_173845",
+        "1e043500_answer_3e012175"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "gpt4_2f8be40d",
+      "query": "How many weddings have I attended in this year?",
+      "user_id": "gpt4_2f8be40d",
+      "gold": "gpt4_2f8be40d_answer_e7b0637e_",
+      "retrieved": [],
+      "empty": true
+    },
+    {
+      "qid": "gpt4_15e38248",
+      "query": "How many pieces of furniture did I buy, assemble, sell, or fix in the past few m",
+      "user_id": "gpt4_15e38248",
+      "gold": "gpt4_15e38248_answer_8858d9dc_",
+      "retrieved": [
+        "25e5aa4f_a459d477"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "88432d0a",
+      "query": "How many times did I bake something in the past two weeks?",
+      "user_id": "88432d0a",
+      "gold": "88432d0a_answer_733e443a_3",
+      "retrieved": [],
+      "empty": true
+    },
+    {
+      "qid": "80ec1f4f",
+      "query": "How many different museums or galleries did I visit in the month of February?",
+      "user_id": "80ec1f4f",
+      "gold": "80ec1f4f_answer_990c8992_2",
+      "retrieved": [
+        "86f00804_6e672b84_3",
+        "3b6f954b_dbdbca48_2",
+        "25e5aa4f_3dfdabbf"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "d23cf73b",
+      "query": "How many different cuisines have I learned to cook or tried out in the past few ",
+      "user_id": "d23cf73b",
+      "gold": "d23cf73b_answer_5a0d28f8_4",
+      "retrieved": [
+        "2ce6a0f2_97f67bff",
+        "1faac195_94f460be_1",
+        "8550ddae_a7189b75"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "gpt4_7fce9456",
+      "query": "How many properties did I view before making an offer on the townhouse in the Br",
+      "user_id": "gpt4_7fce9456",
+      "gold": "gpt4_7fce9456_answer_a679a86a_",
+      "retrieved": [],
+      "empty": true
+    },
+    {
+      "qid": "d682f1a2",
+      "query": "How many different types of food delivery services have I used recently?",
+      "user_id": "d682f1a2",
+      "gold": "d682f1a2_answer_c008e5df_1",
+      "retrieved": [
+        "15745da0_abs_f56a3f2d_1",
+        "0862e8bf_abs_ultrachat_438164",
+        "58ef2f1c_e6ab6a7b_2"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "7024f17c",
+      "query": "How many hours of jogging and yoga did I do last week?",
+      "user_id": "7024f17c",
+      "gold": "7024f17c_answer_a21f3697_1",
+      "retrieved": [
+        "726462e0_ultrachat_39637"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "gpt4_5501fe77",
+      "query": "Which social media platform did I gain the most followers on over the past month",
+      "user_id": "gpt4_5501fe77",
+      "gold": "gpt4_5501fe77_answer_203bf3fa_",
+      "retrieved": [
+        "001be529_c2ab12bc_1",
+        "N/A",
+        "60d45044_0c0f2449_1"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "gpt4_2ba83207",
+      "query": "Which grocery store did I spend the most money at in the past month?",
+      "user_id": "gpt4_2ba83207",
+      "gold": "gpt4_2ba83207_answer_6a3b5c13_",
+      "retrieved": [
+        "86b68151_3d72c0c0",
+        "726462e0_cdd9704d_1",
+        "51a45a95_answer_d61669c7"
+      ],
+      "empty": false
+    },
+    {
+      "qid": "gpt4_d12ceb0e",
+      "query": "What is the average age of me, my parents, and my grandparents?",
+      "user_id": "gpt4_d12ceb0e",
+      "gold": "gpt4_d12ceb0e_answer_2504635e_",
+      "retrieved": [
+        "001be529_dffe8d2d_2"
+      ],
+      "empty": false
+    }
+  ]
+}

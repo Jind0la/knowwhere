@@ -1,0 +1,434 @@
+{
+  "benchmark": "KnowWhere Session-ID Match (with filter)",
+  "reranker": "MiniLM",
+  "method": "post-hoc session_id filter",
+  "hindsight_baseline": 94.6,
+  "recall_at_5": 90.0,
+  "hits": 27,
+  "total": 30,
+  "results": [
+    {
+      "qid": "e47becba",
+      "query": "What degree did I graduate with?",
+      "user_id": "e47becba",
+      "gold_ids": [
+        "e47becba_answer_280352e9"
+      ],
+      "retrieved_doc_ids": [
+        "e47becba_answer_280352e9"
+      ],
+      "hit": true,
+      "retrieved_count": 1
+    },
+    {
+      "qid": "118b2229",
+      "query": "How long is my daily commute to work?",
+      "user_id": "118b2229",
+      "gold_ids": [
+        "118b2229_answer_40a90d51"
+      ],
+      "retrieved_doc_ids": [
+        "118b2229_answer_40a90d51"
+      ],
+      "hit": true,
+      "retrieved_count": 1
+    },
+    {
+      "qid": "51a45a95",
+      "query": "Where did I redeem a $5 coupon on coffee creamer?",
+      "user_id": "51a45a95",
+      "gold_ids": [
+        "51a45a95_answer_d61669c7"
+      ],
+      "retrieved_doc_ids": [
+        "N/A",
+        "N/A",
+        "51a45a95_answer_d61669c7"
+      ],
+      "hit": true,
+      "retrieved_count": 3
+    },
+    {
+      "qid": "58bf7951",
+      "query": "What play did I attend at the local community theater?",
+      "user_id": "58bf7951",
+      "gold_ids": [
+        "58bf7951_answer_355c48bb"
+      ],
+      "retrieved_doc_ids": [
+        "58bf7951_answer_355c48bb"
+      ],
+      "hit": true,
+      "retrieved_count": 1
+    },
+    {
+      "qid": "1e043500",
+      "query": "What is the name of the playlist I created on Spotify?",
+      "user_id": "1e043500",
+      "gold_ids": [
+        "1e043500_answer_3e012175"
+      ],
+      "retrieved_doc_ids": [
+        "51a45a95_98c198fb",
+        "c960da58_answer_e05e4612",
+        "6b168ec8_b729da5f_1",
+        "1e043500_answer_3e012175",
+        "N/A"
+      ],
+      "hit": true,
+      "retrieved_count": 5
+    },
+    {
+      "qid": "c5e8278d",
+      "query": "What was my last name before I changed it?",
+      "user_id": "c5e8278d",
+      "gold_ids": [
+        "c5e8278d_answer_f6168136"
+      ],
+      "retrieved_doc_ids": [
+        "N/A",
+        "51a45a95_4679a05c",
+        "N/A",
+        "c5e8278d_answer_f6168136",
+        "N/A"
+      ],
+      "hit": true,
+      "retrieved_count": 5
+    },
+    {
+      "qid": "6ade9755",
+      "query": "Where do I take yoga classes?",
+      "user_id": "6ade9755",
+      "gold_ids": [
+        "6ade9755_answer_9398da02"
+      ],
+      "retrieved_doc_ids": [
+        "6ade9755_answer_9398da02",
+        "51a45a95_07d1915d_1",
+        "e47becba_3418b277_3",
+        "726462e0_ultrachat_39637",
+        "c5e8278d_fc6549b2"
+      ],
+      "hit": true,
+      "retrieved_count": 5
+    },
+    {
+      "qid": "6f9b354f",
+      "query": "What color did I repaint my bedroom walls?",
+      "user_id": "6f9b354f",
+      "gold_ids": [
+        "6f9b354f_answer_feb5200f"
+      ],
+      "retrieved_doc_ids": [
+        "6f9b354f_answer_feb5200f",
+        "118b2229_79f74d4e_1"
+      ],
+      "hit": true,
+      "retrieved_count": 2
+    },
+    {
+      "qid": "58ef2f1c",
+      "query": "When did I volunteer at the local animal shelter's fundraising dinner?",
+      "user_id": "58ef2f1c",
+      "gold_ids": [
+        "58ef2f1c_answer_59547700"
+      ],
+      "retrieved_doc_ids": [
+        "58ef2f1c_answer_59547700",
+        "c5e8278d_b1265fd7_1"
+      ],
+      "hit": true,
+      "retrieved_count": 2
+    },
+    {
+      "qid": "f8c5f88b",
+      "query": "Where did I buy my new tennis racket from?",
+      "user_id": "f8c5f88b",
+      "gold_ids": [
+        "f8c5f88b_answer_c3567066"
+      ],
+      "retrieved_doc_ids": [
+        "f8c5f88b_answer_c3567066"
+      ],
+      "hit": true,
+      "retrieved_count": 1
+    },
+    {
+      "qid": "5d3d2817",
+      "query": "What was my previous occupation?",
+      "user_id": "5d3d2817",
+      "gold_ids": [
+        "5d3d2817_answer_235eb6fb"
+      ],
+      "retrieved_doc_ids": [
+        "94f70d80_sharegpt_IFvdMmb_0"
+      ],
+      "hit": false,
+      "retrieved_count": 1
+    },
+    {
+      "qid": "7527f7e2",
+      "query": "How much did I spend on a designer handbag?",
+      "user_id": "7527f7e2",
+      "gold_ids": [
+        "7527f7e2_answer_7cb94507"
+      ],
+      "retrieved_doc_ids": [
+        "7527f7e2_answer_7cb94507",
+        "58ef2f1c_705b5399_1"
+      ],
+      "hit": true,
+      "retrieved_count": 2
+    },
+    {
+      "qid": "c960da58",
+      "query": "How many playlists do I have on Spotify?",
+      "user_id": "c960da58",
+      "gold_ids": [
+        "c960da58_answer_e05e4612"
+      ],
+      "retrieved_doc_ids": [
+        "N/A",
+        "N/A",
+        "6b168ec8_b729da5f_1",
+        "c960da58_answer_e05e4612",
+        "58ef2f1c_dbcfab21"
+      ],
+      "hit": true,
+      "retrieved_count": 5
+    },
+    {
+      "qid": "3b6f954b",
+      "query": "Where did I attend for my study abroad program?",
+      "user_id": "3b6f954b",
+      "gold_ids": [
+        "3b6f954b_answer_94030872"
+      ],
+      "retrieved_doc_ids": [
+        "N/A"
+      ],
+      "hit": false,
+      "retrieved_count": 1
+    },
+    {
+      "qid": "726462e0",
+      "query": "What was the discount I got on my first purchase from the new clothing brand?",
+      "user_id": "726462e0",
+      "gold_ids": [
+        "726462e0_answer_f38f679b"
+      ],
+      "retrieved_doc_ids": [
+        "726462e0_answer_f38f679b"
+      ],
+      "hit": true,
+      "retrieved_count": 1
+    },
+    {
+      "qid": "94f70d80",
+      "query": "How long did it take me to assemble the IKEA bookshelf?",
+      "user_id": "94f70d80",
+      "gold_ids": [
+        "94f70d80_answer_c63c0458"
+      ],
+      "retrieved_doc_ids": [
+        "94f70d80_answer_c63c0458"
+      ],
+      "hit": true,
+      "retrieved_count": 1
+    },
+    {
+      "qid": "66f24dbb",
+      "query": "What did I buy for my sister's birthday gift?",
+      "user_id": "66f24dbb",
+      "gold_ids": [
+        "66f24dbb_answer_fea2e4d3"
+      ],
+      "retrieved_doc_ids": [
+        "66f24dbb_answer_fea2e4d3",
+        "51a45a95_98c198fb"
+      ],
+      "hit": true,
+      "retrieved_count": 2
+    },
+    {
+      "qid": "ad7109d1",
+      "query": "What speed is my new internet plan?",
+      "user_id": "ad7109d1",
+      "gold_ids": [
+        "ad7109d1_answer_679840f8"
+      ],
+      "retrieved_doc_ids": [
+        "ad7109d1_answer_679840f8"
+      ],
+      "hit": true,
+      "retrieved_count": 1
+    },
+    {
+      "qid": "af8d2e46",
+      "query": "How many shirts did I pack for my 5-day trip to Costa Rica?",
+      "user_id": "af8d2e46",
+      "gold_ids": [
+        "af8d2e46_answer_82a04f59"
+      ],
+      "retrieved_doc_ids": [
+        "af8d2e46_answer_82a04f59"
+      ],
+      "hit": true,
+      "retrieved_count": 1
+    },
+    {
+      "qid": "dccbc061",
+      "query": "What was my previous stance on spirituality?",
+      "user_id": "dccbc061",
+      "gold_ids": [
+        "dccbc061_answer_8f276838"
+      ],
+      "retrieved_doc_ids": [
+        "ad7109d1_495cf518_1",
+        "c960da58_412fdcf4_1"
+      ],
+      "hit": false,
+      "retrieved_count": 2
+    },
+    {
+      "qid": "c8c3f81d",
+      "query": "What brand are my favorite running shoes?",
+      "user_id": "c8c3f81d",
+      "gold_ids": [
+        "c8c3f81d_answer_761acef8"
+      ],
+      "retrieved_doc_ids": [
+        "c8c3f81d_answer_761acef8",
+        "N/A",
+        "6b168ec8_518d26d3_5"
+      ],
+      "hit": true,
+      "retrieved_count": 3
+    },
+    {
+      "qid": "8ebdbe50",
+      "query": "What certification did I complete last month?",
+      "user_id": "8ebdbe50",
+      "gold_ids": [
+        "8ebdbe50_answer_8ad8a34f"
+      ],
+      "retrieved_doc_ids": [
+        "N/A",
+        "8ebdbe50_answer_8ad8a34f"
+      ],
+      "hit": true,
+      "retrieved_count": 2
+    },
+    {
+      "qid": "6b168ec8",
+      "query": "How many bikes do I own?",
+      "user_id": "6b168ec8",
+      "gold_ids": [
+        "6b168ec8_answer_e623ae87"
+      ],
+      "retrieved_doc_ids": [
+        "6b168ec8_answer_e623ae87"
+      ],
+      "hit": true,
+      "retrieved_count": 1
+    },
+    {
+      "qid": "75499fd8",
+      "query": "What breed is my dog?",
+      "user_id": "75499fd8",
+      "gold_ids": [
+        "75499fd8_answer_723bf11f"
+      ],
+      "retrieved_doc_ids": [
+        "75499fd8_answer_723bf11f"
+      ],
+      "hit": true,
+      "retrieved_count": 1
+    },
+    {
+      "qid": "21436231",
+      "query": "How many largemouth bass did I catch on my fishing trip to Lake Michigan?",
+      "user_id": "21436231",
+      "gold_ids": [
+        "21436231_answer_1e6d4567"
+      ],
+      "retrieved_doc_ids": [
+        "21436231_answer_1e6d4567"
+      ],
+      "hit": true,
+      "retrieved_count": 1
+    },
+    {
+      "qid": "95bcc1c8",
+      "query": "How many amateur comedians did I watch perform at the open mic night?",
+      "user_id": "95bcc1c8",
+      "gold_ids": [
+        "95bcc1c8_answer_cb742a61"
+      ],
+      "retrieved_doc_ids": [
+        "95bcc1c8_answer_cb742a61",
+        "58ef2f1c_eb0d8dc1_6"
+      ],
+      "hit": true,
+      "retrieved_count": 2
+    },
+    {
+      "qid": "0862e8bf",
+      "query": "What is the name of my cat?",
+      "user_id": "0862e8bf",
+      "gold_ids": [
+        "0862e8bf_answer_c6fd8ebd"
+      ],
+      "retrieved_doc_ids": [
+        "0862e8bf_answer_c6fd8ebd",
+        "726462e0_ee7f5084_2",
+        "e47becba_52c34859_1"
+      ],
+      "hit": true,
+      "retrieved_count": 3
+    },
+    {
+      "qid": "853b0a1d",
+      "query": "How old was I when my grandma gave me the silver necklace?",
+      "user_id": "853b0a1d",
+      "gold_ids": [
+        "853b0a1d_answer_69811d4a"
+      ],
+      "retrieved_doc_ids": [
+        "853b0a1d_answer_69811d4a"
+      ],
+      "hit": true,
+      "retrieved_count": 1
+    },
+    {
+      "qid": "a06e4cfe",
+      "query": "What is my preferred gin-to-vermouth ratio for a classic gin martini?",
+      "user_id": "a06e4cfe",
+      "gold_ids": [
+        "a06e4cfe_answer_6fe9fb49"
+      ],
+      "retrieved_doc_ids": [
+        "N/A",
+        "N/A",
+        "a06e4cfe_answer_6fe9fb49",
+        "118b2229_9ee69ca6_2"
+      ],
+      "hit": true,
+      "retrieved_count": 4
+    },
+    {
+      "qid": "37d43f65",
+      "query": "How much RAM did I upgrade my laptop to?",
+      "user_id": "37d43f65",
+      "gold_ids": [
+        "37d43f65_answer_55161935"
+      ],
+      "retrieved_doc_ids": [
+        "37d43f65_answer_55161935",
+        "N/A"
+      ],
+      "hit": true,
+      "retrieved_count": 2
+    }
+  ]
+}

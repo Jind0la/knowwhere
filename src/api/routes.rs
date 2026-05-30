@@ -2796,24 +2796,6 @@ pub async fn retrieve_fractal(
         }
     }
 
-    // Post-hoc session_id filter: filter hybrid_retrieve results by metadata.session_id.
-    // No PostgreSQL dependency — uses the metadata that's populated during ingest.
-    if let Some(ref sid) = req.session_id {
-        let before = results.len();
-        results.retain(|sn| {
-            sn.node.metadata
-                .get("session_id")
-                .and_then(|v| v.as_str())
-                .is_some_and(|s| s == sid.as_str())
-        });
-        tracing::info!(
-            before = before,
-            after = results.len(),
-            session_id = %sid,
-            "post-hoc session_id filter applied"
-        );
-    }
-
     // Stage 1.5: Expand flat results via fractal zoom (children_tier_ids).
     // Uses the query vector to compute child similarity, prunes branches
     // below ZOOM_PRUNING_THRESHOLD (0.7), and follows children up to
@@ -3210,7 +3192,28 @@ pub async fn retrieve_fractal(
         }
     }
 
-    let scored = scrub_response_nodes(scored, allow_meta);
+    let mut scored = scrub_response_nodes(scored, allow_meta);
+
+    // Post-hoc session_id filter: applied at the very end, after all
+    // expansion (Stage 1.5), reranking (Stage 2), and diversity (Stage 2.5).
+    // Early-filtering before expansion is undone by fractal zoom adding
+    // children from other sessions.
+    if let Some(ref sid) = req.session_id {
+        let before = scored.len();
+        scored.retain(|sn| {
+            sn.metadata
+                .get("session_id")
+                .and_then(|v| v.as_str())
+                .is_some_and(|s| s == sid.as_str())
+        });
+        tracing::info!(
+            before = before,
+            after = scored.len(),
+            session_id = %sid,
+            "post-hoc session_id filter applied (final)"
+        );
+    }
+
     tracing::info!(
         response_len = scored.len(),
         response_meta = scored.iter().filter(|n| n.memory_type == MemoryType::Meta).count(),
