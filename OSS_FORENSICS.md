@@ -1,219 +1,151 @@
 # KnowWhere OSS Forensics Report
 
-> **Target**: `~/knowwhere` (v0.5.0)  
-> **Date**: 2026-05-10  
-> **Scanner**: Hermes Agent (cargo audit, manual code review)  
-> **Scope**: Security, dependency health, secrets exposure, license compliance, code quality anti-patterns  
+**Datum: 3. Juni 2026 | Auditor: Hermes Operator (oss-forensics skill)**
+**Target: v0.6.0, 457 Dependencies, 65 Rust Source-Files**
 
 ---
 
-## 1. Executive Summary
+## Executive Summary
 
-| Category | Grade | Critical Issues |
+| Kategorie | Grade | Kritische Issues |
 |---|---|---|
-| Dependency Security | ⚠️ **C-** | 5 vulnerabilities (1 medium, 3 low+1 unsound) |
-| Secrets Management | ✅ **B+** | `.env` gitignored, but 644 perms |
-| License Compliance | ✅ **A** | MIT, clean |
-| Code Safety | ✅ **A-** | 1 justified `unsafe`, no SQL injection |
-| Error Handling | ⚠️ **B** | 2 panicking `unwrap()` in API routes |
-| Supply Chain | ⚠️ **B** | 457 crates, no `cargo-deny` / SBOM |
-
-**Overall: B (Production-Ready with Remediation Needed)**
-
----
-
-## 2. Dependency Vulnerabilities
-
-`cargo audit` scanned 457 crate dependencies, 1068 advisories. **5 vulnerabilities found, 5 warnings.**
-
-### CRITICAL — Fix Required
-
-| Crate | Version | Severity | Advisory | Fix |
-|---|---|---|---|---|
-| ~~rustls-webpki~~ | ~~0.103.9~~ | ~~🔴 High (×3)~~ | ~~RUSTSEC-2026-0104, 0098, 0099~~ | ✅ **FIXED** — upgraded to 0.103.13 |
-| **rsa** | 0.9.10 | 🟡 Medium | RUSTSEC-2023-0071 (Marvin Attack) | No fix; documented exemption (Postgres-only) |
-| **rand** | 0.8.5 | 🟡 Unsound | RUSTSEC-2026-0097 | Low risk (no custom logger) |
-
-### Rustls-webpki (3 advisories)
-
-The most critical. Affects ALL TLS connections (reqwest, Google APIs, OAuth):
-
-- **CRL parsing panic** (2026-04-22): Remote-triggerable panic in certificate revocation list parsing
-- **URI name constraint bypass** (2026-04-14): Attacker with a CA-issued cert for `example.com` could bypass URI name constraints
-- **Wildcard name constraint bypass** (2026-04-14): Similar constraint bypass for wildcard certs
-
-**Fix**: `cargo update -p rustls-webpki` should pull 0.103.13+.
-
-### RSA — Marvin Attack
-
-Timing side-channel in RSA decryption (CVE-like: RUSTSEC-2023-0071). Severity 5.9. No fix available — it's a protocol-level issue in PKCS#1 v1.5. 
-
-**Mitigation**: This is a transitive dep through `sqlx-mysql`. If you're using Postgres only (you are), this code path isn't exercised. Consider adding `--ignore RUSTSEC-2023-0071` with a documented rationale.
-
-### Rand — Unsound
-
-`rand::rng()` is unsound with a custom logger. Low practical risk for KnowWhere since you don't use custom loggers.
+| Dependency Security | **B** | 1 Medium CVE (rsa — irrelevant via sqlx-mysql), 4 rustls-webpki advisories per Google-Drive-Feature |
+| Secrets Management | **A−** | 1 Schwachstelle: `.env.benchmark` hat 644 Perms. `.env` und `.env.native` korrekt 600. |
+| Code Safety (unsafe) | **A** | 1 `unsafe impl Send` mit begründetem Mutex-Schutz |
+| Panic Surface | **C+** | 182 `unwrap()` calls — viele in Tests, einige in API-Routen |
+| SQL Injection | **A+** | sqlx-Macros sind compile-time-safe. Keine dynamischen SQL-Strings gefunden. |
+| License Compliance | **A** | MIT. Sauber. Keine Copyleft-Dependencies. |
+| Supply Chain | **B** | Kein cargo-deny, kein SBOM. cargo-audit aktiv, 5 Warnungen (unmaintained crates). |
+| Network Security | **A−** | Rate Limiting per GovernorLayer. Auth via API-Key (subtle constant-time). |
+| **GESAMT** | **B+** | Produktionsreif mit Remediation. Keine kritischen Showstopper. |
 
 ---
 
-## 3. Secrets Exposure
+## 1. Dependency Vulnerabilities
 
-### Status: CLEAN ✅
+### Aktive CVEs
 
-| Check | Result |
-|---|---|
-| `.env` in git | ❌ Not tracked (gitignored) ✅ |
-| `.env.native` in git | ❌ Not tracked ✅ |
-| API keys in source code | `KNOWWHERE_API_KEY` in `start-native.sh` — **masked in output**, value from env |
-| Hardcoded credentials in `.rs` | None found |
-| `.env` file permissions | **644 (world-readable)** ⚠️ |
-| Database password in `.env` | **Masked** in scan output, passed via env var |
-
-### Recommendations
-
-1. **Fix `.env` permissions**: `chmod 600 ~/knowwhere/.env ~/knowwhere/.env.native`
-2. **`.env.example`**: Create a template file with placeholders (already gitignored exception in `.gitignore` via `!.env.example`)
-3. **No secrets in `start-native.sh`**: The API key is read from `~/.knowwhere/.env` at runtime ✅
-
----
-
-## 4. License Compliance
-
-| Check | Result |
-|---|---|
-| Project License | MIT ✅ |
-| LICENSE file | Present ✅ |
-| Cargo.toml `license` field | `"MIT"` ✅ |
-| Dependency licenses | Not audited (no cargo-deny) |
-
-### Recommendations
-
-- Install `cargo-deny` for automated license compliance checks: `cargo install cargo-deny`
-- Run `cargo deny check licenses` to catch copyleft contamination
-
----
-
-## 5. Code Safety Review
-
-### Unsafe Code
-
-| File | Line | Code | Assessment |
+| Crate | Severity | Betrifft KnowWhere? | Action |
 |---|---|---|---|
-| `src/storage/in_memory.rs` | 86 | `unsafe impl Send for SendableIndex {}` | ✅ Justified — usearch Index is thread-safe, just missing Send marker |
+| `rsa 0.9.10` (Marvin Attack) | Medium 5.9 | ❌ **Nein.** Nur via `sqlx-mysql` — KnowWhere nutzt PostgreSQL. | Ignorieren / Suppressen |
+| `rustls-webpki 0.103.9` (4 advisories) | Medium | ⚠️ Nur aktiv wenn `google-drive` Feature enabled ist. Google Drive Connector ist optional. | `cargo update -p rustls-webpki` — oder Feature deaktivieren |
+| `rand 0.8.5` (unsound) | Warning | Nur mit custom logger — nicht relevant | Ignorieren |
+| `fxhash`, `google-apis-common`, `number_prefix`, `paste` | Unmaintained | Transitive Deps, kein Runtime-Risiko | Dokumentieren |
 
-**Total `unsafe` blocks: 1** — excellent for a Rust project of this size.
+**Fazit:** Kein einziges CVE betrifft den Core-Pfad (PostgreSQL + Embedding + Retrieval). Alle 5 advisories sind transitiv oder feature-gated.
 
-### SQL Injection Risk
+### Fix-Commands
 
-No dynamic SQL string formatting found. SQL queries use compile-time-checked `sqlx::query!()` macros. **No SQL injection risk.** ✅
+```bash
+# rustls-webpki updaten (nur nötig falls google-drive Feature aktiv)
+cargo update -p rustls-webpki
 
-### Command Injection
+# rsa advisory supprimieren (via sqlx-mysql, nicht genutzt)
+# In deny.toml: ignore = ["RUSTSEC-2023-0071"]
+```
 
-| File | Risk |
+---
+
+## 2. Secrets Detection
+
+| Check | Status |
 |---|---|
-| `src/benchmarks/hf/longmemeval_qa_eval.rs:251` | Low — benchmark code, not production path ✅ |
+| `.env` in git? | ✅ Nur `.env.example` getrackt. `.env` und `.env.native` in `.gitignore` |
+| `.env` Permissions | ✅ `.env` = 600, `.env.native` = 600 |
+| `.env.benchmark` Permissions | ⚠️ **644** — world-readable! `chmod 600` empfohlen |
+| Hardcoded Credentials | ✅ Keine gefunden. Drive-Connector nutzt Service-Account-JSON (korrekt) |
+| `.gitignore` Coverage | ✅ `.env.*` mit Ausnahme `!.env.example` |
 
-Only 1 `Command::new()` call, in benchmark code.
+**P1 Fix:**
+```bash
+chmod 600 /Users/nimarfranklinmac/knowwhere/.env.benchmark
+```
 
-### Panic Surface
+---
 
-| File | Line | Code | Risk |
+## 3. Unsafe Code
+
+**1 Block gefunden:**
+```rust
+// src/storage/in_memory.rs:136
+unsafe impl Send for SendableIndex {}
+```
+
+**Bewertung:** `SendableIndex` wrappt `usearch::Index`, das nicht `Send` ist (C-Bibliothek). Wird hinter `Arc<Mutex<>>` verwendet. **Akzeptabel**, aber eine explizite `// SAFETY:`-Begründung fehlt.
+
+**Empfehlung:** Safety-Kommentar ergänzen (Low-Prio, Code-Style).
+
+---
+
+## 4. Panic Surface
+
+**182 `unwrap()` Calls** in `src/`. Davon schätzungsweise ~40% in Test-Code (`_test.rs`, `#[cfg(test)]`).
+
+**Produktionsrelevante (nicht in Tests):**
+
+| Ort | Risiko |
+|---|---|
+| `memory/conversation.rs:392` — `turn.embedding.unwrap()` | Mittel — Turn ohne Embedding crasht |
+| `memory/control_room.rs:660-703` — `query_scoped().await.unwrap()` | Mittel — Async-Fehler crasht Request |
+| `connectors/drive.rs:113` — `page_token.as_ref().expect()` | Niedrig — direkt nach set |
+
+**Empfehlung:** Top-10 unwrap() in API-Routen durch `?` oder graceful error handling ersetzen. Nicht kritisch, aber technische Schuld.
+
+---
+
+## 5. SQL Injection
+
+**Keine Injection-Vektoren gefunden.**
+
+Alle SQL-Queries nutzen sqlx-Macros (`sqlx::query!()`, `sqlx::query_as!()`) mit compile-time validierten Statements. Parameter werden über `.bind()` übergeben.
+
+**Das ist vorbildlich.** Eines der sichersten Rust-SQL-Patterns überhaupt.
+
+---
+
+## 6. License & Supply Chain
+
+- **License:** MIT — kommerziell nutzbar, keine Copyleft-Restriktionen
+- **Dependencies:** 457 Crates im Lockfile
+- **cargo-deny:** Nicht installiert (empfohlen für CI)
+- **SBOM:** Kein CycloneDX-SBOM vorhanden
+
+**Empfehlung:**
+```bash
+cargo install cargo-deny
+cargo deny check  # Braucht deny.toml Config
+```
+
+---
+
+## 7. Network & Runtime Security
+
+| Check | Status |
+|---|---|
+| Port Binding | Nicht hartgecodet — via `KNOWWHERE_PORT` env. Default vermutlich 3738. |
+| Rate Limiting | ✅ `GovernorLayer` + `lazy_limit` in `main.rs`. Config via `RATE_LIMIT` env. |
+| Auth | ✅ API-Key via `AuthContext` Middleware. `subtle` crate für constant-time Vergleich. |
+| TLS | ⚠️ Kein Built-in-TLS. Erwartet Reverse-Proxy (nginx/caddy). Für Production OK. |
+
+---
+
+## 8. Priorisierte Remediation
+
+| Prio | Kategorie | Action | Aufwand |
 |---|---|---|---|
-| `src/api/routes.rs` | 2141 | `reranker_arc.lock().unwrap()` | 🟡 Medium — poison panic crashes server |
-| `src/api/routes.rs` | 2573 | `reranker_arc.lock().unwrap()` | 🟡 Medium — same |
-
-**Total `unwrap()` in production code: 2** (both reranker lock). These will crash the server if the Mutex is poisoned.
-
-### `.expect()` Usage
-
-| File | Count |
-|---|---|
-| `src/api/routes.rs` | 2 ("cand_idx non-empty") |
-
-Both are `.expect()` with descriptive messages — acceptable.
-
-### Recommendations
-
-1. Replace `lock().unwrap()` with `lock().expect("reranker lock poisoned — restart required")` for clearer crash messages
-2. Consider `Mutex::lock()` → `Arc<tokio::sync::RwLock>` for async-safe access
+| **P1** | Secrets | `chmod 600 .env.benchmark` | 1 Minute |
+| **P2** | Dependencies | `cargo update -p rustls-webpki` (nur mit google-drive Feature) | 2 Minuten |
+| **P3** | Supply Chain | `cargo install cargo-deny` + CI-Integration | 30 Minuten |
+| **P3** | Code Safety | Safety-Kommentar für `SendableIndex` ergänzen | 5 Minuten |
+| **P4** | Panic Surface | Top-10 `unwrap()` in API-Routen ersetzen | 2 Stunden |
+| **P4** | SBOM | `cargo cyclonedx --format json` | 5 Minuten |
 
 ---
 
-## 6. Code Quality Metrics
+## Gesamtverdict
 
-| Metric | Value |
-|---|---|
-| Total `.rs` files | ~40 |
-| `unsafe` blocks | 1 |
-| `unwrap()` total | 72 (70 in tests) |
-| `unwrap()` in production | 2 |
-| `.clone()` in routes.rs | 68 (perf concern, not security) |
-| TODO/FIXME/HACK/XXX | 0 (production code) |
-| `unsafe` beyond Send impl | 0 |
+**B+ — Produktionsreif mit minimaler Remediation.**
 
----
+KnowWhere hat die Sicherheits-Hygiene eines ernsthaften Rust-Projekts: sqlx-Makros verhindern Injection, subtle crate für timing-sichere Auth, Governor für Rate-Limiting, `.env`-Files korrekt von git ausgeschlossen. Die 5 cargo-audit-Findings sind alle transitiv oder feature-gated — kein einziges betrifft den Core-Pfad.
 
-## 7. Supply Chain Health
-
-| Metric | Value |
-|---|---|
-| Total dependencies | 457 crates |
-| Direct dependencies | ~50 |
-| SBOM | ❌ Not generated |
-| cargo-deny | ❌ Not configured |
-| Dependency pinning | Cargo.lock present ✅ |
-| Audit frequency | Unknown |
-
-### Recommendations
-
-1. **Generate SBOM**: `cargo cyclonedx` or `cargo sbom`
-2. **Add CI check**: `cargo audit` in CI pipeline (GitHub Actions)
-3. **Pin critical deps**: Already done via Cargo.lock ✅
-4. **`cargo-deny`**: Add `deny.toml` for license + advisory checks
-
----
-
-## 8. Network & Runtime Security
-
-| Check | Finding |
-|---|---|
-| Port binding | 0.0.0.0:3737 (all interfaces) ⚠️ |
-| TLS | Via rustls (transitive) |
-| Auth | Bearer token (KNOWWHERE_API_KEY) ✅ |
-| CORS | Not examined (likely permissive for local dev) |
-| Rate limiting | Not examined |
-
-### Recommendation
-
-- Bind to `127.0.0.1:3737` in production unless remote access is explicitly required
-- Add rate limiting middleware for the `/store_external` and `/retrieve_fractal` endpoints
-
----
-
-## 9. Remediation Priority
-
-| Priority | Action | Status |
-|---|---|---|
-| 🔴 **P0** | `cargo update -p rustls-webpki` — fix 3 TLS CVEs | ✅ **DONE** |
-| 🟡 **P1** | `chmod 600 .env .env.native` — fix world-readable secrets | ✅ **DONE** |
-| 🟡 **P1** | Replace reranker `unwrap()` with proper error handling | ✅ **DONE** — beide `unwrap()` → `.expect()` |
-| 🟢 **P2** | Add `cargo-deny` + CI pipeline | ⬜ TODO |
-| 🟢 **P2** | Generate SBOM (`cargo cyclonedx`) | ⬜ TODO |
-| 🟢 **P3** | Bind to 127.0.0.1 in production mode | ✅ **DONE** — `KNOWWHERE_HOST` env var, default `127.0.0.1` |
-| 🟢 **P3** | Add `.env.example` template | ✅ **DONE** |
-| ⬜ **P4** | Document RSA advisory exemption (transitive, Postgres-only) | ✅ **DONE** — see §2 |
-
----
-
-## 10. Verdict
-
-KnowWhere v0.5.0 is **production-ready for local/single-user deployment**. The codebase shows good Rust hygiene: 1 justified `unsafe`, no SQL injection vectors, proper secrets management (gitignore), MIT license.
-
-**The 3 TLS vulnerabilities in `rustls-webpki` are the only blocking issue** — these affect all outbound HTTPS (Google APIs, OAuth). Fix is a one-line `cargo update`.
-
-For multi-user or internet-facing deployment, additional hardening (rate limiting, 127.0.0.1 binding, proper Mutex error handling) would be needed.
-
----
-
-*Generated by Hermes Agent OSS Forensics Scan*  
-*Tools: `cargo audit`, `grep`, manual code review*
+Die größte technische Schuld ist nicht Sicherheit, sondern Code-Organisation (`api/routes.rs` mit 5884 LOC) und die fehlende Consolidation.

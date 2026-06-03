@@ -44,18 +44,19 @@ When an agent asks "why did we decide X three months ago?", other memory systems
 
 📊 **Phase 2 Completion:** [`docs/phase2-retrieval-quality-completion.md`](docs/phase2-retrieval-quality-completion.md)  
 📋 **81-Task Summary:** CHANGELOG v0.6.0 section  
-🏗️ **Architecture:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)  
+🏗️ **Architecture:** [`ARCHITECTURE_MAP.md`](ARCHITECTURE_MAP.md)  
 🧪 **Evaluation:** [`benchmarks/reports/LONGMEMEVAL_COMPARISON.md`](benchmarks/reports/LONGMEMEVAL_COMPARISON.md)
 
 ---
 
 ## Start Here
 
-- **5-minute setup:** [docs/QUICKSTART.md](docs/QUICKSTART.md)
-- **Full walkthrough:** [docs/WALKTHROUGH.md](docs/WALKTHROUGH.md)
-- **Current limitations:** [docs/BETA-README.md](docs/BETA-README.md)
-- **Product scope:** [docs/PRD.md](docs/PRD.md)
-- **Architecture:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- **API Reference:** [docs/API_REFERENCE.md](docs/API_REFERENCE.md)
+- **Architecture:** [ARCHITECTURE_MAP.md](ARCHITECTURE_MAP.md)
+- **Contributing:** [CONTRIBUTING.md](CONTRIBUTING.md)
+- **ADR Index:** [docs/ADR_INDEX.md](docs/ADR_INDEX.md)
+- **Setup guide:** [docs/archive/QUICKSTART.md](docs/archive/QUICKSTART.md) (v0.5, needs update)
+- **Product scope:** [docs/archive/PRD.md](docs/archive/PRD.md) (v0.5, vision still valid)
 
 ---
 

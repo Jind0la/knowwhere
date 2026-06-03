@@ -5,6 +5,13 @@
 
 ### Changed
 - **api/routes.rs refactored:** 5,884 LOC → 104 LOC split across 14 domain modules (health, store, retrieve, rerank, maintenance, trajectory, conflicts, energy, dedup, healing, namespaces, skills_routes, turn_handlers). Shared types extracted to `api/types.rs`. 304/305 tests pass. See `docs/plans/2026-06-03-split-api-routes.md` and `ARCHITECTURE_MAP.md`.
+- **Dependency hygiene:** `cargo update` — 101 packages to latest compatible versions. Cargo.lock refreshed.
+- **Production unwrap() elimination:** All 30 production `.unwrap()` calls replaced with `.expect("...")` in `in_memory.rs` (21 Mutex locks), `fact_extraction.rs` (7 regex/JSON), and `postgres_store.rs` (2 Option). Test-only unwraps preserved. See `oss-forensics` skill v1.2.0.
+- **Rust tooling:** Installed `cargo-outdated`, `cargo-udeps` (nightly), `cargo-geiger` for extended codebase health scans. `oss-forensics` skill upgraded to v1.2.0 with new Steps 6d–6g.
+- **Documentation overhaul:** Root directory cleaned (37→14 files). docs/ reorganized: 42 obsolete files archived to `docs/archive/`, 16 broken artifacts deleted. New docs: `CONTRIBUTING.md`, `docs/API_REFERENCE.md`, `docs/ADR_INDEX.md`. Updated `docs/README.md` with current structure.
+
+### Fixed
+- **Race condition in source_weighting tests:** `std::env::set_var` is process-global and not thread-safe. `test_from_config_env_takes_precedence_over_file` and `test_from_config_file_only` raced on `KNOWWHERE_SOURCE_TYPE_WEIGHTS` env var. Fix: `static ENV_LOCK: Mutex<()>` serializes all 11 env-var-manipulating tests. Test suite: 305/305 (was 304/305).
 
 All notable changes to KnowWhere are documented in this file.
 
