@@ -105,14 +105,19 @@ impl RetrievalProfile {
         node: &FractalNode,
         weights: Option<crate::retrieval::source_weighting::SourceTypeWeights>,
     ) -> f32 {
-        let explicit = self.explicit_weight(node);
-        let tier = self.tier_multiplier(node.trust_tier());
-        let mtype = self.memory_type_multiplier(node);
-        let w = weights.unwrap_or_default();
-        let source = crate::retrieval::source_weighting::source_multiplier(node, &w);
         // Ebbinghaus Forgetting Curve: temporal decay factor based on last review (r_m)
         // and reinforcement count (n_m). Returns 1.0 at review time, decays toward 0.0.
         let ebbinghaus = node.ebbinghaus_decay(chrono::Utc::now()) as f32;
+        let w = weights.unwrap_or_default();
+        let source = crate::retrieval::source_weighting::source_multiplier(node, &w);
+        if matches!(self, RetrievalProfile::FullFidelity) {
+            // Reduce-to-Core: neutralize tier/mtype/explicit (policy). Source weighting
+            // and Ebbinghaus (temporal fact) remain.
+            return ebbinghaus * source;
+        }
+        let explicit = self.explicit_weight(node);
+        let tier = self.tier_multiplier(node.trust_tier());
+        let mtype = self.memory_type_multiplier(node);
         tier * explicit * mtype * source * ebbinghaus
     }
 

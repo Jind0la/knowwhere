@@ -247,7 +247,9 @@ fn normalize_node_metadata(
         .entry("claim_scope".to_string())
         .or_insert_with(|| Value::String(default_claim_scope(memory_type, source).to_string()));
     if should_hide_from_user_retrieval(memory_type, metadata) {
-        set_metadata_text(metadata, FractalNode::TRUST_TIER_KEY, trust_tier);
+        metadata
+            .entry(FractalNode::TRUST_TIER_KEY.to_string())
+            .or_insert_with(|| Value::String(trust_tier.to_string()));
         metadata
             .entry(FractalNode::RETRIEVAL_VISIBILITY_KEY.to_string())
             .or_insert_with(|| Value::String(FractalNode::INTERNAL_VISIBILITY.to_string()));
