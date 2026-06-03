@@ -38,6 +38,10 @@ pub use governance_events::*;
 mod webhook_routes;
 pub use webhook_routes::*;
 
+#[path = "health.rs"]
+mod health;
+pub use health::*;
+
 use crate::api::subconscious_qa::{
     is_multi_session_type, is_temporal_question, openai_qa_answer, qa_answer, qa_context_limit,
     source_context_block, source_timestamp,
@@ -128,72 +132,6 @@ fn chunk_into_rounds(text: &str, min_round_chars: usize) -> Vec<String> {
         return vec![text.to_string()];
     }
     merged
-}
-
-// -- Health Check --
-
-#[derive(Serialize, ToSchema)]
-pub struct HealthResponse {
-    pub status: String,
-    pub node_count: usize,
-}
-
-#[utoipa::path(
-    get,
-    path = "/health",
-    tag = "system",
-    responses(
-        (status = 200, description = "Server health status", body = HealthResponse)
-    )
-)]
-pub async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
-    let count = state.store.count().await;
-    Json(HealthResponse {
-        status: "ok".to_string(),
-        node_count: count,
-    })
-}
-
-// -- Embed Text --
-
-#[derive(Deserialize, ToSchema)]
-pub struct EmbedRequest {
-    pub text: String,
-}
-
-#[derive(Serialize, ToSchema)]
-pub struct EmbedResponse {
-    pub vector: Vec<f32>,
-    pub dimension: usize,
-    pub provider: String,
-}
-
-#[utoipa::path(
-    post,
-    path = "/embed",
-    tag = "embedding",
-    request_body = EmbedRequest,
-    responses(
-        (status = 200, description = "Embedding vector", body = EmbedResponse),
-        (status = 500, description = "Embedding failed", body = String)
-    )
-)]
-pub async fn embed_text(
-    State(state): State<AppState>,
-    Json(req): Json<EmbedRequest>,
-) -> Result<Json<EmbedResponse>, (StatusCode, String)> {
-    let vector = embed_query(&*state.embedding, &req.text)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-    let dimension = vector.len();
-    let provider = state.embedding.name().to_string();
-
-    Ok(Json(EmbedResponse {
-        vector,
-        dimension,
-        provider,
-    }))
 }
 
 // -- Store Session --
