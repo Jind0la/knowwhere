@@ -33,7 +33,7 @@ use crate::memory::fractal_node::FractalNode;
 use crate::memory::types::{ConflictState, ContextTier, MemorySource, MemoryStatus, Sensitivity};
 use crate::memory::MemoryType;
 use crate::memory::conversation::TurnRow;
-use crate::storage::backend::{HybridQuery, ScoredNode, StorageBackend, UpdateOperation};
+use crate::storage::backend::{HybridQuery, RetrievalProfile, ScoredNode, StorageBackend, UpdateOperation};
 
 /// Hex-encoded BLAKE3 of the plaintext API key — stored in `auth_api_keys.key_hash` for O(1) lookup.
 #[must_use]
@@ -1994,9 +1994,11 @@ impl StorageBackend for PostgresStore {
                     .unwrap_or(std::cmp::Ordering::Equal)
             });
             scored_nodes.truncate(query.top_k);
-            // Temporal recency boost
-            if let Some(boost) = query.recency_boost {
-                let _boosted = apply_temporal_boost_scored(&mut scored_nodes, boost);
+            // Temporal recency boost (policy-gated: ignored under FullFidelity)
+            if !matches!(query.profile, RetrievalProfile::FullFidelity) {
+                if let Some(boost) = query.recency_boost {
+                    let _boosted = apply_temporal_boost_scored(&mut scored_nodes, boost);
+                }
             }
             return Ok(scored_nodes);
         }
@@ -2029,14 +2031,16 @@ impl StorageBackend for PostgresStore {
         });
         scored_nodes.truncate(query.top_k);
 
-        // Temporal recency boost (legacy)
-        if let Some(boost) = query.recency_boost {
-            let _boosted = apply_temporal_boost_scored(&mut scored_nodes, boost);
-        }
+        // Temporal recency boost (legacy) + hybrid temporal — both policy; ignored under FullFidelity
+        if !matches!(query.profile, RetrievalProfile::FullFidelity) {
+            if let Some(boost) = query.recency_boost {
+                let _boosted = apply_temporal_boost_scored(&mut scored_nodes, boost);
+            }
 
-        // NEW: Hybrid temporal + semantic scoring (WP1)
-        if let Some(w) = query.temporal_weight {
-            apply_hybrid_temporal_scoring(&mut scored_nodes, w);
+            // NEW: Hybrid temporal + semantic scoring (WP1)
+            if let Some(w) = query.temporal_weight {
+                apply_hybrid_temporal_scoring(&mut scored_nodes, w);
+            }
         }
 
         Ok(scored_nodes)

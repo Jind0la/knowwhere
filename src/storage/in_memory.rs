@@ -15,7 +15,7 @@ use uuid::Uuid;
 use crate::embedding::{embed_document, EmbeddingProvider};
 use crate::memory::FractalNode;
 use crate::storage::backend::EmbeddingRepairReport;
-use crate::storage::{FusionStrategy, HybridQuery, ScoredNode, StorageBackend, UpdateOperation};
+use crate::storage::{FusionStrategy, HybridQuery, RetrievalProfile, ScoredNode, StorageBackend, UpdateOperation};
 
 const USEARCH_THRESHOLD: usize = 50;
 const SAVE_DEBOUNCE_SECS: u64 = 60;
@@ -247,20 +247,27 @@ impl StorageBackend for MemoryStore {
     async fn hybrid_retrieve(&self, query: &HybridQuery) -> anyhow::Result<Vec<ScoredNode>> {
         let vector = query.query_vector.as_deref().unwrap_or(&[]);
         let fetch_k = query.profile.fetch_k(query.top_k);
-        let results = self
+        let mut raw_results = self
             .hybrid_retrieve(
                 query.query_text.as_deref(),
                 vector,
                 fetch_k,
                 query.max_depth,
-                query.recency_boost,
+                None, // recency_boost is policy-level; applied below only for !FullFidelity
                 query.fusion_strategy,
                 query.query_type_routing,
                 #[cfg(feature = "postgres-storage")]
                 None,
             )
             .await;
-        let mut weighted: Vec<_> = results
+        // Apply recency_boost (temporal policy) only for non-FullFidelity profiles.
+        // Low-level hybrid_retrieve now returns pure signals (recency/temporal gated at policy).
+        if let Some(b) = query.recency_boost {
+            if !matches!(query.profile, RetrievalProfile::FullFidelity) {
+                Self::apply_temporal_boost(&mut raw_results, b);
+            }
+        }
+        let mut weighted: Vec<_> = raw_results
             .into_iter()
             .filter(|(_, node)| query.profile.allows(node))
             .filter(|(_, node)| {
@@ -292,9 +299,11 @@ impl StorageBackend for MemoryStore {
                 .then_with(|| a.id.cmp(&b.id))
         });
 
-        // Hybrid temporal + semantic scoring (WP1)
-        if let Some(w) = query.temporal_weight {
-            Self::apply_temporal_to_scored_nodes(&mut weighted, w);
+        // Hybrid temporal + semantic scoring (WP1) — policy only; ignored under FullFidelity
+        if !matches!(query.profile, RetrievalProfile::FullFidelity) {
+            if let Some(w) = query.temporal_weight {
+                Self::apply_temporal_to_scored_nodes(&mut weighted, w);
+            }
         }
 
         // Distributional scoring: softmax-normalize scores into a proper probability
@@ -1476,7 +1485,7 @@ impl MemoryStore {
         query_vector: &[f32],
         top_k: usize,
         max_depth: usize,
-        recency_boost: Option<f32>,
+        _recency_boost: Option<f32>,
         fusion_strategy: Option<FusionStrategy>,
         query_type_routing: bool,
         #[cfg(feature = "postgres-storage")] trajectory_store: Option<
@@ -1556,11 +1565,6 @@ impl MemoryStore {
                     Self::boost_energy_for_retrieval(ts.pool(), &top_k_ids, 20).await;
                 }
             }
-            // Temporal recency boost: give edge to more-recent memories when scores are close
-            let mut results = results;
-            if let Some(boost) = recency_boost {
-                let _boosted = Self::apply_temporal_boost(&mut results, boost);
-            }
             return results;
         }
 
@@ -1617,12 +1621,6 @@ impl MemoryStore {
         if let Some(ts) = trajectory_store {
             let top_k_ids: Vec<Uuid> = results.iter().map(|(_, n)| n.id).collect();
             Self::boost_energy_for_retrieval(ts.pool(), &top_k_ids, 20).await;
-        }
-
-        // Temporal recency boost: give edge to more-recent memories when scores are close
-        let mut results = results;
-        if let Some(boost) = recency_boost {
-            let _boosted = Self::apply_temporal_boost(&mut results, boost);
         }
 
         results
