@@ -3,7 +3,14 @@
 
 ## [Unreleased]
 
+### Added
+- **Reduce-to-Core Phase 2 — Scoring Architecture:** New `src/retrieval/scoring.rs` (`ScoringEngine`) as single source of truth for all retrieval scoring. Strict separation of Core (cosine × ebbinghaus) and Policy (tier, mtype, source, explicit, intent, governance, temporal). FullFidelity profile now returns pure core scores with no policy multipliers.
+
 ### Changed
+- **Scoring engine centralized:** `backend.rs` delegates to `ScoringEngine` (-91 LOC dead multiplier code removed). Source weighting, temporal/recency, intent, and governance are now gated behind `!FullFidelity` profile checks.
+- **`trust_tier()` explicit-first:** Metadata `trust_tier` is now respected; hard-rules (Decision→primary, etc.) are fallbacks only.
+- **Backend-independent tiebreakers:** Trust-tier-based sort replaced with stable id-based tiebreaker in `in_memory.rs`.
+- **API-layer policy gated:** `finalize_retrieval_storage`, `finalize_governed_retrieval`, intent multiplication, and MMR bypassed for FullFidelity profile.
 - **api/routes.rs refactored:** 5,884 LOC → 104 LOC split across 14 domain modules (health, store, retrieve, rerank, maintenance, trajectory, conflicts, energy, dedup, healing, namespaces, skills_routes, turn_handlers). Shared types extracted to `api/types.rs`. 304/305 tests pass. See `docs/plans/2026-06-03-split-api-routes.md` and `ARCHITECTURE_MAP.md`.
 - **Dependency hygiene:** `cargo update` — 101 packages to latest compatible versions. Cargo.lock refreshed.
 - **Production unwrap() elimination:** All 30 production `.unwrap()` calls replaced with `.expect("...")` in `in_memory.rs` (21 Mutex locks), `fact_extraction.rs` (7 regex/JSON), and `postgres_store.rs` (2 Option). Test-only unwraps preserved. See `oss-forensics` skill v1.2.0.
