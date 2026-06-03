@@ -1391,13 +1391,11 @@ pub async fn retrieve_fractal(
                 "pre-MMR snapshot — scores/recency before finalization"
             );
         }
-        let results = finalize_retrieval_storage(
-            results,
-            query_intent,
-            &query_vector_for_expand,
-            req.top_k,
-            allow_meta,
-        );
+        let results = if req.retrieval_profile == RetrievalProfile::FullFidelity {
+            results  // pure core — no intent multiplication, no MMR
+        } else {
+            finalize_retrieval_storage(results, query_intent, &query_vector_for_expand, req.top_k, allow_meta)
+        };
         let scored: Vec<ScoredNode> = results
             .into_iter()
             .map(|entry| ScoredNode::from_storage(entry, req.include_debug))
@@ -1436,16 +1434,27 @@ pub async fn retrieve_fractal(
         })
         .collect();
 
-    for (entry, _, _) in &mut governed {
-        entry.score *= intent_metadata_multiplier(
-            query_intent,
-            entry.node.memory_type,
-            &entry.node.metadata,
-        );
+    if req.retrieval_profile != RetrievalProfile::FullFidelity {
+        for (entry, _, _) in &mut governed {
+            entry.score *= intent_metadata_multiplier(
+                query_intent,
+                entry.node.memory_type,
+                &entry.node.metadata,
+            );
+        }
     }
 
     let allow_meta = type_filter == Some(MemoryType::Meta);
-    let governed = finalize_governed_retrieval(governed, &query_vector_for_expand, req.top_k, allow_meta);
+    let governed = if req.retrieval_profile == RetrievalProfile::FullFidelity {
+        // Pure core — no governance multiplier, no MMR
+        governed.sort_by(|(a, _, _), (b, _, _)| {
+            b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal)
+        });
+        governed.truncate(req.top_k);
+        governed
+    } else {
+        finalize_governed_retrieval(governed, &query_vector_for_expand, req.top_k, allow_meta)
+    };
 
     let scored: Vec<ScoredNode> = governed
         .into_iter()
