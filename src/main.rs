@@ -24,7 +24,6 @@ use knowwhere_server::embedding::router::EmbeddingRouter;
 use knowwhere_server::embedding::{AudioProvider, ClipProvider};
 use knowwhere_server::memory::events::InMemoryEventStore;
 use knowwhere_server::memory::{DreamMode, GovernancePolicy};
-use knowwhere_server::scheduler::{AuditScheduler, SchedulerConfig};
 #[cfg(feature = "postgres-storage")]
 use knowwhere_server::storage::PostgresStore;
 use lazy_limit::{init_rate_limiter, Duration, RuleConfig};
@@ -112,8 +111,6 @@ async fn run() -> anyhow::Result<()> {
     let embedding = init_embedding_provider();
 
     tracing::info!(provider = embedding.name(), "embedding provider ready");
-    // NOTE: repair_legacy_embeddings disabled — use POST /maintenance/repair_embeddings instead
-    // runtime::repair_legacy_embeddings(&store, &embedding).await?;
 
     // Build cross-modal embedding router for content-type based dispatch.
     let router = Arc::new(EmbeddingRouter::new(

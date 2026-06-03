@@ -44,8 +44,10 @@ pub struct RerankCandidateInput {
 /// Reranking strategy parameter (deserialized from JSON).
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum RerankStrategyParam {
     /// Use Cross-Encoder score only (default).
+    #[default]
     CrossEncoderOnly,
     /// Weighted merge: alpha * cross_encoder + (1-alpha) * normalized_bi_encoder.
     MergedRrf {
@@ -59,11 +61,6 @@ fn default_alpha() -> f32 {
     0.7
 }
 
-impl Default for RerankStrategyParam {
-    fn default() -> Self {
-        RerankStrategyParam::CrossEncoderOnly
-    }
-}
 
 /// Response from the reranking endpoint.
 #[derive(Debug, Serialize, ToSchema)]

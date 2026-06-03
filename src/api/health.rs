@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::api::types::AppState;
-use crate::embedding::{embed_query, EmbeddingProvider};
+use crate::embedding::embed_query;
 
 #[derive(Serialize, ToSchema)]
 pub struct HealthResponse {

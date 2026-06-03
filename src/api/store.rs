@@ -9,9 +9,8 @@ use serde_json::Value;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::api::turns::BatchTurnItem;
 use crate::api::types::{clean_for_embedding, parse_speaker_role_from_chunk, AppState};
-use crate::embedding::{embed_document, embed_document_batch, EmbeddingProvider};
+use crate::embedding::{embed_document, embed_document_batch};
 use crate::memory::fact_extraction::{FactExtractionContext, FactExtractor};
 use crate::memory::types::{MemorySource, MemoryType, Sensitivity};
 use crate::memory::FractalNode;
@@ -747,6 +746,7 @@ pub async fn store_session_batch(
 
     // Phase 1: Turn-split all sessions, collect (session_idx, cleaned_text, original_chunk) triples
     struct TurnWork {
+        #[allow(dead_code)]
         session_idx: usize,
         cleaned: String,
         original: String,
@@ -1109,7 +1109,7 @@ pub async fn store_external(
     }
 
     // ── Dedup: skip if node with same external_id already exists ──
-    if let Some(ref meta) = node.metadata.get("external_id") {
+    if let Some(meta) = node.metadata.get("external_id") {
         if let Some(external_id) = meta.as_str() {
             if let Some(existing_id) = state.store.find_by_external_id(external_id).await {
                 tracing::info!(

@@ -7,7 +7,6 @@ use std::time::Instant;
 
 use anyhow::Result;
 use bm25::{Embedder, EmbedderBuilder, Language, Scorer};
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use usearch::{new_index, Index, IndexOptions, MetricKind, ScalarKind};
@@ -269,7 +268,7 @@ impl StorageBackend for MemoryStore {
             })
             .filter(|(_, node)| {
                 // memory_type_filter: keep only nodes matching the requested type
-                query.memory_type_filter.map_or(true, |mt| node.memory_type == mt)
+                query.memory_type_filter.is_none_or(|mt| node.memory_type == mt)
             })
             .filter(|(_, node)| {
                 // user_id filter: scope retrieval to a single persona's claims.
@@ -280,7 +279,7 @@ impl StorageBackend for MemoryStore {
                 let node_uid = node.metadata.get("user_id").and_then(|v| v.as_str());
                 match &query.user_id {
                     None => true,
-                    Some(uid) => node_uid.map_or(true, |v| v == uid.as_str()),
+                    Some(uid) => node_uid.is_none_or(|v| v == uid.as_str()),
                 }
             })
             .map(|(score, node)| query.profile.score_node(score, node, query.source_type_weights))
@@ -353,7 +352,7 @@ impl StorageBackend for MemoryStore {
                 let node_uid = node.metadata.get("user_id").and_then(|v| v.as_str());
                 match &query.user_id {
                     None => true,
-                    Some(uid) => node_uid.map_or(true, |v| v == uid.as_str()),
+                    Some(uid) => node_uid.is_none_or(|v| v == uid.as_str()),
                 }
             })
             .map(|node| ScoredNode {
@@ -803,7 +802,7 @@ impl MemoryStore {
         // Rapid inserts (benchmarks, batch loads) would otherwise trigger macOS
         // disk-write limits (52+ MB/s) and kernel kills (see Bug #5 crash report).
         let count = self.save_count.fetch_add(1, AtomicOrdering::Relaxed) + 1;
-        if count % BINARY_SAVE_EVERY_N == 0 {
+        if count.is_multiple_of(BINARY_SAVE_EVERY_N) {
             save_index_binary(&self.usearch_index, &index_binary_path(dir, "usearch.bin"))?;
             save_index_binary(&self.coarse_index, &index_binary_path(dir, "usearch_coarse.bin"))?;
             save_index_binary(&self.ultra_coarse_index, &index_binary_path(dir, "usearch_ultra.bin"))?;
@@ -1180,7 +1179,7 @@ impl MemoryStore {
     pub async fn find_by_external_id(&self, external_id: &str) -> Option<Uuid> {
         let nodes = self.nodes.read().await;
         for (id, node) in nodes.iter() {
-            if let Some(ref meta) = node.metadata.get("external_id") {
+            if let Some(meta) = node.metadata.get("external_id") {
                 if let Some(eid) = meta.as_str() {
                     if eid == external_id {
                         return Some(*id);
@@ -1324,6 +1323,7 @@ impl MemoryStore {
             .collect()
     }
 
+    #[allow(dead_code)]
     pub(crate) fn rrf_fuse(
         vector_ranked: &[Uuid],
         bm25_ranked: &[(Uuid, f32)],

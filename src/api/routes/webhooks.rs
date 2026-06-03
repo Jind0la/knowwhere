@@ -44,7 +44,7 @@ impl HomeAssistantWebhookPayload {
         use std::hash::{Hash, Hasher};
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         self.extra.to_string().hash(&mut hasher);
-        let _ = self.entity_id.as_deref().unwrap_or("").hash(&mut hasher);
+        self.entity_id.as_deref().unwrap_or("").hash(&mut hasher);
         format!("homeassistant:hash:{}", hasher.finish())
     }
 

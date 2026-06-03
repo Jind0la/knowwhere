@@ -348,11 +348,7 @@ impl TextChunker {
     fn find_paragraph_boundary(&self, window: &str, offset: usize, ideal: usize) -> Option<usize> {
         // Find double newlines
         let window_ideal = ideal.saturating_sub(offset);
-        let search_start = if window_ideal > self.config.split_window / 2 {
-            window_ideal - self.config.split_window / 2
-        } else {
-            0
-        };
+        let search_start = window_ideal.saturating_sub(self.config.split_window / 2);
 
         // Look for \n\n or \n# (markdown heading) from the left side
         if let Some(pos) = window[search_start..].find("\n\n") {
@@ -380,11 +376,7 @@ impl TextChunker {
     /// Find a sentence boundary near the ideal split.
     fn find_sentence_boundary(&self, window: &str, offset: usize, ideal: usize) -> Option<usize> {
         let window_ideal = ideal.saturating_sub(offset);
-        let search_start = if window_ideal > self.config.split_window / 2 {
-            window_ideal - self.config.split_window / 2
-        } else {
-            0
-        };
+        let search_start = window_ideal.saturating_sub(self.config.split_window / 2);
 
         let sentence_ends = [". ", "! ", "? ", ".\n", "!\n", "?\n"];
 

@@ -346,7 +346,7 @@ pub mod ort_impl {
 
             let mut results: Vec<RerankedResult> = candidates
                 .into_iter()
-                .zip(scores.into_iter())
+                .zip(scores)
                 .map(|(c, cross_score)| RerankedResult {
                     node_id: c.node_id,
                     content: c.content,

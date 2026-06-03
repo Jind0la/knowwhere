@@ -581,7 +581,7 @@ pub trait StorageBackend: Send + Sync {
     /// Re-embed legacy nodes whose stored vector dimension no longer matches the active provider.
     async fn repair_embedding_dimensions(
         &self,
-        provider: &dyn EmbeddingProvider,
+        _provider: &dyn EmbeddingProvider,
     ) -> anyhow::Result<EmbeddingRepairReport> {
         Ok(EmbeddingRepairReport::default())
     }

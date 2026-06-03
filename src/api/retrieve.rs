@@ -1,13 +1,12 @@
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 
-use axum::extract::{Extension, Path, Query, State};
+use axum::extract::{Extension, Path, State};
 use axum::http::StatusCode;
 use axum::Json;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use utoipa::{IntoParams, ToSchema};
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::api::auth::AuthContext;
@@ -19,14 +18,12 @@ use crate::api::subconscious_qa::{
 use crate::api::types::{
     clean_for_embedding, score_debug_response, AppState, RetrievalScoreDebug, ScoredNode,
 };
-use crate::api::turns::{PaginatedSessionTurns, ScoredTurn, SessionTurnsResponse};
-use crate::embedding::{embed_document, embed_query, EmbeddingProvider};
+use crate::embedding::{embed_document, embed_query};
 use crate::memory::types::{ContextTier, MemorySource, MemoryStatus, MemoryType, Sensitivity};
 use crate::memory::{
-    FractalNode, GovernancePolicy, GovernanceValidator,
+    FractalNode, GovernanceValidator,
 };
-use crate::storage::FusionStrategy;
-use crate::storage::{HybridQuery, RetrievalProfile, StorageBackend};
+use crate::storage::{HybridQuery, RetrievalProfile};
 
 fn auth_context_or_full_access(auth: Option<Extension<AuthContext>>) -> AuthContext {
     auth.map(|Extension(context)| context)
@@ -84,7 +81,7 @@ fn retrieval_result_allowed(
     };
     profile.allows(&entry.node)
         && meta_allowed
-        && type_filter.map_or(true, |filter| entry.node.memory_type == filter)
+        && type_filter.is_none_or(|filter| entry.node.memory_type == filter)
 }
 
 fn is_internal_meta_artifact(node: &ScoredNode) -> bool {
@@ -1009,8 +1006,8 @@ pub async fn retrieve_fractal(
         req.top_k
     };
 
-    let query_vector_for_turns = query_vector.clone();
-    let mut results = if req.multi_query {
+    let _query_vector_for_turns = query_vector.clone();
+    let results = if req.multi_query {
         // Multi-Query: expand into 2-3 reformulations, retrieve each, RRF-fuse
         let query_text = req.query_text.clone().unwrap_or_default();
         let expansions = crate::retrieval::query_expansion::expand_query(&query_text);
@@ -1287,7 +1284,7 @@ pub async fn retrieve_fractal(
                         top_k: req.top_k,
                         max_depth: req.max_depth,
                         profile: req.retrieval_profile,
-                        memory_type_filter: type_filter.clone(),
+                        memory_type_filter: type_filter,
                         user_id: req.user_id.clone(),
                         multi_query: false,
                         recency_boost: req.recency_boost,
@@ -1454,7 +1451,7 @@ pub async fn retrieve_fractal(
         .collect();
     let scored: Vec<ScoredNode> = scored
         .into_iter()
-        .filter(|s| type_filter.map_or(true, |t| s.memory_type == t))
+        .filter(|s| type_filter.is_none_or(|t| s.memory_type == t))
         .collect();
     let scored = scrub_response_nodes(scored, allow_meta);
 
@@ -1464,7 +1461,7 @@ pub async fn retrieve_fractal(
         if let Some(ref reflector) = reflector {
             let query = req.query_text.as_deref().unwrap_or("");
             if !query.is_empty() {
-                match {
+                let res = {
                     // Build chunk summaries for the reflector.
                     // Skip Episodic nodes — raw transcripts add too much noise
                     // and dilute synthesis quality of the small reflect model.
@@ -1542,7 +1539,7 @@ pub async fn retrieve_fractal(
                     };
 
                     reflector.reflect_on_chunks(&chunks, query).await
-                } {
+                }; match res {
                     Ok(reflection) if !reflection.is_empty() => {
                         // Prepend synthetic reflection node with max score
                         let reflection_node = ScoredNode {

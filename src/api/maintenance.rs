@@ -1,19 +1,16 @@
-use std::collections::HashMap;
 
-use axum::extract::{Path, Query, State};
+use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::Json;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 use crate::api::auth::AuthContext;
 use crate::api::types::{clean_for_embedding, AppState};
 use super::store::StoreNodeResponse;
-use crate::embedding::{embed_document, embed_document_batch, EmbeddingProvider};
+use crate::embedding::embed_document;
 use crate::memory::dream::DreamStatus;
-use crate::memory::types::{MemoryType, Sensitivity};
 use crate::memory::FractalNode;
 
 // -- Delete Node --
@@ -31,6 +28,7 @@ use crate::memory::FractalNode;
         (status = 500, description = "Internal error", body = String)
     )
 )]
+#[allow(dead_code)]
 pub async fn delete_node(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,

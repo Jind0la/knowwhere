@@ -90,7 +90,7 @@ impl<C: ConsolidationStore> ConsolidationEngine<C> {
         let start = std::time::Instant::now();
 
         let mut summaries_created = 0;
-        let clusters_formed: usize;
+        
         let edges_created = 0;
         let mut memories_archived = 0;
 
@@ -115,7 +115,7 @@ impl<C: ConsolidationStore> ConsolidationEngine<C> {
 
         // Step 2: Cluster by topic (simplified — uses content similarity)
         let clusters = self.cluster_memories(&eligible).await?;
-        clusters_formed = clusters.len();
+        let clusters_formed: usize = clusters.len();
 
         // Step 3: For each cluster, create summary + parent node
         for cluster in &clusters {
@@ -322,7 +322,6 @@ pub struct ConsolidationMemory {
 
 use std::sync::Arc;
 use crate::storage::in_memory::MemoryStore;
-use crate::memory::fractal_node::mean_vector;
 use crate::memory::FractalNode;
 use crate::memory::types::{MemoryStatus};
 

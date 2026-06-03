@@ -15,7 +15,7 @@ pub fn expand_query(query: &str) -> Vec<String> {
 
     if !keywords.is_empty() {
         // Broadening: general category from first keyword
-        if keywords.len() >= 1 {
+        if !keywords.is_empty() {
             let broad = format!(
                 "{} Systeme, Tools und Konfigurationen",
                 keywords[0]

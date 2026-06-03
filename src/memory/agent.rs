@@ -377,12 +377,14 @@ impl AgentProvenance {
 /// shared via a handoff.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum MemoryVisibility {
     /// Visible to ALL agents in the system.
     /// Use for: architectural decisions, shared knowledge, handoff results.
     Shared,
     /// Visible only to the owning agent.
     /// Use for: agent-internal state, intermediate reasoning, private notes.
+    #[default]
     Private,
     /// Visible to the owning agent + explicitly listed agents.
     /// Use for: targeted handoffs, pair programming, review workflows.
@@ -433,11 +435,6 @@ impl std::fmt::Display for MemoryVisibility {
     }
 }
 
-impl Default for MemoryVisibility {
-    fn default() -> Self {
-        MemoryVisibility::Private // Safe default: private unless explicitly shared
-    }
-}
 
 // -----------------------------------------------------------------------------
 // Tests

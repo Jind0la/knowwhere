@@ -1,26 +1,17 @@
-use axum::extract::{Path, Query, State};
-use axum::http::StatusCode;
-use axum::Json;
-use serde::{Deserialize, Serialize};
-use utoipa::{IntoParams, ToSchema};
-use uuid::Uuid;
-use crate::api::types::*;
-use crate::api::types::*;
 
 // =============================================================================
 // Turn-Level Routes (per-turn embedding pipeline)
 // =============================================================================
 
 /// Validate that a speaker_role string is one of the allowed values.
-fn validate_speaker_role(role: &str) -> Result<&str, (StatusCode, String)> {
-    match role {
-        "user" | "assistant" | "system" | "tool" => Ok(role),
-        other => Err((
-            StatusCode::BAD_REQUEST,
-            format!("invalid speaker_role '{}': expected user, assistant, system, or tool", other),
-        )),
-    }
-}
+
+
+
+
+
+
+
+
 
 #[cfg(feature = "postgres-storage")]
 #[derive(Deserialize, ToSchema)]

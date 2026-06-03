@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde::Serialize;
 use tokio::sync::RwLock;
 use utoipa::ToSchema;
 use uuid::Uuid;

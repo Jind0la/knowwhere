@@ -294,7 +294,7 @@ fn qa_prompt(
         prompt.push_str("- For duration questions, compute the time difference from the evidence.\n");
         prompt.push_str("- For ordering questions, choose the earlier or later event explicitly.\n");
     }
-    prompt.push_str("\n");
+    prompt.push('\n');
     if let Some(qtype) = question_type {
         prompt.push_str(&format!("Question type: {qtype}\n"));
     }
@@ -448,17 +448,6 @@ fn extract_answer_content(response: &serde_json::Value) -> String {
     } else {
         reasoning.to_string()
     }
-}
-
-/// Legacy alias — calls qa_answer with kimi provider.
-#[deprecated(note = "use qa_answer() instead")]
-pub(crate) async fn openai_qa_answer(
-    message: &str,
-    question_type: Option<&str>,
-    question_date: Option<&str>,
-    contexts: &[String],
-) -> anyhow::Result<String> {
-    qa_answer_openai(message, question_type, question_date, contexts).await
 }
 
 #[cfg(test)]

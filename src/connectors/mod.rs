@@ -70,7 +70,7 @@ pub async fn store_external_events_batch(
 
     let nodes: Result<Vec<_>> = plain_events
         .into_iter()
-        .zip(embeddings.into_iter())
+        .zip(embeddings)
         .map(|(event, vector)| {
             Ok(FractalNode::new_external(
                 event.pointer,

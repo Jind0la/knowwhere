@@ -21,7 +21,7 @@
 use crate::memory::agent::{AgentId, AgentProvenance, AgentRegistry, MemoryVisibility};
 use crate::memory::types::MemoryType;
 use crate::memory::FractalNode;
-use crate::storage::backend::{HybridQuery, RetrievalProfile, ScoredNode, StorageBackend};
+use crate::storage::backend::{HybridQuery, ScoredNode, StorageBackend};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -101,7 +101,6 @@ impl ControlRoom {
             None,
             vector,
             metadata.into_iter()
-                .map(|(k, v)| (k, v))
                 .collect::<HashMap<String, serde_json::Value>>(),
             memory_type,
             source,
@@ -141,7 +140,6 @@ impl ControlRoom {
             None,
             vector,
             metadata.into_iter()
-                .map(|(k, v)| (k, v))
                 .collect::<HashMap<String, serde_json::Value>>(),
             memory_type,
             source,
@@ -206,7 +204,6 @@ impl ControlRoom {
             None,
             vector,
             metadata.into_iter()
-                .map(|(k, v)| (k, v))
                 .collect::<HashMap<String, serde_json::Value>>(),
             memory_type,
             source,
@@ -360,7 +357,7 @@ impl ControlRoom {
         node.provenance = serde_json::to_value(&prov).unwrap_or_default();
 
         // Persist the updated node
-        use crate::storage::backend::UpdateOperation;
+        
         // We need to re-insert with new metadata — update doesn't support metadata mutation
         // Workaround: we'll store the handoff info by updating the content
         // Actually, let's use a different approach — store the handoff as a new derived node
@@ -405,7 +402,6 @@ impl ControlRoom {
             None,
             node.vector.clone(),
             handoff_metadata.into_iter()
-                .map(|(k, v)| (k, v))
                 .collect::<HashMap<String, serde_json::Value>>(),
             node.memory_type,
             crate::memory::types::MemorySource::Conversation,
