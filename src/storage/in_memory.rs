@@ -95,7 +95,7 @@ fn save_index_binary(
     index: &Mutex<Option<SendableIndex>>,
     path: &Path,
 ) -> Result<()> {
-    let guard = index.lock().unwrap();
+    let guard = index.lock().expect("index mutex poisoned");
     if let Some(ref idx) = *guard {
         let path_str = path.to_string_lossy().to_string();
         idx.save(&path_str)
@@ -120,7 +120,7 @@ fn load_index_binary(
     let path_str = path.to_string_lossy().to_string();
     new_idx.load(&path_str)
         .map_err(|e| anyhow::anyhow!("failed to load binary index from {}: {e}", path.display()))?;
-    let mut guard = index.lock().unwrap();
+    let mut guard = index.lock().expect("index mutex poisoned");
     *guard = Some(new_idx);
     Ok(true)
 }
@@ -616,7 +616,7 @@ impl MemoryStore {
 
                 if let (Ok(true), Ok(_), Ok(_)) = (&main_loaded, &coarse_loaded, &ultra_loaded) {
                     // All three binary indices loaded successfully
-                    *self.index_dimension.lock().unwrap() = Some(dim);
+                    *self.index_dimension.lock().expect("index_dimension mutex poisoned") = Some(dim);
                     tracing::info!("binary USearch indices loaded — skipping vector rebuild");
                     used_binary = true;
                 } else {
@@ -631,9 +631,9 @@ impl MemoryStore {
                         tracing::warn!("binary ultra-coarse index load failed, falling back to rebuild: {e}");
                     }
                     // Reset any partially-loaded indices
-                    *self.usearch_index.lock().unwrap() = None;
-                    *self.coarse_index.lock().unwrap() = None;
-                    *self.ultra_coarse_index.lock().unwrap() = None;
+                    *self.usearch_index.lock().expect("usearch_index mutex poisoned") = None;
+                    *self.coarse_index.lock().expect("coarse_index mutex poisoned") = None;
+                    *self.ultra_coarse_index.lock().expect("ultra_coarse_index mutex poisoned") = None;
                 }
             }
         }
@@ -662,8 +662,8 @@ impl MemoryStore {
                         }
                     }
 
-                    *self.usearch_index.lock().unwrap() = Some(index);
-                    *self.index_dimension.lock().unwrap() = Some(dim);
+                    *self.usearch_index.lock().expect("usearch_index mutex poisoned") = Some(index);
+                    *self.index_dimension.lock().expect("index_dimension mutex poisoned") = Some(dim);
                     tracing::info!(dim, skipped, "usearch index rebuilt from persisted state");
                 }
             }
@@ -694,8 +694,8 @@ impl MemoryStore {
                             }
                         }
                     }
-                    *self.coarse_index.lock().unwrap() = Some(coarse_idx);
-                    *self.coarse_dimension.lock().unwrap() = Some(coarse_dim);
+                    *self.coarse_index.lock().expect("coarse_index mutex poisoned") = Some(coarse_idx);
+                    *self.coarse_dimension.lock().expect("coarse_dimension mutex poisoned") = Some(coarse_dim);
                     tracing::info!(coarse_dim, coarse_skipped, "coarse usearch index rebuilt from persisted state");
                 }
             }
@@ -728,8 +728,8 @@ impl MemoryStore {
                             }
                         }
                     }
-                    *self.ultra_coarse_index.lock().unwrap() = Some(ultra_idx);
-                    *self.ultra_coarse_dimension.lock().unwrap() = Some(ultra_dim);
+                    *self.ultra_coarse_index.lock().expect("ultra_coarse_index mutex poisoned") = Some(ultra_idx);
+                    *self.ultra_coarse_dimension.lock().expect("ultra_coarse_dimension mutex poisoned") = Some(ultra_dim);
                     tracing::info!(ultra_dim, ultra_skipped, "ultra-coarse usearch index rebuilt from persisted state");
                 }
             }
@@ -838,7 +838,7 @@ impl MemoryStore {
             return;
         }
         let should_save = {
-            let mut last = self.last_save.lock().unwrap();
+            let mut last = self.last_save.lock().expect("last_save mutex poisoned");
             if last.elapsed().as_secs() >= SAVE_DEBOUNCE_SECS {
                 *last = Instant::now();
                 true
@@ -1035,8 +1035,8 @@ impl MemoryStore {
                 indexed += 1;
             }
         }
-        *self.usearch_index.lock().unwrap() = Some(index);
-        *self.index_dimension.lock().unwrap() = Some(dimension);
+        *self.usearch_index.lock().expect("usearch_index mutex poisoned") = Some(index);
+        *self.index_dimension.lock().expect("index_dimension mutex poisoned") = Some(dimension);
         tracing::info!(dimension, indexed, "usearch index rebuilt");
         Ok(indexed)
     }
@@ -1147,7 +1147,7 @@ impl MemoryStore {
                 .write()
                 .await
                 .push((id, bm25_text.to_string()));
-            *self.bm25_dirty.lock().unwrap() = true;
+            *self.bm25_dirty.lock().expect("bm25_dirty mutex poisoned") = true;
         }
 
         self.nodes.write().await.insert(id, node);
@@ -1291,8 +1291,8 @@ impl MemoryStore {
         for (id, text) in corpus.iter() {
             scorer.upsert(id, embedder.embed(text));
         }
-        *self.bm25_cache.lock().unwrap() = Some(CachedBm25 { embedder, scorer });
-        *self.bm25_dirty.lock().unwrap() = false;
+        *self.bm25_cache.lock().expect("bm25_cache mutex poisoned") = Some(CachedBm25 { embedder, scorer });
+        *self.bm25_dirty.lock().expect("bm25_dirty mutex poisoned") = false;
     }
 
     pub async fn search_bm25(&self, query: &str, top_k: usize) -> Vec<(Uuid, f32)> {
@@ -1301,13 +1301,13 @@ impl MemoryStore {
             return vec![];
         }
 
-        let dirty = *self.bm25_dirty.lock().unwrap();
-        if dirty || self.bm25_cache.lock().unwrap().is_none() {
+        let dirty = *self.bm25_dirty.lock().expect("bm25_dirty mutex poisoned");
+        if dirty || self.bm25_cache.lock().expect("bm25_cache mutex poisoned").is_none() {
             self.rebuild_bm25_cache(&corpus);
         }
         drop(corpus);
 
-        let guard = self.bm25_cache.lock().unwrap();
+        let guard = self.bm25_cache.lock().expect("bm25_cache mutex poisoned");
         let cached = match guard.as_ref() {
             Some(c) => c,
             None => return vec![],

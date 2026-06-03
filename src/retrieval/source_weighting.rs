@@ -290,7 +290,12 @@ mod tests {
     use crate::memory::types::{MemoryStatus, MemoryType};
     use chrono::Utc;
     use std::collections::HashMap;
+    use std::sync::Mutex;
     use uuid::Uuid;
+
+    /// Serialize tests that manipulate process-global env vars.
+    /// `std::env::set_var` is not thread-safe — parallel tests would race.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     fn make_node(
         source: MemorySource,
@@ -697,6 +702,7 @@ mod tests {
 
     #[test]
     fn test_from_env_missing_returns_none() {
+        let _lock = ENV_LOCK.lock().unwrap();
         // Ensure no env pollution
         std::env::remove_var("KNOWWHERE_SOURCE_TYPE_WEIGHTS");
         assert!(SourceTypeWeights::from_env().is_none());
@@ -704,6 +710,7 @@ mod tests {
 
     #[test]
     fn test_from_env_full_json() {
+        let _lock = ENV_LOCK.lock().unwrap();
         std::env::set_var(
             "KNOWWHERE_SOURCE_TYPE_WEIGHTS",
             r#"{"real":1.0,"synthetic":0.5,"derived":0.3,"unknown":0.8}"#,
@@ -718,6 +725,7 @@ mod tests {
 
     #[test]
     fn test_from_env_partial_json_keeps_defaults() {
+        let _lock = ENV_LOCK.lock().unwrap();
         std::env::set_var(
             "KNOWWHERE_SOURCE_TYPE_WEIGHTS",
             r#"{"synthetic":0.2}"#,
@@ -734,6 +742,7 @@ mod tests {
 
     #[test]
     fn test_from_env_clamps_bounds() {
+        let _lock = ENV_LOCK.lock().unwrap();
         std::env::set_var(
             "KNOWWHERE_SOURCE_TYPE_WEIGHTS",
             r#"{"real":3.0,"synthetic":-0.5,"derived":10.0,"unknown":-1.0}"#,
@@ -748,6 +757,7 @@ mod tests {
 
     #[test]
     fn test_from_env_invalid_json_returns_none() {
+        let _lock = ENV_LOCK.lock().unwrap();
         std::env::set_var("KNOWWHERE_SOURCE_TYPE_WEIGHTS", "not json");
         assert!(SourceTypeWeights::from_env().is_none());
         std::env::remove_var("KNOWWHERE_SOURCE_TYPE_WEIGHTS");
@@ -755,6 +765,7 @@ mod tests {
 
     #[test]
     fn test_from_env_array_returns_none() {
+        let _lock = ENV_LOCK.lock().unwrap();
         std::env::set_var("KNOWWHERE_SOURCE_TYPE_WEIGHTS", "[1.0, 2.0]");
         assert!(SourceTypeWeights::from_env().is_none());
         std::env::remove_var("KNOWWHERE_SOURCE_TYPE_WEIGHTS");
@@ -844,6 +855,7 @@ mod tests {
 
     #[test]
     fn test_from_config_env_takes_precedence_over_file() {
+        let _lock = ENV_LOCK.lock().unwrap();
         // Set env var (highest priority)
         std::env::set_var(
             "KNOWWHERE_SOURCE_TYPE_WEIGHTS",
@@ -869,6 +881,7 @@ mod tests {
 
     #[test]
     fn test_from_config_file_only() {
+        let _lock = ENV_LOCK.lock().unwrap();
         std::env::remove_var("KNOWWHERE_SOURCE_TYPE_WEIGHTS");
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("source_weights.json");
@@ -887,6 +900,7 @@ mod tests {
 
     #[test]
     fn test_from_config_no_sources_returns_none() {
+        let _lock = ENV_LOCK.lock().unwrap();
         std::env::remove_var("KNOWWHERE_SOURCE_TYPE_WEIGHTS");
         std::env::remove_var("KNOWWHERE_SOURCE_TYPE_WEIGHTS_FILE");
         // No default source_weights.json in the working directory either.
@@ -1491,6 +1505,7 @@ mod tests {
 
     #[test]
     fn test_unknown_weight_from_env() {
+        let _lock = ENV_LOCK.lock().unwrap();
         std::env::set_var(
             "KNOWWHERE_SOURCE_TYPE_WEIGHTS",
             r#"{"unknown":0.42}"#,

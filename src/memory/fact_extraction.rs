@@ -115,7 +115,7 @@ impl ExtractedFact {
         // Set explicit trust weight for retrieval scoring boost
         metadata.insert(
             "trust_weight".to_string(),
-            serde_json::Value::Number(serde_json::Number::from_f64(2.0).unwrap()),
+            serde_json::Value::Number(serde_json::Number::from_f64(2.0).expect("2.0 is always valid JSON number")),
         );
 
         let mut node = FractalNode::new_typed(
@@ -147,7 +147,7 @@ static RULE_PREFERENCE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
         r"(?i)\b(?:I\s+(?:really\s+)?(?:like|prefer|enjoy|love|favor(?:ite)?|hate|dislike)|ich\s+(?:mag|liebe|bevorzuge|hasse))\s+(.+?)(?:\.|$|\s+because|\s+since|\s+as\s+it)",
     )
-    .unwrap()
+    .expect("invalid regex pattern")
 });
 
 /// Rule 2: Explicit Decision Statement
@@ -159,7 +159,7 @@ static RULE_DECISION: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
         r"(?i)(?:(?:I|we)\s+(?:decided|chose|went\s+with|opted\s+for)\s+(?:to\s+)?(.+?)(?:\.|$|\s+because|\s+since))|(?:DECISION:\s*(.+?)(?:\.|$))|(?:(?:Entscheidung|entschieden)[:\s]+(.+?)(?:\.|$))",
     )
-    .unwrap()
+    .expect("invalid regex pattern")
 });
 
 /// Rule 3: Change Over Time / Supersession
@@ -171,7 +171,7 @@ static RULE_CHANGE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
         r"(?i)\b(?:(?:no\s+longer|used\s+to|I\s+now|I\s+currently|changed\s+(?:my\s+)?mind|not\s+anymore|I've\s+changed)\s+(.+?)(?:\.|$))|(?:(?:nicht\s+mehr|früher|jetzt|geändert)\s+(.+?)(?:\.|$))",
     )
-    .unwrap()
+    .expect("invalid regex pattern")
 });
 
 /// Rule 4: Key Fact Assertion (Subject–Verb–Object pattern)
@@ -183,7 +183,7 @@ static RULE_FACT: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
         r"(?i)\b(?:the\s+\w+(?:\s+\w+){0,3}\s+(?:is|was|are|were|has|have)\s+(?:a\s+|an\s+|the\s+)?\w[\w\s]{5,60}?)(?:\.|$)",
     )
-    .unwrap()
+    .expect("invalid regex pattern")
 });
 
 /// Rule 5: Future Intent / Plan
@@ -195,7 +195,7 @@ static RULE_INTENT: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
         r"(?i)\b(?:I\s+(?:will|plan(?:\s+to)?|want(?:\s+to)?|am\s+going\s+to|intend\s+to)\s+(.+?)(?:\.|$))|(?:(?:ich\s+werde|ich\s+plane|ich\s+möchte)\s+(.+?)(?:\.|$))",
     )
-    .unwrap()
+    .expect("invalid regex pattern")
 });
 
 /// Rule 6: Correction / "Actually" / "Update"
@@ -207,7 +207,7 @@ static RULE_CORRECTION: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
         r"(?i)\b(?:actually[,:]?\s+(.+?)(?:\.|$)|correction[,:]?\s*(.+?)(?:\.|$)|update[,:]?\s*(.+?)(?:\.|$)|wait[,:]?\s*(.+?)(?:\.|$))",
     )
-    .unwrap()
+    .expect("invalid regex pattern")
 });
 
 /// Context for fact extraction at storage time.

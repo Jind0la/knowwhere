@@ -1908,7 +1908,7 @@ impl StorageBackend for PostgresStore {
 
         // If only text is provided, fall back to BM25
         if query.query_text.is_some() && query.query_vector.is_none() {
-            let text = query.query_text.as_ref().unwrap();
+            let text = query.query_text.as_ref().expect("query_text guarded by is_some() check");
             let bm25_results = self.search_bm25(text, fetch_k as i32).await?;
             // Convert BM25 results to ScoredNodes by fetching full nodes
             let mut scored_nodes = Vec::new();
@@ -2002,7 +2002,7 @@ impl StorageBackend for PostgresStore {
         }
 
         // Hybrid: combine vector + BM25 via RRF
-        let bm25_text = query.query_text.as_ref().unwrap();
+        let bm25_text = query.query_text.as_ref().expect("query_text required for hybrid BM25");
         let bm25_results = self.search_bm25(bm25_text, fetch_k as i32).await?;
         let bm25_ids: Vec<(Uuid, f32)> = bm25_results;
 
