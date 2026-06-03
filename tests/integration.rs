@@ -836,7 +836,7 @@ async fn retrieve_fractal_current_state_intent_prefers_current_context() {
             Request::post("/retrieve_fractal")
                 .header("content-type", "application/json")
                 .body(Body::from(
-                    r#"{"query_vector":[1,1,1,1],"top_k":2,"query_intent":"current_state","governance_enabled":false,"retrieval_profile":"full-fidelity"}"#,
+                    r#"{"query_vector":[1,1,1,1],"top_k":2,"query_intent":"current_state","governance_enabled":false}"#,
                 ))
                 .unwrap(),
         )

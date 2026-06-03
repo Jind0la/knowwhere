@@ -1927,6 +1927,7 @@ impl StorageBackend for PostgresStore {
                 b.score
                     .partial_cmp(&a.score)
                     .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.id.cmp(&b.id))
             });
             scored_nodes.truncate(query.top_k);
             return Ok(scored_nodes);
@@ -1961,6 +1962,7 @@ impl StorageBackend for PostgresStore {
                             b.score
                                 .partial_cmp(&a.score)
                                 .unwrap_or(std::cmp::Ordering::Equal)
+                                .then_with(|| a.id.cmp(&b.id))
                         });
                         scored_nodes.truncate(query.top_k);
                         return Ok(scored_nodes);
@@ -1992,6 +1994,7 @@ impl StorageBackend for PostgresStore {
                 b.score
                     .partial_cmp(&a.score)
                     .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.id.cmp(&b.id))
             });
             scored_nodes.truncate(query.top_k);
             // Temporal recency boost (policy-gated: ignored under FullFidelity)
@@ -2028,6 +2031,7 @@ impl StorageBackend for PostgresStore {
             b.score
                 .partial_cmp(&a.score)
                 .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.id.cmp(&b.id))
         });
         scored_nodes.truncate(query.top_k);
 

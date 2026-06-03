@@ -314,6 +314,7 @@ impl FractalNode {
             if value.eq_ignore_ascii_case(Self::TRUST_VOLATILE) {
                 return Self::TRUST_VOLATILE;
             }
+            tracing::warn!(node_id=%self.id, trust_tier=%value, "unknown trust_tier in metadata, falling back to hard-rules");
         }
         // 2. Hard-rules ONLY as fallback (when no explicit metadata)
         if self.memory_type == MemoryType::Decision {

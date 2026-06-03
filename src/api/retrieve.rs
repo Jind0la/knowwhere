@@ -1392,6 +1392,9 @@ pub async fn retrieve_fractal(
             );
         }
         let results = if req.retrieval_profile == RetrievalProfile::FullFidelity {
+            // FullFidelity: no deduplication, no MMR diversity — pure core scores.
+            // Rationale: FullFidelity is the raw retrieval signal. Dedupe and MMR
+            // are policy decisions (Reduce-to-Core Phase 2).
             results  // pure core — no intent multiplication, no MMR
         } else {
             finalize_retrieval_storage(results, query_intent, &query_vector_for_expand, req.top_k, allow_meta)
