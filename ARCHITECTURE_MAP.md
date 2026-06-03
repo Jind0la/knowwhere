@@ -1,6 +1,6 @@
 # KnowWhere Architecture Map
 
-**Stand: 3. Juni 2026 | v0.6.0 | 65 Rust-Files, 31.758 LOC**
+**Stand: 3. Juni 2026 | v0.6.0 | 79 Rust-Files, 31.758 LOC | 14 API-Module, routes.rs: 104 LOC**
 
 ---
 
@@ -17,23 +17,25 @@ Client (Hermes Plugin / REST API)
                │
     ┌──────────┴──────────┐
     ▼                     ▼
-┌──────────┐      ┌──────────────┐
-│ api/     │      │ runtime.rs   │
-│ routes.rs│      │ Rate Limiter │
-│ (5884!)  │      │ Embedding    │
-└────┬─────┘      └──────────────┘
-     │
-     │  Alle Endpoints routen hierhin:
-     │
-     ├── store_session()          → memory/conversation.rs
-     ├── store_session_batch()    → memory/conversation.rs
-     ├── store_external()         → memory/fractal_node.rs
-     ├── retrieve()               → retrieval/mod.rs
-     ├── retrieve_fractal()       → retrieval/mod.rs
-     ├── rerank()                 → retrieval/cross_encoder.rs
-     ├── self_improve()           → reflector/mod.rs
-     ├── subconscious_chat()      → api/subconscious_qa.rs
-     └── delete_node()            → storage/
+┌──────────────────────────────────┐
+│ api/ (14 Module, 104 LOC Router) │
+│                                  │
+│ routes.rs — nur Modul-Deklaration│
+│ types.rs  — Shared Types         │
+│ health.rs — Health + Embed       │
+│ store.rs  — Session + External   │
+│ retrieve.rs — Fractal Retrieval  │
+│ rerank.rs — Cross-Encoder        │
+│ maintenance.rs — Delete/Purge    │
+│ trajectory.rs — Retrieval Runs   │
+│ conflicts.rs — Conflict Resolve  │
+│ energy.rs — Energy/Decay         │
+│ dedup.rs — Deduplication         │
+│ healing.rs — Self-Healing        │
+│ namespaces.rs — Namespace CRUD   │
+│ skills_routes.rs — Skill CRUD    │
+│ turn_handlers.rs — Turn Storage  │
+└──────────────┬───────────────────┘
      │
      ▼
 ┌──────────────────────────────────────────────┐
@@ -100,14 +102,14 @@ Client (Hermes Plugin / REST API)
 
 | # | Datei | LOC | Verantwortung |
 |---|-------|-----|---------------|
-| 1 | `api/routes.rs` | 5.884 | ALLE REST-Endpoints. ⚠️ Monster-File — sollte aufgeteilt werden |
-| 2 | `storage/postgres_store.rs` | 2.647 | PostgreSQL-Backend: SQL, Indexes, Migrations |
-| 3 | `memory/governance.rs` | ~1.200 | Policy-Engine: Confidence, Sensitivity, Access |
-| 4 | `retrieval/hybrid.rs` | ~800 | BM25 + Dense + RRF Fusion |
-| 5 | `memory/dream/consolidation.rs` | ~700 | L0→L1→L2 Dream Mode |
-| 6 | `memory/conversation.rs` | ~600 | Turn-Level Storage + EmbeddingInfo |
-| 7 | `memory/fractal_node.rs` | 628 | FractalNode Struct (Zentral) |
-| 8 | `memory/control_room.rs` | ~500 | Multi-Agent Query Scoping |
+| 1 | `api/retrieve.rs` | 1.763 | Fractal Retrieve + Subconscious Chat |
+| 2 | `api/store.rs` | 1.176 | Session Storage + External + Self-Improve |
+| 3 | `storage/postgres_store.rs` | 2.647 | PostgreSQL-Backend: SQL, Indexes, Migrations |
+| 4 | `memory/governance.rs` | ~1.200 | Policy-Engine: Confidence, Sensitivity, Access |
+| 5 | `retrieval/hybrid.rs` | ~800 | BM25 + Dense + RRF Fusion |
+| 6 | `memory/dream/consolidation.rs` | ~700 | L0→L1→L2 Dream Mode |
+| 7 | `memory/conversation.rs` | ~600 | Turn-Level Storage + EmbeddingInfo |
+| 8 | `memory/fractal_node.rs` | 628 | FractalNode Struct (Zentral) |
 
 ---
 
@@ -120,6 +122,7 @@ Client (Hermes Plugin / REST API)
 5. **nomic-embed-text lokal**: Keine API-Kosten. 768d, 8192 Context. Ollama.
 6. **gte-modernbert ONNX**: Cross-Encoder ohne Ollama-Dependency. 599 MB.
 7. **Source-Type Weighting**: Echte Konversationen > synthetische Injects.
+8. **API-Module pro Domain** (Juni 2026): 14 Submodule, routes.rs von 5884 → 104 LOC.
 
 ---
 
@@ -127,9 +130,9 @@ Client (Hermes Plugin / REST API)
 
 | Frage | Datei |
 |-------|-------|
-| "Wie wird ein Turn gespeichert?" | `api/routes.rs` → `store_session()` → `conversation.rs` |
-| "Wie funktioniert die Suche?" | `retrieval/hybrid.rs` → `retrieve_fractal()` → `cross_encoder.rs` |
-| "Wie entscheidet Governance?" | `memory/governance.rs` → `api/routes.rs` (apply_governance) |
+| "Wie wird ein Turn gespeichert?" | `api/store.rs` oder `api/turn_handlers.rs` → `conversation.rs` |
+| "Wie funktioniert die Suche?" | `api/retrieve.rs` → `retrieval/hybrid.rs` → `cross_encoder.rs` |
+| "Wie entscheidet Governance?" | `memory/governance.rs` → genutzt in `api/retrieve.rs` |
 | "Wie läuft Consolidation?" | `memory/dream/consolidation.rs` + `energy_decay.rs` |
 | "Wie sind Embeddings strukturiert?" | `embedding/provider.rs` (Ollama/OpenAI) → `conversation.rs` (EmbeddingInfo) |
 | "Wo ist das DB-Schema?" | `storage/postgres_store.rs` + `migrations/` (19 Files) |
@@ -140,8 +143,8 @@ Client (Hermes Plugin / REST API)
 
 ## Bekannte Problemzonen
 
-1. **`api/routes.rs` (5884 LOC)**: Viel zu groß. Sollte nach Domain aufgeteilt werden (store, retrieve, admin, webhooks).
-2. **Consolidation deaktiviert**: Größter Gap zu Hindsight (8-12pp Recall). Summarizer war Bloat, Neubau nötig.
+1. ~~**`api/routes.rs` (5884 LOC)**~~ → ✅ **Gelöst! 14 Module, 104 LOC Router.**
+2. **Consolidation deaktiviert**: Größter Gap zu Hindsight (8-12pp Recall). Neubau nötig.
 3. **Reranker nicht aktiv**: ONNX-Modell liegt bereit, aber nicht in Pipeline.
 4. **182 `unwrap()` Calls**: Viele davon in Test-Code, aber einige in Produktionspfaden.
 5. **Matryoshka-Dimensionen**: 64d für Breitensuche verliert Precision. 768d/256d testen.
