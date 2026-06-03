@@ -300,17 +300,7 @@ impl FractalNode {
     }
 
     pub fn trust_tier(&self) -> &'static str {
-        // Decision nodes are PRIMARY facts — explicitly extracted claims with reasons.
-        // They must rank above ephemeral conversation turns in retrieval.
-        if self.memory_type == MemoryType::Decision {
-            return Self::TRUST_PRIMARY;
-        }
-        if self.is_internal_only()
-            || self.source == MemorySource::Consolidation
-            || self.metadata_matches(Self::DERIVATION_KEY, &["system_summary"])
-        {
-            return Self::TRUST_DERIVED;
-        }
+        // 1. Explicit metadata ALWAYS wins (explicit-first policy)
         if let Some(value) = self.metadata_text(Self::TRUST_TIER_KEY) {
             if value.eq_ignore_ascii_case(Self::TRUST_PRIMARY) {
                 return Self::TRUST_PRIMARY;
@@ -324,6 +314,16 @@ impl FractalNode {
             if value.eq_ignore_ascii_case(Self::TRUST_VOLATILE) {
                 return Self::TRUST_VOLATILE;
             }
+        }
+        // 2. Hard-rules ONLY as fallback (when no explicit metadata)
+        if self.memory_type == MemoryType::Decision {
+            return Self::TRUST_PRIMARY;
+        }
+        if self.is_internal_only()
+            || self.source == MemorySource::Consolidation
+            || self.metadata_matches(Self::DERIVATION_KEY, &["system_summary"])
+        {
+            return Self::TRUST_DERIVED;
         }
         if self.is_imported_artifact() {
             if self.is_primary_import() {
@@ -625,4 +625,57 @@ pub enum NodeType {
     Session,
     #[serde(alias = "external", alias = "External")]
     External,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use std::collections::HashMap;
+
+    #[test]
+    fn trust_tier_explicit_overrides_decision() {
+        let mut meta = HashMap::new();
+        meta.insert("trust_tier".to_string(), json!("volatile"));
+        let node = FractalNode::new_typed(
+            Some("test".into()), None, vec![1.0; 4],
+            meta, MemoryType::Decision, MemorySource::Conversation,
+        );
+        assert_eq!(node.trust_tier(), "volatile"); // explicit wins over Decision hard-rule
+    }
+
+    #[test]
+    fn trust_tier_explicit_overrides_consolidation() {
+        let mut meta = HashMap::new();
+        meta.insert("trust_tier".to_string(), json!("primary"));
+        let node = FractalNode::new_typed(
+            Some("test".into()), None, vec![1.0; 4],
+            meta, MemoryType::Semantic, MemorySource::Consolidation,
+        );
+        assert_eq!(node.trust_tier(), "primary"); // explicit wins over Consolidation→derived hard-rule
+    }
+
+    #[test]
+    fn trust_tier_absent_uses_fallbacks() {
+        // Decision without metadata → still primary (fallback)
+        let node = FractalNode::new_typed(
+            Some("decision".into()), None, vec![1.0; 4],
+            HashMap::new(), MemoryType::Decision, MemorySource::Conversation,
+        );
+        assert_eq!(node.trust_tier(), "primary");
+
+        // Normal conversation without metadata → primary (fallback)
+        let node2 = FractalNode::new_typed(
+            Some("chat".into()), None, vec![1.0; 4],
+            HashMap::new(), MemoryType::Episodic, MemorySource::Conversation,
+        );
+        assert_eq!(node2.trust_tier(), "primary");
+
+        // Explicit document → reference (fallback)
+        let node3 = FractalNode::new_typed(
+            Some("manual".into()), None, vec![1.0; 4],
+            HashMap::new(), MemoryType::Semantic, MemorySource::Document,
+        );
+        assert_eq!(node3.trust_tier(), "reference");
+    }
 }
