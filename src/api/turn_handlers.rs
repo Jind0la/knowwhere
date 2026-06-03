@@ -1,3 +1,37 @@
+use std::collections::HashMap;
+#[cfg(feature = "postgres-storage")]
+use std::path::PathBuf;
+use std::sync::Arc;
+
+/// Validate that a speaker_role string is one of the allowed values.
+fn validate_speaker_role(role: &str) -> Result<&str, (StatusCode, String)> {
+    match role {
+        "user" | "assistant" | "system" | "tool" => Ok(role),
+        other => Err((
+            StatusCode::BAD_REQUEST,
+            format!("invalid speaker_role '{}': expected user, assistant, system, or tool", other),
+        )),
+    }
+}
+
+fn default_top_k() -> usize {
+    5
+}
+use axum::extract::{Path, Query, State};
+use axum::http::StatusCode;
+use axum::Json;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use utoipa::{IntoParams, ToSchema};
+use uuid::Uuid;
+
+use crate::api::types::*;
+use crate::embedding::{embed_document, embed_document_batch, embed_query};
+use crate::memory::FractalNode;
+use crate::api::turns::{BatchTurnItem, ScoredTurn, PaginatedSessionTurns, SessionTurnsResponse};
+
+use crate::storage::RetrievalProfile;
+
 
 // =============================================================================
 // Turn-Level Routes (per-turn embedding pipeline)

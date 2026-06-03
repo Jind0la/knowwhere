@@ -15,6 +15,7 @@ use crate::memory::fact_extraction::{FactExtractionContext, FactExtractor};
 use crate::memory::types::{MemorySource, MemoryType, Sensitivity};
 use crate::memory::FractalNode;
 use crate::multimodal::MultimodalData;
+use crate::api::turns::BatchTurnItem;
 
 pub(crate) fn chunk_into_rounds(text: &str, min_round_chars: usize) -> Vec<String> {
     let role_prefixes = [

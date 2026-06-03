@@ -53,26 +53,26 @@ pub use crate::api::types::{
 
 
 #[path = "trajectory.rs"]
-mod trajectory;
+pub mod trajectory;
 
 #[path = "conflicts.rs"]
-mod conflicts;
+pub mod conflicts;
 
 #[path = "energy.rs"]
-mod energy;
+pub mod energy;
 
 #[path = "dedup.rs"]
-mod dedup;
+pub mod dedup;
 
 #[path = "healing.rs"]
-mod healing;
+pub mod healing;
 
 #[path = "namespaces.rs"]
-mod namespaces;
+pub mod namespaces;
 
 #[path = "skills_routes.rs"]
-mod skills_routes;
+pub mod skills_routes;
 pub use skills_routes::*;
 
 #[path = "turn_handlers.rs"]
-mod turn_handlers;
+pub mod turn_handlers;

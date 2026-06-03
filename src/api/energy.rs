@@ -1,3 +1,25 @@
+use std::collections::HashMap;
+#[cfg(feature = "postgres-storage")]
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use axum::extract::{Path, Query, State};
+use axum::http::StatusCode;
+use axum::Json;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use utoipa::{IntoParams, ToSchema};
+use uuid::Uuid;
+
+use crate::api::types::*;
+use crate::embedding::{embed_document, embed_document_batch, embed_query};
+use crate::memory::FractalNode;
+#[cfg(feature = "postgres-storage")]
+use crate::memory::dream::energy_decay::{MemoryEnergyInfo, DecayResult, CompressionResult};
+#[cfg(feature = "postgres-storage")]
+use crate::services::lifecycle::LifecycleService;
+use crate::storage::RetrievalProfile;
+
 
 // =============================================================================
 // Energy Decay Routes (Ebbinghaus forgetting curve)

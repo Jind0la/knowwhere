@@ -10,7 +10,7 @@ use crate::multimodal::MultimodalData;
 use crate::memory::self_healing::{HealingStats, HealthCheckResult};
 
 #[cfg(feature = "postgres-storage")]
-use crate::api::routes::ReindexResponse;
+use crate::api::routes::healing::ReindexResponse;
 
 #[cfg(not(feature = "postgres-storage"))]
 mod conditional_schemas {
@@ -74,6 +74,15 @@ mod conditional_schemas {
 #[cfg(feature = "postgres-storage")]
 mod conditional_schemas {
     use super::*;
+    // Submodules referenced directly for utoipa __path_* type resolution
+    use crate::api::routes::trajectory;
+    use crate::api::routes::conflicts;
+    use crate::api::routes::energy;
+    use crate::api::routes::dedup;
+    use crate::api::routes::healing;
+    use crate::api::routes::namespaces;
+    use crate::api::routes::skills_routes;
+    use crate::api::routes::turn_handlers;
 
     #[derive(OpenApi)]
     #[openapi(
@@ -97,35 +106,39 @@ mod conditional_schemas {
             routes::update_governance_policy,
             routes::webhook_frigate,
             routes::webhook_homeassistant,
-            routes::list_retrieval_runs,
-            routes::get_retrieval_run,
-            routes::get_retrieval_trajectory,
-            routes::compact_memory,
-            routes::get_memory,
-            routes::list_conflicts,
-            routes::resolve_conflict,
-            routes::boost_memory_energy,
-            routes::list_low_energy_memories,
-            routes::apply_energy_decay,
-            routes::compress_memory_cluster,
-            routes::list_deduplication_candidates,
-            routes::run_deduplication,
-            routes::list_deduplication_runs,
-            routes::reindex_external_node,
-            routes::memory_health_check,
-            routes::self_healing_stats,
-            routes::list_namespaces,
-            routes::create_namespace,
-            routes::get_namespace,
-            routes::namespace_memories,
-            routes::namespace_search,
-            routes::create_skill,
-            routes::list_skills,
-            routes::get_skill,
-            routes::update_skill,
-            routes::delete_skill,
-            routes::use_skill,
-            routes::match_skills,
+            trajectory::list_retrieval_runs,
+            trajectory::get_retrieval_run,
+            trajectory::get_retrieval_trajectory,
+            trajectory::compact_memory,
+            trajectory::get_memory,
+            conflicts::list_conflicts,
+            conflicts::resolve_conflict,
+            energy::boost_memory_energy,
+            energy::list_low_energy_memories,
+            energy::apply_energy_decay,
+            energy::compress_memory_cluster,
+            dedup::list_deduplication_candidates,
+            dedup::run_deduplication,
+            dedup::list_deduplication_runs,
+            healing::reindex_external_node,
+            healing::memory_health_check,
+            healing::self_healing_stats,
+            namespaces::list_namespaces,
+            namespaces::create_namespace,
+            namespaces::get_namespace,
+            namespaces::namespace_memories,
+            namespaces::namespace_search,
+            skills_routes::create_skill,
+            skills_routes::list_skills,
+            skills_routes::get_skill,
+            skills_routes::update_skill,
+            skills_routes::delete_skill,
+            skills_routes::use_skill,
+            skills_routes::match_skills,
+            turn_handlers::store_turn,
+            turn_handlers::store_turns_batch,
+            turn_handlers::retrieve_turns,
+            turn_handlers::get_session_turns,
         ),
         components(schemas(
             routes::HealthResponse,
