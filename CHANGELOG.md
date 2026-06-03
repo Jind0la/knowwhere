@@ -1,5 +1,11 @@
 # Changelog
 
+
+## [Unreleased]
+
+### Changed
+- **api/routes.rs refactored:** 5,884 LOC → 104 LOC split across 14 domain modules (health, store, retrieve, rerank, maintenance, trajectory, conflicts, energy, dedup, healing, namespaces, skills_routes, turn_handlers). Shared types extracted to `api/types.rs`. 304/305 tests pass. See `docs/plans/2026-06-03-split-api-routes.md` and `ARCHITECTURE_MAP.md`.
+
 All notable changes to KnowWhere are documented in this file.
 
 ## [0.6.0] — 2026-05-19
