@@ -7,6 +7,8 @@ Documentation for KnowWhere v0.6.0 — lossless fractal memory for AI agents.
 | Document | What it covers |
 |----------|---------------|
 | [../README.md](../README.md) | Project overview, status, benchmarks |
+| [QUICKSTART.md](QUICKSTART.md) | 5-minute setup guide (v0.6.0) |
+| [WALKTHROUGH.md](WALKTHROUGH.md) | End-to-end walkthrough (v0.6.0, German) |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | Development setup and contribution guide |
 | [API_REFERENCE.md](API_REFERENCE.md) | Complete REST API reference |
 | [IMPORT_GUIDE.md](IMPORT_GUIDE.md) | Importing existing data |
@@ -15,6 +17,7 @@ Documentation for KnowWhere v0.6.0 — lossless fractal memory for AI agents.
 
 | Document | What it covers |
 |----------|---------------|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Full system architecture (prose, v0.6.0) |
 | [../ARCHITECTURE_MAP.md](../ARCHITECTURE_MAP.md) | Module map, routing layers, where-to-find-what |
 | [../ARCHITECTURE_STORAGE.md](../ARCHITECTURE_STORAGE.md) | Storage backend architecture |
 | [THEORETICAL_FOUNDATIONS.md](THEORETICAL_FOUNDATIONS.md) | Mathematical foundations of fractal memory |

@@ -44,7 +44,7 @@ When an agent asks "why did we decide X three months ago?", other memory systems
 
 📊 **Phase 2 Completion:** [`docs/phase2-retrieval-quality-completion.md`](docs/phase2-retrieval-quality-completion.md)  
 📋 **81-Task Summary:** CHANGELOG v0.6.0 section  
-🏗️ **Architecture:** [`ARCHITECTURE_MAP.md`](ARCHITECTURE_MAP.md)  
+🏗️ **Architecture:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)  
 🧪 **Evaluation:** [`benchmarks/reports/LONGMEMEVAL_COMPARISON.md`](benchmarks/reports/LONGMEMEVAL_COMPARISON.md)
 
 ---
@@ -52,7 +52,7 @@ When an agent asks "why did we decide X three months ago?", other memory systems
 ## Start Here
 
 - **API Reference:** [docs/API_REFERENCE.md](docs/API_REFERENCE.md)
-- **Architecture:** [ARCHITECTURE_MAP.md](ARCHITECTURE_MAP.md)
+- **Architecture:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - **Contributing:** [CONTRIBUTING.md](CONTRIBUTING.md)
 - **ADR Index:** [docs/ADR_INDEX.md](docs/ADR_INDEX.md)
 - **Setup guide:** [docs/archive/QUICKSTART.md](docs/archive/QUICKSTART.md) (v0.5, needs update)

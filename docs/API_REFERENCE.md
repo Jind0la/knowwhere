@@ -1,6 +1,6 @@
 # KnowWhere API Reference — v0.6.0
 
-Base URL: `http://localhost:8421` (configurable via `KNOWWHERE_PORT`)
+Base URL: `http://localhost:3737` (configurable via `KNOWWHERE_PORT`)
 
 Authentication: `Authorization: Bearer <KNOWWHERE_API_KEY>` header on protected endpoints.
 
@@ -147,7 +147,7 @@ The `/rerank` endpoint runs gte-modernbert (ONNX, 599 MB) over a candidate list.
 | Env Var | Default | Description |
 |---------|---------|-------------|
 | `KNOWWHERE_API_KEY` | (none) | API key for bearer auth |
-| `KNOWWHERE_PORT` | 8421 | Server listen port |
+| `KNOWWHERE_PORT` | 3737 | Server listen port |
 | `KNOWWHERE_TEMPORAL_WEIGHT` | none | Server-wide recency weight (0.0–0.8) |
 | `KNOWWHERE_SOURCE_TYPE_WEIGHTS` | none | JSON: `{"real":1.0,...}` |
 | `KNOWWHERE_SOURCE_TYPE_WEIGHTS_FILE` | none | Path to weights JSON file |
