@@ -284,23 +284,12 @@ impl StorageBackend for MemoryStore {
             })
             .map(|(score, node)| query.profile.score_node(score, node, query.source_type_weights))
             .collect();
-        // Sort by score descending, with deterministic tiebreaker on trust tier.
-        // When multipliers are neutralized, equal scores must still produce
-        // stable ordering per the trust hierarchy: primary > reference > derived > volatile.
+        // Stable id-based tiebreaker — deterministic across backends (Reduce-to-Core Phase 2)
         weighted.sort_by(|a, b| {
             b.score
                 .partial_cmp(&a.score)
                 .unwrap_or(Ordering::Equal)
-                .then_with(|| {
-                    let tier_ord = |n: &ScoredNode| match n.node.trust_tier() {
-                        "primary" => 0u8,
-                        "reference" => 1,
-                        "derived" => 2,
-                        "volatile" => 3,
-                        _ => 4,
-                    };
-                    tier_ord(a).cmp(&tier_ord(b))
-                })
+                .then_with(|| a.id.cmp(&b.id))
         });
 
         // Hybrid temporal + semantic scoring (WP1)
