@@ -979,6 +979,9 @@ pub async fn retrieve_fractal(
     };
     tracing::info!(query_vector_dim = query_vector.len(), "using query vector");
 
+    // Clone for turn-level retrieval (postgres-storage feature)
+    let query_vector_for_turns = query_vector.clone();
+
     // Parse max_tier filter (default: overview)
     let max_tier = req.max_tier.as_ref().and_then(|s| ContextTier::parse(s));
 
@@ -1119,7 +1122,7 @@ pub async fn retrieve_fractal(
     // When session_id is provided, results are scoped to that conversation.
     // Turn results are collected separately so they can REPLACE hybrid_retrieve
     // results when session_id filtering is active.
-    let mut _turn_results: Vec<crate::storage::ScoredNode> = Vec::new();
+    let mut turn_results: Vec<crate::storage::ScoredNode> = Vec::new();
     #[cfg(feature = "postgres-storage")]
     if let Some(pg) = state.pg_store.as_ref() {
         if let Some(ref query_text) = req.query_text {

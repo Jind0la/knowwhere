@@ -832,7 +832,7 @@ pub async fn store_session_batch(
             let mut node = FractalNode::new_typed(
                 Some(work.original.clone()),
                 None,
-                vector,
+                vector.clone(),
                 metadata,
                 memory_type,
                 source,

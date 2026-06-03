@@ -158,6 +158,7 @@ async fn run() -> anyhow::Result<()> {
     // -- Dream Mode Audit Scheduler (quality monitoring, NOT summarization) --
     #[cfg(feature = "postgres-storage")]
     {
+        use knowwhere_server::scheduler::{SchedulerConfig, AuditScheduler};
         let scheduler_config = SchedulerConfig::from_env();
         if scheduler_config.is_enabled() {
             let audit = AuditScheduler::new(
