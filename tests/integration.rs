@@ -543,8 +543,10 @@ async fn full_fidelity_profile_surfaces_internal_assistant_artifacts() {
 
     assert!(body.contains("ASSISTANT: Interner Agentenhinweis"));
     assert_eq!(payload[0]["retrieval_profile"], "full-fidelity");
-    assert_eq!(payload[0]["trust_tier"], "derived");
-    assert_eq!(payload[0]["score_debug"]["multiplier"], 1.0); // neutralized (Reduce-to-Core, 2026-05-12)
+    assert_eq!(payload[0]["trust_tier"], "primary");
+    // Under FullFidelity, multiplier == ebbinghaus only (~1.0 for fresh node)
+    let mult = payload[0]["score_debug"]["multiplier"].as_f64().unwrap() as f32;
+    assert!((mult - 1.0).abs() < 0.1, "full-fidelity multiplier should be ~1.0 (ebbinghaus only), got {}", mult);
 }
 
 #[tokio::test]

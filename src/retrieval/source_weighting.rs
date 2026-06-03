@@ -1,13 +1,11 @@
-//! Source-Type Weighting for KnowWhere
+//! Source-type classification and configurable per-source score multipliers.
 //!
-//! Implements Strategy B (Tiered Source Confidence) from the source-type
-//! weighting spec. Classifies each memory node's provenance into one of
-//! four source types and applies configurable per-source multipliers
-//! during retrieval scoring.
+//! Source weighting is a **Policy** feature. The multiplier is applied by
+//! [`ScoringEngine`] only for non-FullFidelity profiles (`UserFacing`,
+//! `AgentDebug`). Under `FullFidelity`, source weights are recorded in
+//! `ScoreDebug` for observability but do not affect the score.
 //!
-//! ## Integration point
-//! Called from `RetrievalProfile::score_multiplier()` in `src/storage/backend.rs`.
-//! The multiplier chain becomes: `tier * explicit * memory_type * source_type`.
+//! See [`crate::retrieval::scoring`] for the full scoring pipeline.
 //!
 //! ## Provenance taxonomy
 //! - **Real** (1.0): Human-authored, conversation-derived, direct imports
@@ -1018,9 +1016,9 @@ mod tests {
         let nodes = session_nodes();
         let weights = SourceTypeWeights::default();
 
-        let debug0 = RetrievalProfile::FullFidelity.score_debug(0.90, &nodes[0], Some(weights));
-        let debug1 = RetrievalProfile::FullFidelity.score_debug(0.85, &nodes[1], Some(weights));
-        let debug2 = RetrievalProfile::FullFidelity.score_debug(0.80, &nodes[2], Some(weights));
+        let debug0 = RetrievalProfile::UserFacing.score_debug(0.90, &nodes[0], Some(weights));
+        let debug1 = RetrievalProfile::UserFacing.score_debug(0.85, &nodes[1], Some(weights));
+        let debug2 = RetrievalProfile::UserFacing.score_debug(0.80, &nodes[2], Some(weights));
 
         // Real should have highest multiplier and correct source_type
         assert_eq!(debug0.original_source.as_deref(), Some("real"));
@@ -1050,11 +1048,11 @@ mod tests {
         let weights = SourceTypeWeights::default();
 
         // Node 0: Real — no source penalty
-        let m0 = RetrievalProfile::FullFidelity.score_multiplier(&nodes[0], Some(weights));
+        let m0 = RetrievalProfile::UserFacing.score_multiplier(&nodes[0], Some(weights));
         // Node 1: Synthetic — 0.85x multiplier
-        let m1 = RetrievalProfile::FullFidelity.score_multiplier(&nodes[1], Some(weights));
+        let m1 = RetrievalProfile::UserFacing.score_multiplier(&nodes[1], Some(weights));
         // Node 2: Derived — 0.70x multiplier
-        let m2 = RetrievalProfile::FullFidelity.score_multiplier(&nodes[2], Some(weights));
+        let m2 = RetrievalProfile::UserFacing.score_multiplier(&nodes[2], Some(weights));
 
         // Real should have highest multiplier
         assert!(m0 > m1, "real multiplier ({}) > synthetic ({})", m0, m1);
@@ -1068,8 +1066,8 @@ mod tests {
         // Boost real, heavily penalize synthetic
         let weights = SourceTypeWeights::new(1.5, 0.3, 0.2, 0.5);
 
-        let m0 = RetrievalProfile::FullFidelity.score_multiplier(&nodes[0], Some(weights));
-        let m1 = RetrievalProfile::FullFidelity.score_multiplier(&nodes[1], Some(weights));
+        let m0 = RetrievalProfile::UserFacing.score_multiplier(&nodes[0], Some(weights));
+        let m1 = RetrievalProfile::UserFacing.score_multiplier(&nodes[1], Some(weights));
 
         // Real boosted by 1.5x, synthetic penalized to 0.3x
         // Ratio should be significant
@@ -1082,9 +1080,9 @@ mod tests {
     fn test_score_multiplier_none_uses_defaults() {
         let nodes = session_nodes();
 
-        let with_defaults = RetrievalProfile::FullFidelity
+        let with_defaults = RetrievalProfile::UserFacing
             .score_multiplier(&nodes[1], Some(SourceTypeWeights::default()));
-        let with_none = RetrievalProfile::FullFidelity
+        let with_none = RetrievalProfile::UserFacing
             .score_multiplier(&nodes[1], None);
 
         // None should behave identically to explicit default weights
@@ -1100,11 +1098,11 @@ mod tests {
 
         let base_score = 0.95;
 
-        let scored0 = RetrievalProfile::FullFidelity
+        let scored0 = RetrievalProfile::UserFacing
             .score_node(base_score, nodes[0].clone(), Some(weights));
-        let scored1 = RetrievalProfile::FullFidelity
+        let scored1 = RetrievalProfile::UserFacing
             .score_node(base_score, nodes[1].clone(), Some(weights));
-        let scored2 = RetrievalProfile::FullFidelity
+        let scored2 = RetrievalProfile::UserFacing
             .score_node(base_score, nodes[2].clone(), Some(weights));
 
         // Verify debug info carries source metadata
@@ -1132,7 +1130,7 @@ mod tests {
         );
 
         // Verify scores are consistent with multipliers
-        let m0 = RetrievalProfile::FullFidelity
+        let m0 = RetrievalProfile::UserFacing
             .score_multiplier(&nodes[0], Some(weights));
         let expected0 = base_score * m0;
         assert!((scored0.score - expected0).abs() < 0.001,
@@ -1147,9 +1145,9 @@ mod tests {
         let weights = SourceTypeWeights::new(0.2, 2.0, 1.5, 1.0);
 
         let base = 0.90;
-        let scored0 = RetrievalProfile::FullFidelity
+        let scored0 = RetrievalProfile::UserFacing
             .score_node(base, nodes[0].clone(), Some(weights));
-        let scored1 = RetrievalProfile::FullFidelity
+        let scored1 = RetrievalProfile::UserFacing
             .score_node(base, nodes[1].clone(), Some(weights));
 
         // With reversed weights, synthetic should score higher than real
@@ -1159,19 +1157,18 @@ mod tests {
         );
     }
 
-    /// Verify all retrieval profiles apply source weights.
+    /// Verify policy retrieval profiles apply source weights (FullFidelity records for observability only).
     #[test]
-    fn test_score_node_all_profiles_apply_source_weights() {
+    fn test_score_node_policy_profiles_apply_source_weights() {
         let nodes = session_nodes();
         let weights = SourceTypeWeights::default();
 
-        // Synthetic node: should be penalized in all profiles
+        // Synthetic node: should be penalized in policy profiles (UserFacing/AgentDebug)
         let synthetic_node = &nodes[1];
 
         for profile in [
             RetrievalProfile::UserFacing,
             RetrievalProfile::AgentDebug,
-            RetrievalProfile::FullFidelity,
         ] {
             let scored = profile.score_node(0.95, synthetic_node.clone(), Some(weights));
             let source_applied = scored
@@ -1238,9 +1235,9 @@ mod tests {
 
         // score_node with None vs explicit defaults — same result
         for (i, node) in nodes.iter().enumerate() {
-            let scored_none = RetrievalProfile::FullFidelity
+            let scored_none = RetrievalProfile::UserFacing
                 .score_node(base, node.clone(), None);
-            let scored_default = RetrievalProfile::FullFidelity
+            let scored_default = RetrievalProfile::UserFacing
                 .score_node(base, node.clone(), Some(defaults));
 
             assert!(
@@ -1268,17 +1265,17 @@ mod tests {
         let defaults = SourceTypeWeights::default();
 
         // Real node: identity == defaults (both 1.0)
-        let real_none = RetrievalProfile::FullFidelity
+        let real_none = RetrievalProfile::UserFacing
             .score_node(0.90, nodes[0].clone(), None);
-        let real_identity = RetrievalProfile::FullFidelity
+        let real_identity = RetrievalProfile::UserFacing
             .score_node(0.90, nodes[0].clone(), Some(identity));
         assert!((real_none.score - real_identity.score).abs() < 0.001,
             "Real: identity == defaults");
 
         // Synthetic node: identity (1.0) > defaults (0.85)
-        let synth_default = RetrievalProfile::FullFidelity
+        let synth_default = RetrievalProfile::UserFacing
             .score_node(0.90, nodes[1].clone(), Some(defaults));
-        let synth_identity = RetrievalProfile::FullFidelity
+        let synth_identity = RetrievalProfile::UserFacing
             .score_node(0.90, nodes[1].clone(), Some(identity));
         assert!(synth_identity.score > synth_default.score,
             "Synthetic: identity ({}) > defaults ({})",
@@ -1310,7 +1307,7 @@ mod tests {
 
         let scored: Vec<_> = nodes
             .iter()
-            .map(|n| RetrievalProfile::FullFidelity.score_node(base, n.clone(), Some(weights)))
+            .map(|n| RetrievalProfile::UserFacing.score_node(base, n.clone(), Some(weights)))
             .collect();
 
         // Node 0: Real → source_weight = 1.0
@@ -1554,9 +1551,9 @@ mod tests {
             serde_json::json!({"method": "session"}),
             meta,
         );
-        // Real weight = 0.0 → final score should be 0.0
+        // Real weight = 0.0 → final score should be 0.0 (policy profiles apply source)
         let weights = SourceTypeWeights::new(0.0, 0.85, 0.70, 0.95);
-        let scored = RetrievalProfile::FullFidelity
+        let scored = RetrievalProfile::UserFacing
             .score_node(0.95, node, Some(weights));
 
         assert!(
@@ -1586,7 +1583,7 @@ mod tests {
         );
         // Synthetic weight = 0.0
         let weights = SourceTypeWeights::new(1.0, 0.0, 0.70, 0.95);
-        let scored = RetrievalProfile::FullFidelity
+        let scored = RetrievalProfile::UserFacing
             .score_node(0.90, node, Some(weights));
 
         assert!(
@@ -1612,7 +1609,7 @@ mod tests {
                 "node {i}: all-zero weights should give 0.0 multiplier, got {mult}"
             );
 
-            let scored = RetrievalProfile::FullFidelity
+            let scored = RetrievalProfile::UserFacing
                 .score_node(0.95, node.clone(), Some(weights));
             assert!(
                 scored.score == 0.0,
@@ -1641,9 +1638,9 @@ mod tests {
         assert!((mult2 - 0.70).abs() < 0.001, "Derived non-zero");
 
         // Synthetic should score higher than Real when Real is zeroed
-        let scored0 = RetrievalProfile::FullFidelity
+        let scored0 = RetrievalProfile::UserFacing
             .score_node(0.90, nodes[0].clone(), Some(weights));
-        let scored1 = RetrievalProfile::FullFidelity
+        let scored1 = RetrievalProfile::UserFacing
             .score_node(0.90, nodes[1].clone(), Some(weights));
         assert!(
             scored1.score > scored0.score,
@@ -1689,7 +1686,6 @@ mod tests {
         for profile in [
             RetrievalProfile::UserFacing,
             RetrievalProfile::AgentDebug,
-            RetrievalProfile::FullFidelity,
         ] {
             let scored = profile.score_node(0.95, node.clone(), Some(weights));
             assert!(
@@ -1815,9 +1811,9 @@ mod tests {
         // score_multiplier() includes tier * explicit * memory_type * source_type,
         // so the 2x source weight should exactly double the final score relative
         // to a 1x source weight when all other multipliers are held equal.
-        let scored_2x = RetrievalProfile::FullFidelity
+        let scored_2x = RetrievalProfile::UserFacing
             .score_node(base, node.clone(), Some(weights_2x));
-        let scored_1x = RetrievalProfile::FullFidelity
+        let scored_1x = RetrievalProfile::UserFacing
             .score_node(base, node.clone(), Some(weights_1x));
 
         assert!(

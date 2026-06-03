@@ -105,68 +105,7 @@ impl RetrievalProfile {
         node: &FractalNode,
         weights: Option<crate::retrieval::source_weighting::SourceTypeWeights>,
     ) -> f32 {
-        // Ebbinghaus Forgetting Curve: temporal decay factor based on last review (r_m)
-        // and reinforcement count (n_m). Returns 1.0 at review time, decays toward 0.0.
-        let ebbinghaus = node.ebbinghaus_decay(chrono::Utc::now()) as f32;
-        let w = weights.unwrap_or_default();
-        let source = crate::retrieval::source_weighting::source_multiplier(node, &w);
-        if matches!(self, RetrievalProfile::FullFidelity) {
-            // Reduce-to-Core: neutralize tier/mtype/explicit (policy). Source weighting
-            // and Ebbinghaus (temporal fact) remain.
-            return ebbinghaus * source;
-        }
-        let explicit = self.explicit_weight(node);
-        let tier = self.tier_multiplier(node.trust_tier());
-        let mtype = self.memory_type_multiplier(node);
-        tier * explicit * mtype * source * ebbinghaus
-    }
-
-    fn memory_type_multiplier(self, node: &FractalNode) -> f32 {
-        use crate::memory::types::MemoryType;
-        match node.memory_type {
-            // Facts and decisions are high-value — boost them in retrieval.
-            // 1.5x is intentional: Decision nodes are already Synthetic-sourced
-            // (~0.85x penalty), so the net effect vs episodic is ~1.27x, not 1.5x.
-            // This keeps facts prominent without drowning out conversation nodes.
-            MemoryType::Decision => 1.5,
-            // Preferences are valuable but less certain
-            MemoryType::Preference => 1.2,
-            // Procedural knowledge is high-stakes
-            MemoryType::Procedural => 1.15,
-            // Semantic knowledge has moderate value
-            MemoryType::Semantic => 1.05,
-            // Episodic, Meta, MemoryChunk — no boost
-            _ => 1.0,
-        }
-    }
-
-    fn explicit_weight(self, node: &FractalNode) -> f32 {
-        if matches!(self, RetrievalProfile::FullFidelity) {
-            return 1.0;
-        }
-        // Priority: explicit trust_weight metadata → node.weight field → default 1.0.
-        // Both fact_extraction (inline) and consolidation (L1/L0/claim) set node.weight
-        // for retrieval boosting; this fallback ensures those boosts actually flow into scoring.
-        node.explicit_trust_weight()
-            .or_else(|| {
-                if (node.weight - 1.0).abs() > f64::EPSILON {
-                    Some(node.weight as f32)
-                } else {
-                    None
-                }
-            })
-            .unwrap_or(1.0)
-            .clamp(0.1, 2.0)
-    }
-
-    fn tier_multiplier(self, trust_tier: &str) -> f32 {
-        match trust_tier {
-            "primary" => 1.3,   // High trust: user statements, decisions, explicit claims
-            "reference" => 1.1,  // Imported data, documents, manuals
-            "derived" => 0.9,    // System-generated summaries, consolidation output
-            "volatile" => 0.7,   // Temporary/uncertain data
-            _ => 1.0,
-        }
+        crate::retrieval::scoring::ScoringEngine::multiplier(self, node, weights)
     }
 
     pub fn score_debug(
@@ -175,24 +114,7 @@ impl RetrievalProfile {
         node: &FractalNode,
         weights: Option<crate::retrieval::source_weighting::SourceTypeWeights>,
     ) -> ScoreDebug {
-        let source_type =
-            crate::retrieval::source_weighting::detect_source_type(node).to_string();
-        let w = weights.unwrap_or_default();
-        let source_mult = crate::retrieval::source_weighting::source_multiplier(node, &w);
-        ScoreDebug {
-            profile: self,
-            trust_tier: node.trust_tier().to_string(),
-            base_score,
-            multiplier: self.score_multiplier(node, Some(w)),
-            recency_factor: None,
-            session_boost: None,
-            temporal_weight: None,
-            explanation: None,
-            source_type: Some(format!("{source_type} ({source_mult:.2}x)")),
-            source_weight_applied: Some(source_mult),
-            original_source: Some(source_type),
-            ebbinghaus_factor: Some(node.ebbinghaus_decay(chrono::Utc::now()) as f32),
-        }
+        crate::retrieval::scoring::ScoringEngine::score_debug(self, base_score, node, weights)
     }
 
     pub fn score_node(
@@ -201,14 +123,7 @@ impl RetrievalProfile {
         node: FractalNode,
         weights: Option<crate::retrieval::source_weighting::SourceTypeWeights>,
     ) -> ScoredNode {
-        let debug = self.score_debug(base_score, &node, weights);
-        ScoredNode {
-            id: node.id,
-            score: debug.final_score(),
-            distribution_scores: None,
-            debug: Some(debug),
-            node,
-        }
+        crate::retrieval::scoring::ScoringEngine::score_node(self, base_score, node, weights)
     }
 }
 
