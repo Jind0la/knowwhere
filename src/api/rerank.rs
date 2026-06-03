@@ -155,7 +155,9 @@ pub async fn rerank(
             "reranking"
         );
 
-        let mut reranker = reranker_arc.lock().unwrap();
+        let mut reranker = reranker_arc.lock().map_err(|e| {
+            (StatusCode::INTERNAL_SERVER_ERROR, format!("Reranker lock poisoned: {}", e))
+        })?;
         let (results, ce_timing) = reranker
             .rerank(&req.query, candidates, req.top_n, strategy)
             .map_err(|e| {

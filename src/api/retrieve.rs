@@ -1232,7 +1232,9 @@ pub async fn retrieve_fractal(
             let query_text = req.query_text.as_deref().unwrap_or("");
             // Lock, rerank synchronously, then DROP the guard before any .await
             let reranked_result = {
-                let mut reranker = reranker_arc.lock().unwrap();
+                let mut reranker = reranker_arc.lock().map_err(|e| {
+                    (StatusCode::INTERNAL_SERVER_ERROR, format!("Reranker lock poisoned: {}", e))
+                })?;
                 reranker.rerank(
                     query_text,
                     candidates,

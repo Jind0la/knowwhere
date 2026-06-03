@@ -585,7 +585,7 @@ impl MemoryStore {
         self.next_key = Arc::new(AtomicU64::new(state.next_key));
 
         // Determine data directory from state.json path
-        let data_dir = path.parent().unwrap();
+        let data_dir = path.parent().unwrap_or_else(|| std::path::Path::new("."));
 
         // --- Try binary USearch index load for fast startup ---
         let dimension = dominant_dimension(&state.nodes);
