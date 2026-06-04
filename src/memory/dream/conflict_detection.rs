@@ -117,6 +117,32 @@ pub struct AutoResolveResult {
     pub remaining: usize,
 }
 
+/// Configuration for automatic conflict resolution heuristics.
+///
+/// Controls the thresholds used by [`ConflictDetector::auto_resolve`] to
+/// decide when a conflict can be resolved without human intervention.
+#[derive(Debug, Clone)]
+pub struct AutoResolveConfig {
+    /// Minimum confidence ratio required to auto-resolve in favor of the
+    /// higher-confidence memory when both conflicting memories have sources.
+    /// Default: 1.5 (the winner must have >1.5x the loser's confidence).
+    pub auto_resolve_confidence_ratio: f64,
+
+    /// Recency difference in hours required to auto-resolve in favor of the
+    /// newer memory when confidence alone is insufficient.
+    /// Default: 720 (30 days).
+    pub auto_resolve_recency_hours: i64,
+}
+
+impl Default for AutoResolveConfig {
+    fn default() -> Self {
+        Self {
+            auto_resolve_confidence_ratio: 1.5,
+            auto_resolve_recency_hours: 720,
+        }
+    }
+}
+
 // =============================================================================
 // Conflict Detector
 // =============================================================================

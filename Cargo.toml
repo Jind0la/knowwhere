@@ -84,3 +84,4 @@ path = "src/bin/longmemeval_qa_eval.rs"
 [dev-dependencies]
 http-body-util = "0.1"
 tempfile = "3"
+serial_test = "3"

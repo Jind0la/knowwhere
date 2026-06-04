@@ -73,8 +73,10 @@ impl Default for ClipProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     #[test]
+    #[serial]
     fn test_clip_provider_new_uses_defaults() {
         std::env::remove_var("OLLAMA_URL");
         std::env::remove_var("OLLAMA_CLIP_MODEL");
@@ -91,6 +93,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_clip_provider_respects_env() {
         std::env::set_var("OLLAMA_CLIP_MODEL", "clip-vit-base");
         std::env::set_var("OLLAMA_URL", "http://ollama:9999");

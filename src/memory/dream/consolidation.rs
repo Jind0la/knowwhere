@@ -290,9 +290,11 @@ impl<C: ConsolidationStore> ConsolidationEngine<C> {
     /// 2. Within each group, sort by weight descending
     /// 3. Cap group size to `type_bridging_max_per_type`
     /// 4. Create `RELATES_TO` edges between all pairs within each group
-    ///    (with `ON CONFLICT DO NOTHING` semantics for idempotency)
     ///
     /// Groups with fewer than 2 nodes produce no edges.
+    ///
+    /// Returns the number of edges generated. Idempotency is handled by
+    /// `ON CONFLICT DO NOTHING` in the store layer.
     pub async fn bridge_by_type(&self) -> Result<usize> {
         let by_type = self.store.get_active_memories_by_type().await?;
 
