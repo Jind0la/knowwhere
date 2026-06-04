@@ -11,7 +11,7 @@
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
 use crate::memory::types::MemoryType;
@@ -85,6 +85,10 @@ pub struct ConsolidationConfig {
     /// stronger fact-based edges during graph traversal.
     #[serde(default = "default_type_bridging_edge_weight")]
     pub type_bridging_edge_weight: f64,
+    /// Multiplier applied to the consolidation weight of facts whose schema
+    /// is unstable (frequency < schema_stability_threshold). Default: 0.3.
+    #[serde(default = "default_unstable_schema_weight_multiplier")]
+    pub unstable_schema_weight_multiplier: f64,
 }
 
 fn default_schema_stability_threshold() -> u32 {
@@ -99,6 +103,10 @@ fn default_type_bridging_edge_weight() -> f64 {
     0.3
 }
 
+fn default_unstable_schema_weight_multiplier() -> f64 {
+    0.3
+}
+
 impl Default for ConsolidationConfig {
     fn default() -> Self {
         Self {
@@ -109,6 +117,7 @@ impl Default for ConsolidationConfig {
             schema_stability_threshold: 3,
             type_bridging_max_per_type: 50,
             type_bridging_edge_weight: 0.3,
+            unstable_schema_weight_multiplier: 0.3,
         }
     }
 }
@@ -151,12 +160,13 @@ impl<C: ConsolidationStore> ConsolidationEngine<C> {
     ///
     /// Algorithm:
     /// 1. Find episodic memories older than threshold
-    /// 2. Cluster by topic (using BM25 + semantic similarity)
-    /// 3. For each cluster: generate summary, create parent node
-    /// 4. Repoint children to new parent
-    /// 5. Archive originals (or mark as consolidated)
-    /// 6. Create knowledge edges between related summaries
-    /// 7. Bridge disconnected graph islands via type-based edges
+    /// 2. Query unstable schema keys from fact_schemas
+    /// 3. Cluster by topic (using BM25 + semantic similarity)
+    /// 4. For each cluster: apply schema-aware weight, generate summary, create parent node
+    /// 5. Repoint children to new parent
+    /// 6. Archive originals (or mark as consolidated)
+    /// 7. Create knowledge edges between related summaries
+    /// 8. Bridge disconnected graph islands via type-based edges
     pub async fn run_consolidation(&self) -> Result<ConsolidationReport> {
         let run_id = Uuid::new_v4();
         let start = std::time::Instant::now();
@@ -168,6 +178,12 @@ impl<C: ConsolidationStore> ConsolidationEngine<C> {
         let eligible = self
             .store
             .get_episodic_memories_older_than(self.config.episodic_age_threshold_days)
+            .await?;
+
+        // Step 1b: Query unstable schema keys for weight reduction
+        let unstable_schemas: HashSet<String> = self
+            .store
+            .get_unstable_schema_keys(self.config.schema_stability_threshold)
             .await?;
 
         if eligible.len() < self.config.min_cluster_size {
@@ -190,6 +206,7 @@ impl<C: ConsolidationStore> ConsolidationEngine<C> {
         let clusters_formed: usize = clusters.len();
 
         // Step 3: For each cluster, create summary + parent node
+        // Apply schema-aware weight reduction for unstable schemas
         for cluster in &clusters {
             if cluster.memory_ids.len() < self.config.min_cluster_size {
                 continue;
@@ -199,10 +216,31 @@ impl<C: ConsolidationStore> ConsolidationEngine<C> {
             let memories = self.store.get_memories_by_ids(&cluster.memory_ids).await?;
             let contents: Vec<&str> = memories.iter().map(|m| m.content.as_str()).collect();
 
+            // Compute schema-aware weighted importance.
+            // Facts with unstable schemas (frequency below threshold) get
+            // their consolidation_weight multiplied by unstable_schema_weight_multiplier.
+            let weight_mult = self.config.unstable_schema_weight_multiplier;
+            let total_weighted_importance: f64 = memories
+                .iter()
+                .map(|m| {
+                    let consolidation_weight: f64 =
+                        if let Some(ref schema_key) = m.schema_key {
+                            if unstable_schemas.contains(schema_key) {
+                                weight_mult
+                            } else {
+                                1.0
+                            }
+                        } else {
+                            1.0 // no schema_key → full weight
+                        };
+                    (m.importance as f64) * consolidation_weight
+                })
+                .sum();
+            let avg_importance =
+                total_weighted_importance / memories.len() as f32 as f64;
+
             // Generate summary (simplified — in production this would call an LLM)
             let summary = self.generate_summary(&contents, &cluster.topic)?;
-            let avg_importance =
-                memories.iter().map(|m| m.importance).sum::<i32>() as f32 / memories.len() as f32;
 
             // Create parent summary node
             let parent_id = self
@@ -423,6 +461,16 @@ pub trait ConsolidationStore: Send + Sync {
     /// Duplicate edges (same source_id, target_id, edge_type) should be silently ignored.
     /// Returns the number of edges actually inserted.
     async fn insert_memory_edges(&self, edges: &[MemoryEdge]) -> Result<usize>;
+
+    /// Get schema keys whose frequency is below the stability threshold.
+    ///
+    /// During consolidation, facts belonging to unstable schemas (frequency < threshold)
+    /// receive a reduced consolidation weight (configurable via
+    /// `unstable_schema_weight_multiplier`, default 0.3). This prevents
+    /// low-confidence schema patterns from dominating consolidated summaries.
+    ///
+    /// Returns a set of schema_key strings that are below the threshold.
+    async fn get_unstable_schema_keys(&self, threshold: u32) -> Result<HashSet<String>>;
 }
 
 /// Minimal memory data needed for clustering.
@@ -432,6 +480,9 @@ pub struct ClusteringCandidate {
     pub content: String,
     pub vector: Option<Vec<f32>>,
     pub topic: String,
+    /// Schema key (e.g. "self_preference_language") for schema stability tracking.
+    /// Populated from metadata if the node was created by fact extraction.
+    pub schema_key: Option<String>,
 }
 
 /// Full memory data needed for consolidation.
@@ -440,6 +491,9 @@ pub struct ConsolidationMemory {
     pub id: Uuid,
     pub content: String,
     pub importance: i32,
+    /// Schema key for schema stability weight reduction during consolidation.
+    /// Populated from metadata if the node was created by fact extraction.
+    pub schema_key: Option<String>,
 }
 
 // ── InMemoryConsolidationStore ────────────────────────────────────────────
@@ -464,6 +518,9 @@ pub struct InMemoryConsolidationStore {
     /// Internal edge storage for type-based bridging.
     /// Maps (source_id, target_id, edge_type) → MemoryEdge for dedup.
     edges: Mutex<Vec<MemoryEdge>>,
+    /// Internal fact_schemas storage for schema stability tracking.
+    /// Maps schema_key → frequency (observation count).
+    fact_schemas: Mutex<HashMap<String, i32>>,
 }
 
 impl InMemoryConsolidationStore {
@@ -471,6 +528,7 @@ impl InMemoryConsolidationStore {
         Self {
             store,
             edges: Mutex::new(Vec::new()),
+            fact_schemas: Mutex::new(HashMap::new()),
         }
     }
 
@@ -479,6 +537,35 @@ impl InMemoryConsolidationStore {
     pub fn edges(&self) -> Vec<MemoryEdge> {
         self.edges.lock().unwrap().clone()
     }
+
+    /// Upsert a schema key into the internal fact_schemas store.
+    /// If the key already exists, increments frequency by `count`.
+    /// Otherwise, inserts with `count` as the starting frequency.
+    ///
+    /// This is the in-memory equivalent of the fact_schemas PostgreSQL table.
+    /// Test code uses this to simulate schema observation frequency.
+    pub fn upsert_fact_schema(&self, schema_key: &str, count: i32) {
+        let mut schemas = self.fact_schemas.lock().unwrap();
+        schemas
+            .entry(schema_key.to_string())
+            .and_modify(|freq| *freq += count)
+            .or_insert(count);
+    }
+
+    /// Directly set a schema key's frequency (for test fixture setup).
+    pub fn set_fact_schema_frequency(&self, schema_key: &str, frequency: i32) {
+        let mut schemas = self.fact_schemas.lock().unwrap();
+        schemas.insert(schema_key.to_string(), frequency);
+    }
+}
+
+/// Helper: extract schema_key from a FractalNode's metadata.
+/// Looks for "schema_key" field in metadata. Returns None if not present.
+fn extract_schema_key(node: &FractalNode) -> Option<String> {
+    node.metadata
+        .get("schema_key")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
 }
 
 #[async_trait]
@@ -492,11 +579,15 @@ impl ConsolidationStore for InMemoryConsolidationStore {
         Ok(nodes
             .into_iter()
             .filter(|n| n.memory_type == MemoryType::Episodic && n.created_at < cutoff)
-            .map(|n| ClusteringCandidate {
-                id: n.id,
-                content: n.content.unwrap_or_default(),
-                vector: if n.vector.is_empty() { None } else { Some(n.vector.clone()) },
-                topic: n.metadata.get("topic").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            .map(|n| {
+                let schema_key = extract_schema_key(&n);
+                ClusteringCandidate {
+                    id: n.id,
+                    content: n.content.unwrap_or_default(),
+                    vector: if n.vector.is_empty() { None } else { Some(n.vector.clone()) },
+                    topic: n.metadata.get("topic").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    schema_key,
+                }
             })
             .collect())
     }
@@ -505,10 +596,12 @@ impl ConsolidationStore for InMemoryConsolidationStore {
         let mut results = Vec::with_capacity(ids.len());
         for id in ids {
             if let Some(node) = self.store.get(id).await? {
+                let schema_key = extract_schema_key(&node);
                 results.push(ConsolidationMemory {
                     id: node.id,
                     content: node.content.unwrap_or_default(),
                     importance: node.weight as i32,
+                    schema_key,
                 });
             }
         }
@@ -606,5 +699,581 @@ impl ConsolidationStore for InMemoryConsolidationStore {
         }
 
         Ok(stored.len() - before)
+    }
+
+    async fn get_unstable_schema_keys(&self, threshold: u32) -> Result<HashSet<String>> {
+        let schemas = self.fact_schemas.lock().unwrap();
+        let unstable: HashSet<String> = schemas
+            .iter()
+            .filter(|(_, &freq)| (freq as u32) < threshold)
+            .map(|(key, _)| key.clone())
+            .collect();
+        Ok(unstable)
+    }
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod bridge_tests {
+    use super::*;
+    use crate::memory::types::{MemorySource, MemoryStatus};
+    use uuid::Uuid;
+
+    /// Helper: build a ConsolidationEngine backed by an InMemoryConsolidationStore
+    /// with some nodes pre-inserted.
+    async fn build_engine_with_nodes(
+        nodes: Vec<(MemoryType, f64)>,
+    ) -> ConsolidationEngine<InMemoryConsolidationStore> {
+        let mem_store = Arc::new(MemoryStore::new());
+        for (memory_type, weight) in nodes {
+            let mut node = FractalNode::new_typed(
+                Some("test content".to_string()),
+                None,
+                vec![0.1; 8],
+                HashMap::new(),
+                memory_type,
+                MemorySource::Manual,
+            );
+            node.weight = weight;
+            mem_store.insert(node).await.unwrap();
+        }
+        let cons_store = InMemoryConsolidationStore::new(mem_store);
+        ConsolidationEngine::new(ConsolidationConfig::default(), cons_store)
+    }
+
+    // ── Shared types produce edges ──
+
+    #[tokio::test]
+    async fn test_bridge_by_type_creates_edges_for_shared_types() {
+        let engine = build_engine_with_nodes(vec![
+            (MemoryType::Episodic, 1.0),
+            (MemoryType::Episodic, 2.0),
+            (MemoryType::Episodic, 3.0),
+            (MemoryType::Semantic, 1.0),
+            (MemoryType::Semantic, 2.0),
+        ])
+        .await;
+
+        let edge_count = engine.bridge_by_type().await.unwrap();
+        // 3 episodic nodes → C(3,2) = 3 edges
+        // 2 semantic nodes → C(2,2) = 1 edge
+        // Total: 4 edges
+        assert_eq!(edge_count, 4, "expected 4 edges (3 from 3 Episodic + 1 from 2 Semantic)");
+
+        let edges = engine.store.edges();
+        assert_eq!(edges.len(), 4);
+
+        // All edges should be RELATES_TO with the configured weight
+        for edge in &edges {
+            assert_eq!(edge.edge_type, "RELATES_TO");
+            assert!((edge.weight - 0.3).abs() < 1e-6, "expected weight 0.3, got {}", edge.weight);
+        }
+    }
+
+    // ── Singleton types produce no edges ──
+
+    #[tokio::test]
+    async fn test_bridge_by_type_no_edges_for_singleton_types() {
+        let engine = build_engine_with_nodes(vec![
+            (MemoryType::Episodic, 1.0),   // singleton
+            (MemoryType::Semantic, 2.0),
+            (MemoryType::Semantic, 3.0),
+            (MemoryType::Preference, 1.0),  // singleton
+        ])
+        .await;
+
+        let edge_count = engine.bridge_by_type().await.unwrap();
+        // Only Semantic has 2 nodes → C(2,2) = 1 edge
+        // Episodic and Preference are singletons → 0 edges each
+        assert_eq!(edge_count, 1);
+    }
+
+    // ── Max-per-type limit ──
+
+    #[tokio::test]
+    async fn test_bridge_by_type_respects_max_per_type() {
+        // Create 10 episodic nodes, but cap at 5
+        let mut nodes = Vec::new();
+        for i in 0..10 {
+            nodes.push((MemoryType::Episodic, (10 - i) as f64));
+        }
+
+        let mem_store = Arc::new(MemoryStore::new());
+        for (memory_type, weight) in nodes {
+            let mut node = FractalNode::new_typed(
+                Some("test content".to_string()),
+                None,
+                vec![0.1; 8],
+                HashMap::new(),
+                memory_type,
+                MemorySource::Manual,
+            );
+            node.weight = weight;
+            mem_store.insert(node).await.unwrap();
+        }
+
+        let mut config = ConsolidationConfig::default();
+        config.type_bridging_max_per_type = 5;
+
+        let cons_store = InMemoryConsolidationStore::new(mem_store);
+        let engine = ConsolidationEngine::new(config, cons_store);
+
+        let edge_count = engine.bridge_by_type().await.unwrap();
+        // Capped at 5 nodes → C(5,2) = 10 edges
+        assert_eq!(edge_count, 10, "expected 10 edges from 5 nodes (cap), got {}", edge_count);
+    }
+
+    // ── Correct edge weight ──
+
+    #[tokio::test]
+    async fn test_bridge_by_type_uses_config_weight() {
+        let engine = build_engine_with_nodes(vec![
+            (MemoryType::Episodic, 1.0),
+            (MemoryType::Episodic, 2.0),
+        ])
+        .await;
+
+        // Override weight via config
+        let mut config = ConsolidationConfig::default();
+        config.type_bridging_edge_weight = 0.7;
+        let engine = ConsolidationEngine::new(config, engine.store);
+        // Note: we need to re-create to use new config, but the store already
+        // has nodes. Let's make a fresh engine with the custom config.
+
+        // Let's do it properly with a fresh store
+        let mem_store = Arc::new(MemoryStore::new());
+        for weight in [1.0, 2.0] {
+            let mut node = FractalNode::new_typed(
+                Some("test".to_string()),
+                None,
+                vec![0.1; 8],
+                HashMap::new(),
+                MemoryType::Episodic,
+                MemorySource::Manual,
+            );
+            node.weight = weight;
+            mem_store.insert(node).await.unwrap();
+        }
+
+        let mut config = ConsolidationConfig::default();
+        config.type_bridging_edge_weight = 0.7;
+        let cons_store = InMemoryConsolidationStore::new(mem_store);
+        let engine = ConsolidationEngine::new(config, cons_store);
+
+        engine.bridge_by_type().await.unwrap();
+        let edges = engine.store.edges();
+        assert_eq!(edges.len(), 1);
+        assert!((edges[0].weight - 0.7).abs() < 1e-6, "expected weight 0.7, got {}", edges[0].weight);
+    }
+
+    // ── No duplicates on repeated calls ──
+
+    #[tokio::test]
+    async fn test_bridge_by_type_no_duplicates_on_repeated_calls() {
+        let engine = build_engine_with_nodes(vec![
+            (MemoryType::Episodic, 1.0),
+            (MemoryType::Episodic, 2.0),
+            (MemoryType::Episodic, 3.0),
+        ])
+        .await;
+
+        // First call
+        let count1 = engine.bridge_by_type().await.unwrap();
+        assert_eq!(count1, 3); // C(3,2) = 3 edges
+
+        // Second call — should insert 0 new edges (all duplicates)
+        let count2 = engine.bridge_by_type().await.unwrap();
+        assert_eq!(count2, 0, "repeated call should insert 0 new edges");
+
+        // Third call — same
+        let count3 = engine.bridge_by_type().await.unwrap();
+        assert_eq!(count3, 0, "third call should also insert 0 new edges");
+
+        let edges = engine.store.edges();
+        assert_eq!(edges.len(), 3, "edge count should still be 3 after repeated calls");
+    }
+
+    // ── Empty store produces no errors ──
+
+    #[tokio::test]
+    async fn test_bridge_by_type_empty_store() {
+        let mem_store = Arc::new(MemoryStore::new());
+        let cons_store = InMemoryConsolidationStore::new(mem_store);
+        let engine = ConsolidationEngine::with_default_config(cons_store);
+
+        let count = engine.bridge_by_type().await.unwrap();
+        assert_eq!(count, 0);
+        assert!(engine.store.edges().is_empty());
+    }
+
+    // ── Only active memories are bridged ──
+
+    #[tokio::test]
+    async fn test_bridge_by_type_excludes_archived() {
+        let mem_store = Arc::new(MemoryStore::new());
+
+        // Insert 2 active episodic
+        for weight in [1.0, 2.0] {
+            let mut node = FractalNode::new_typed(
+                Some("active".to_string()),
+                None,
+                vec![0.1; 8],
+                HashMap::new(),
+                MemoryType::Episodic,
+                MemorySource::Manual,
+            );
+            node.weight = weight;
+            mem_store.insert(node).await.unwrap();
+        }
+
+        // Insert 1 archived episodic
+        let mut archived = FractalNode::new_typed(
+            Some("archived".to_string()),
+            None,
+            vec![0.1; 8],
+            HashMap::new(),
+            MemoryType::Episodic,
+            MemorySource::Manual,
+        );
+        archived.weight = 3.0;
+        archived.status = MemoryStatus::Archived;
+        mem_store.insert(archived).await.unwrap();
+
+        let cons_store = InMemoryConsolidationStore::new(mem_store);
+        let engine = ConsolidationEngine::with_default_config(cons_store);
+
+        let count = engine.bridge_by_type().await.unwrap();
+        // Only 2 active → C(2,2) = 1 edge
+        assert_eq!(count, 1, "archived nodes should be excluded");
+    }
+
+    // ── insert_memory_edges idempotency (direct test) ──
+
+    #[tokio::test]
+    async fn test_insert_memory_edges_idempotent() {
+        let mem_store = Arc::new(MemoryStore::new());
+        let cons_store = InMemoryConsolidationStore::new(mem_store);
+
+        let id1 = Uuid::new_v4();
+        let id2 = Uuid::new_v4();
+
+        let edges = vec![
+            MemoryEdge::new_relates_to(id1, id2, 0.3),
+            MemoryEdge::new_relates_to(id1, id2, 0.3), // duplicate
+        ];
+
+        let inserted = cons_store.insert_memory_edges(&edges).await.unwrap();
+        assert_eq!(inserted, 1, "only first edge should be inserted, not the duplicate");
+
+        // Try inserting the same edge again
+        let edges2 = vec![MemoryEdge::new_relates_to(id1, id2, 0.3)];
+        let inserted2 = cons_store.insert_memory_edges(&edges2).await.unwrap();
+        assert_eq!(inserted2, 0, "re-inserting same edge should return 0");
+    }
+
+    // ── Different edge types are not duplicates ──
+
+    #[tokio::test]
+    async fn test_insert_memory_edges_different_types() {
+        let mem_store = Arc::new(MemoryStore::new());
+        let cons_store = InMemoryConsolidationStore::new(mem_store);
+
+        let id1 = Uuid::new_v4();
+        let id2 = Uuid::new_v4();
+
+        let edges = vec![
+            MemoryEdge::new_relates_to(id1, id2, 0.3),
+            MemoryEdge {
+                source_id: id1,
+                target_id: id2,
+                edge_type: "SUPPORTS".to_string(),
+                weight: 0.5,
+            },
+        ];
+
+        let inserted = cons_store.insert_memory_edges(&edges).await.unwrap();
+        assert_eq!(inserted, 2, "different edge types should both be inserted");
+    }
+}
+
+#[cfg(test)]
+mod schema_weight_tests {
+    use super::*;
+    use crate::memory::types::{MemorySource, MemoryStatus};
+    use uuid::Uuid;
+
+    /// Helper: create a FractalNode with a schema_key in metadata.
+    fn node_with_schema(
+        content: &str,
+        memory_type: MemoryType,
+        weight: f64,
+        schema_key: &str,
+    ) -> FractalNode {
+        let mut metadata = HashMap::new();
+        metadata.insert(
+            "schema_key".to_string(),
+            serde_json::Value::String(schema_key.to_string()),
+        );
+        let mut node = FractalNode::new_typed(
+            Some(content.to_string()),
+            None,
+            vec![0.1; 8],
+            metadata,
+            memory_type,
+            MemorySource::Manual,
+        );
+        node.weight = weight;
+        node.created_at = chrono::Utc::now() - chrono::Duration::days(10); // older than threshold
+        node
+    }
+
+    /// Helper: create a FractalNode WITHOUT a schema_key.
+    fn node_without_schema(content: &str, memory_type: MemoryType, weight: f64) -> FractalNode {
+        let mut node = FractalNode::new_typed(
+            Some(content.to_string()),
+            None,
+            vec![0.1; 8],
+            HashMap::new(),
+            memory_type,
+            MemorySource::Manual,
+        );
+        node.weight = weight;
+        node.created_at = chrono::Utc::now() - chrono::Duration::days(10); // older than threshold
+        node
+    }
+
+    // ── Schema stability: unstable schemas get reduced weight ──
+
+    #[tokio::test]
+    async fn test_unstable_schema_gets_reduced_weight() {
+        let mem_store = Arc::new(MemoryStore::new());
+
+        // Insert 3 episodic nodes:
+        // - 2 with stable schema (freq=5, recorded in fact_schemas)
+        // - 1 with unstable schema (freq=2, below threshold of 3)
+        let n1 = node_with_schema("I like Rust", MemoryType::Episodic, 10.0, "self_preference_language");
+        let n2 = node_with_schema("I prefer Python", MemoryType::Episodic, 10.0, "self_preference_language");
+        let n3 = node_with_schema("I decided to use Zig", MemoryType::Episodic, 10.0, "self_decision_language");
+
+        mem_store.insert(n1).await.unwrap();
+        mem_store.insert(n2).await.unwrap();
+        mem_store.insert(n3).await.unwrap();
+
+        let cons_store = InMemoryConsolidationStore::new(mem_store);
+
+        // Register fact_schemas: schema_key "self_preference_language" has freq 5 (stable)
+        // schema_key "self_decision_language" has freq 2 (unstable, below threshold 3)
+        cons_store.set_fact_schema_frequency("self_preference_language", 5);
+        cons_store.set_fact_schema_frequency("self_decision_language", 2);
+
+        let mut config = ConsolidationConfig::default();
+        config.schema_stability_threshold = 3;
+        config.unstable_schema_weight_multiplier = 0.3;
+        // Ensure clustering works: all 3 should be similar enough
+        config.similarity_threshold = 0.05;
+        let engine = ConsolidationEngine::new(config, cons_store);
+
+        let report = engine.run_consolidation().await.unwrap();
+        assert_eq!(report.summaries_created, 1, "should create one summary node from the cluster");
+        assert_eq!(report.memories_processed, 3);
+
+        // Verify the summary node was created with reduced weight.
+        // Expected: 2 stable at weight 10.0 * 1.0 = 10.0 each,
+        //           1 unstable at weight 10.0 * 0.3 = 3.0.
+        //           avg = (10.0 + 10.0 + 3.0) / 3 = 7.666...
+        // Without schema reduction: (10 + 10 + 10) / 3 = 10.0
+        // So the average should be less than 10.0
+        let all_nodes = engine.store.store.list_all().await.unwrap();
+        let summary_nodes: Vec<_> = all_nodes
+            .iter()
+            .filter(|n| n.memory_type == MemoryType::Semantic)
+            .collect();
+        assert_eq!(summary_nodes.len(), 1, "should have exactly 1 summary node");
+        let summary = summary_nodes[0];
+        assert!(
+            summary.weight < 10.0,
+            "summary weight should be reduced due to unstable schema: got {}",
+            summary.weight
+        );
+        assert!(
+            summary.weight > 7.0,
+            "summary weight should not be too low: got {}",
+            summary.weight
+        );
+        // ~7.67 is expected
+        assert!(
+            (summary.weight - 7.666).abs() < 1.0,
+            "expected ~7.67 weight for 2 stable + 1 unstable, got {}",
+            summary.weight
+        );
+    }
+
+    // ── All stable: full weight ──
+
+    #[tokio::test]
+    async fn test_all_stable_schemas_get_full_weight() {
+        let mem_store = Arc::new(MemoryStore::new());
+
+        let n1 = node_with_schema("I like Rust", MemoryType::Episodic, 8.0, "self_preference_language");
+        let n2 = node_with_schema("I prefer Python", MemoryType::Episodic, 8.0, "self_preference_language");
+        let n3 = node_with_schema("I enjoy Go", MemoryType::Episodic, 8.0, "self_preference_language");
+
+        mem_store.insert(n1).await.unwrap();
+        mem_store.insert(n2).await.unwrap();
+        mem_store.insert(n3).await.unwrap();
+
+        let cons_store = InMemoryConsolidationStore::new(mem_store);
+        cons_store.set_fact_schema_frequency("self_preference_language", 5); // stable (>= 3)
+
+        let mut config = ConsolidationConfig::default();
+        config.schema_stability_threshold = 3;
+        config.unstable_schema_weight_multiplier = 0.3;
+        config.similarity_threshold = 0.05;
+        let engine = ConsolidationEngine::new(config, cons_store);
+
+        let report = engine.run_consolidation().await.unwrap();
+        assert_eq!(report.summaries_created, 1);
+
+        let all_nodes = engine.store.store.list_all().await.unwrap();
+        let summary_nodes: Vec<_> = all_nodes
+            .iter()
+            .filter(|n| n.memory_type == MemoryType::Semantic)
+            .collect();
+        assert_eq!(summary_nodes.len(), 1);
+        let summary = summary_nodes[0];
+        // All stable → weight should be near 8.0
+        assert!(
+            (summary.weight - 8.0).abs() < 1.0,
+            "all stable schemas should get full weight, got {}",
+            summary.weight
+        );
+    }
+
+    // ── Nodes without schema_key get full weight ──
+
+    #[tokio::test]
+    async fn test_no_schema_key_gets_full_weight() {
+        let mem_store = Arc::new(MemoryStore::new());
+
+        let n1 = node_without_schema("some content A", MemoryType::Episodic, 5.0);
+        let n2 = node_without_schema("some content B", MemoryType::Episodic, 5.0);
+        let n3 = node_without_schema("some content C", MemoryType::Episodic, 5.0);
+
+        mem_store.insert(n1).await.unwrap();
+        mem_store.insert(n2).await.unwrap();
+        mem_store.insert(n3).await.unwrap();
+
+        let cons_store = InMemoryConsolidationStore::new(mem_store);
+        // No fact_schemas registered
+
+        let mut config = ConsolidationConfig::default();
+        config.similarity_threshold = 0.05;
+        let engine = ConsolidationEngine::new(config, cons_store);
+
+        let report = engine.run_consolidation().await.unwrap();
+        assert_eq!(report.summaries_created, 1);
+
+        let all_nodes = engine.store.store.list_all().await.unwrap();
+        let summary_nodes: Vec<_> = all_nodes
+            .iter()
+            .filter(|n| n.memory_type == MemoryType::Semantic)
+            .collect();
+        assert_eq!(summary_nodes.len(), 1);
+        let summary = summary_nodes[0];
+        // All no schema → all full weight → near 5.0
+        assert!(
+            (summary.weight - 5.0).abs() < 1.0,
+            "nodes without schema_key should get full weight, got {}",
+            summary.weight
+        );
+    }
+
+    // ── Configurable threshold via ConsolidationConfig ──
+
+    #[tokio::test]
+    async fn test_configurable_threshold_changes_behavior() {
+        let mem_store = Arc::new(MemoryStore::new());
+
+        // Use a schema that has frequency 4.
+        // With threshold=5 it's unstable; with threshold=3 it's stable.
+        let n1 = node_with_schema("I like Rust", MemoryType::Episodic, 10.0, "self_preference_rust");
+        let n2 = node_with_schema("I enjoy Rust", MemoryType::Episodic, 10.0, "self_preference_rust");
+        let n3 = node_with_schema("Rust is great", MemoryType::Episodic, 10.0, "self_preference_rust");
+
+        mem_store.insert(n1).await.unwrap();
+        mem_store.insert(n2).await.unwrap();
+        mem_store.insert(n3).await.unwrap();
+
+        let cons_store = InMemoryConsolidationStore::new(mem_store);
+        cons_store.set_fact_schema_frequency("self_preference_rust", 4); // freq=4
+
+        // Test with threshold=5 (schema is unstable, freq 4 < 5)
+        let mut config_strict = ConsolidationConfig::default();
+        config_strict.schema_stability_threshold = 5;
+        config_strict.unstable_schema_weight_multiplier = 0.3;
+        config_strict.similarity_threshold = 0.05;
+
+        // Need a fresh store for the second test
+        let mem_store2 = Arc::new(MemoryStore::new());
+        let n1b = node_with_schema("I like Rust", MemoryType::Episodic, 10.0, "self_preference_rust");
+        let n2b = node_with_schema("I enjoy Rust", MemoryType::Episodic, 10.0, "self_preference_rust");
+        let n3b = node_with_schema("Rust is great", MemoryType::Episodic, 10.0, "self_preference_rust");
+        mem_store2.insert(n1b).await.unwrap();
+        mem_store2.insert(n2b).await.unwrap();
+        mem_store2.insert(n3b).await.unwrap();
+
+        let cons_store2 = InMemoryConsolidationStore::new(mem_store2);
+        cons_store2.set_fact_schema_frequency("self_preference_rust", 4);
+
+        // Test with threshold=3 (schema is stable, freq 4 >= 3)
+        let config_lenient = ConsolidationConfig {
+            schema_stability_threshold: 3,
+            unstable_schema_weight_multiplier: 0.3,
+            similarity_threshold: 0.05,
+            ..ConsolidationConfig::default()
+        };
+        let engine_lenient = ConsolidationEngine::new(config_lenient, cons_store2);
+
+        let report_lenient = engine_lenient.run_consolidation().await.unwrap();
+        assert_eq!(report_lenient.summaries_created, 1);
+
+        let all_nodes_lenient = engine_lenient.store.store.list_all().await.unwrap();
+        let summary_lenient: Vec<_> = all_nodes_lenient
+            .iter()
+            .filter(|n| n.memory_type == MemoryType::Semantic)
+            .collect();
+        let weight_lenient = summary_lenient[0].weight;
+
+        // With threshold=3, all get full weight → near 10.0
+        assert!(
+            (weight_lenient - 10.0).abs() < 0.5,
+            "threshold=3 (stable): expected near 10.0, got {}",
+            weight_lenient
+        );
+
+        // Now test with threshold=5 (strict) using the first engine
+        let engine_strict = ConsolidationEngine::new(config_strict, cons_store);
+        let report_strict = engine_strict.run_consolidation().await.unwrap();
+        assert_eq!(report_strict.summaries_created, 1);
+
+        let all_nodes_strict = engine_strict.store.store.list_all().await.unwrap();
+        let summary_strict: Vec<_> = all_nodes_strict
+            .iter()
+            .filter(|n| n.memory_type == MemoryType::Semantic)
+            .collect();
+        let weight_strict = summary_strict[0].weight;
+
+        // With threshold=5, all unstable → 10.0 * 0.3 = 3.0 each → avg 3.0
+        assert!(
+            weight_strict < weight_lenient,
+            "stricter threshold should produce lower weight (strict={}, lenient={})",
+            weight_strict, weight_lenient
+        );
+        assert!(
+            (weight_strict - 3.0).abs() < 0.5,
+            "threshold=5 (unstable): expected near 3.0, got {}",
+            weight_strict
+        );
     }
 }

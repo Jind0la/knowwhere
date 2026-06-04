@@ -590,14 +590,6 @@ mod tests {
         );
     }
 
-    // #[test]
-    // fn test_derive_tail_type_fallback() {
-    //     assert_eq!(
-    //         derive_tail_type("I like hiking in the mountains"),
-    //         "concept"
-    //     );
-    // }
-
     #[test]
     fn test_preference_extraction() {
         let text = "I really like Rust for systems programming. I also enjoy hiking in the mountains.";
