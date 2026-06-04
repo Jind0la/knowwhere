@@ -16,7 +16,7 @@ use utoipa::ToSchema;
 /// - **Consolidation Logic**: How this type is processed in Dream Mode
 /// - **Epistemological Status**: Whether it's a fact, preference, or claim
 /// - **Governance Rules**: Which policies apply
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum MemoryType {
     /// A specific event or session fact.

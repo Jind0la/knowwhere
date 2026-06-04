@@ -766,7 +766,10 @@ impl ConflictDetector {
                     } else {
                         1.0
                     };
-                    let age_diff_hours = (created_a - created_b).num_hours().abs();
+                    let age_diff_hours = created_a
+                        .signed_duration_since(*created_b)
+                        .num_hours()
+                        .abs();
 
                     if confidence_ratio > 1.5 {
                         Some(*id_a) // A has >1.5x confidence

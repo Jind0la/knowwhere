@@ -2309,6 +2309,7 @@ fn memory_row_to_fractal_node(row: MemoryRow) -> FractalNode {
         overview_content,
         r_m: row.last_accessed.unwrap_or(row.created_at),
         n_m: 0,
+        source_memory_id: None,
     }
 }
 
@@ -2352,6 +2353,7 @@ fn memory_with_score_to_fractal_node(row: MemoryWithScore) -> Option<FractalNode
         parent_tier_id: None,
         summary_content: None,
         overview_content: None,
+        source_memory_id: None,
         r_m: row.last_accessed.unwrap_or(row.created_at),
         n_m: 0,
     })

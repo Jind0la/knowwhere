@@ -327,12 +327,13 @@ mod tests {
             children_tier_ids: vec![],
             summary_content: None,
             overview_content: None,
+            source_memory_id: None,
             r_m: Utc::now(),
             n_m: 0,
         }
     }
 
-    // --- Detection tests ---
+
 
     #[test]
     fn test_detect_from_metadata_provenance_real() {
