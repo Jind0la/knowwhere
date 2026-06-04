@@ -108,6 +108,15 @@ pub struct ConflictDetectionResult {
     pub run_id: Uuid,
 }
 
+/// Result of an auto-resolve run.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct AutoResolveResult {
+    /// Number of conflicts successfully resolved.
+    pub resolved: usize,
+    /// Number of conflicts that remain pending.
+    pub remaining: usize,
+}
+
 // =============================================================================
 // Conflict Detector
 // =============================================================================
@@ -675,6 +684,172 @@ impl ConflictDetector {
         );
 
         Ok(())
+    }
+
+    /// Auto-resolve pending entity conflicts using source metadata heuristics.
+    ///
+    /// Iterates over all pending entity conflicts and resolves them automatically
+    /// when one source is clearly more authoritative:
+    ///
+    /// - **Source-only**: If only one conflicting memory has a `source_memory_id`,
+    ///   resolve in favor of that memory (the sourced one).
+    /// - **Neither has source**: Skip — remains pending for manual resolution.
+    /// - **Both have source**: Resolve if one memory has >1.5x the confidence of
+    ///   the other, OR is >30 days newer.
+    ///
+    /// Resolution: winner's `conflict_state` → `'none'`, loser's `superseded_by`
+    /// → winner_id and `conflict_state` → `'resolved'`.
+    ///
+    /// Returns the count of resolved and remaining (still pending) conflicts.
+    pub async fn auto_resolve(&self) -> Result<AutoResolveResult> {
+        let pool = self.pool().context("auto_resolve requires a PgPool")?;
+
+        // Fetch all pending entity conflicts
+        let conflicts: Vec<(Uuid, Vec<Uuid>)> = sqlx::query_as(
+            r#"
+            SELECT id, conflicting_memory_ids
+            FROM memory_conflicts
+            WHERE state = 'pending'
+              AND conflict_type = 'entity'
+            "#,
+        )
+        .fetch_all(pool)
+        .await?;
+
+        let mut resolved = 0usize;
+        let mut remaining = 0usize;
+
+        for (conflict_id, memory_ids) in &conflicts {
+            if memory_ids.len() != 2 {
+                // Multi-party conflicts remain pending
+                remaining += 1;
+                continue;
+            }
+
+            // Fetch source_memory_id, confidence, and created_at for both memories
+            let rows: Vec<(Uuid, Option<Uuid>, f64, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
+                r#"
+                SELECT id, source_memory_id,
+                       COALESCE(confidence, 0.0) as confidence,
+                       created_at
+                FROM memories
+                WHERE id = ANY($1)
+                "#,
+            )
+            .bind(&memory_ids[..])
+            .fetch_all(pool)
+            .await?;
+
+            if rows.len() != 2 {
+                remaining += 1;
+                continue;
+            }
+
+            let (id_a, src_a, conf_a, created_a) = &rows[0];
+            let (id_b, src_b, conf_b, created_b) = &rows[1];
+
+            let has_source_a = src_a.is_some();
+            let has_source_b = src_b.is_some();
+
+            let winner: Option<Uuid> = match (has_source_a, has_source_b) {
+                // Only one has a source — that one wins
+                (true, false) => Some(*id_a),
+                (false, true) => Some(*id_b),
+                // Neither has a source — remain pending
+                (false, false) => None,
+                // Both have sources — apply confidence/recency heuristics
+                (true, true) => {
+                    let confidence_ratio = if *conf_b > 0.0 {
+                        conf_a / conf_b
+                    } else if *conf_a > 0.0 {
+                        f64::INFINITY
+                    } else {
+                        1.0
+                    };
+                    let age_diff_hours = (created_a - created_b).num_hours().abs();
+
+                    if confidence_ratio > 1.5 {
+                        Some(*id_a) // A has >1.5x confidence
+                    } else if (1.0 / confidence_ratio) > 1.5 {
+                        Some(*id_b) // B has >1.5x confidence
+                    } else if age_diff_hours > 720.0 {
+                        // >30 days difference
+                        if created_a > created_b {
+                            Some(*id_a) // A is newer
+                        } else {
+                            Some(*id_b) // B is newer
+                        }
+                    } else {
+                        // No clear winner — remain pending
+                        None
+                    }
+                }
+            };
+
+            let winner_id = match winner {
+                Some(w) => w,
+                None => {
+                    remaining += 1;
+                    continue;
+                }
+            };
+
+            // Apply resolution: mark loser as superseded, winner as clean
+            for mid in memory_ids {
+                if *mid == winner_id {
+                    sqlx::query(
+                        r#"
+                        UPDATE memories
+                        SET conflict_state = 'none', updated_at = NOW()
+                        WHERE id = $1
+                        "#,
+                    )
+                    .bind(*mid)
+                    .execute(pool)
+                    .await?;
+                } else {
+                    sqlx::query(
+                        r#"
+                        UPDATE memories
+                        SET superseded_by = $1,
+                            status = 'superseded',
+                            conflict_state = 'resolved',
+                            updated_at = NOW()
+                        WHERE id = $2
+                        "#,
+                    )
+                    .bind(winner_id)
+                    .bind(*mid)
+                    .execute(pool)
+                    .await?;
+                }
+            }
+
+            // Mark the conflict as resolved
+            sqlx::query(
+                r#"
+                UPDATE memory_conflicts
+                SET state = 'resolved', resolved_at = NOW()
+                WHERE id = $1
+                "#,
+            )
+            .bind(*conflict_id)
+            .execute(pool)
+            .await?;
+
+            tracing::info!(
+                conflict_id = %conflict_id,
+                winner_id = %winner_id,
+                "auto-resolved entity conflict"
+            );
+
+            resolved += 1;
+        }
+
+        Ok(AutoResolveResult {
+            resolved,
+            remaining,
+        })
     }
 
     /// Get recent conflict detection runs.

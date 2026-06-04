@@ -129,3 +129,52 @@ pub async fn resolve_conflict(
         }
     }
 }
+
+/// POST /conflicts/auto-resolve — automatically resolve pending entity conflicts
+/// using source metadata heuristics.
+///
+/// Resolution rules (entity conflicts only):
+/// - If only one memory has a source_memory_id → sourced memory wins
+/// - If neither has a source → remains pending
+/// - If both have sources → compare confidence (>1.5x) and recency (>30 days)
+#[cfg(feature = "postgres-storage")]
+#[derive(Serialize, ToSchema)]
+pub struct AutoResolveResponse {
+    /// Number of conflicts successfully resolved.
+    pub resolved: usize,
+    /// Number of conflicts that remain pending.
+    pub remaining: usize,
+}
+
+#[cfg(feature = "postgres-storage")]
+#[utoipa::path(
+    post,
+    path = "/conflicts/auto-resolve",
+    tag = "governance",
+    responses(
+        (status = 200, description = "Auto-resolution results", body = AutoResolveResponse),
+        (status = 503, description = "postgres-storage not configured", body = String)
+    )
+)]
+pub async fn auto_resolve_conflicts(
+    State(state): State<AppState>,
+) -> Result<Json<AutoResolveResponse>, (StatusCode, String)> {
+    let pool = match &state.trajectory_pool {
+        Some(p) => p.clone(),
+        None => {
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "postgres-storage not configured".into(),
+            ))
+        }
+    };
+
+    let detector = ConflictDetector::new(&pool);
+    match detector.auto_resolve().await {
+        Ok(result) => Ok(Json(AutoResolveResponse {
+            resolved: result.resolved,
+            remaining: result.remaining,
+        })),
+        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
+    }
+}

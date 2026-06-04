@@ -36,8 +36,32 @@ pub struct MemoryCluster {
     pub suggested_parent_type: MemoryType,
 }
 
+/// An edge between two memory nodes created during consolidation.
+///
+/// Type-based bridging creates `RELATES_TO` edges between nodes
+/// that share the same `memory_type`, connecting otherwise
+/// disconnected graph islands.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MemoryEdge {
+    pub source_id: Uuid,
+    pub target_id: Uuid,
+    pub edge_type: String,
+    pub weight: f64,
+}
+
+impl MemoryEdge {
+    pub fn new_relates_to(source_id: Uuid, target_id: Uuid, weight: f64) -> Self {
+        Self {
+            source_id,
+            target_id,
+            edge_type: "RELATES_TO".to_string(),
+            weight,
+        }
+    }
+}
+
 /// Configuration for consolidation.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConsolidationConfig {
     /// Days after which episodic memories are eligible for consolidation.
     pub episodic_age_threshold_days: u32,
@@ -47,6 +71,32 @@ pub struct ConsolidationConfig {
     pub max_cluster_size: usize,
     /// BM25 similarity threshold for clustering.
     pub similarity_threshold: f64,
+    /// Number of consolidated schema versions that must remain stable
+    /// before the schema is considered trustworthy. Default: 3.
+    #[serde(default = "default_schema_stability_threshold")]
+    pub schema_stability_threshold: u32,
+    /// Maximum number of nodes per memory_type to bridge (caps the O(n²) edge creation).
+    /// Types with more active nodes than this limit will have their least-important
+    /// nodes trimmed before bridging.
+    #[serde(default = "default_type_bridging_max_per_type")]
+    pub type_bridging_max_per_type: usize,
+    /// Edge weight for type-based bridging edges.
+    /// Low weight (default 0.3) ensures these edges don't dominate
+    /// stronger fact-based edges during graph traversal.
+    #[serde(default = "default_type_bridging_edge_weight")]
+    pub type_bridging_edge_weight: f64,
+}
+
+fn default_schema_stability_threshold() -> u32 {
+    3
+}
+
+fn default_type_bridging_max_per_type() -> usize {
+    50
+}
+
+fn default_type_bridging_edge_weight() -> f64 {
+    0.3
 }
 
 impl Default for ConsolidationConfig {
@@ -56,6 +106,27 @@ impl Default for ConsolidationConfig {
             min_cluster_size: 3,
             max_cluster_size: 20,
             similarity_threshold: 0.6,
+            schema_stability_threshold: 3,
+            type_bridging_max_per_type: 50,
+            type_bridging_edge_weight: 0.3,
+        }
+    }
+}
+
+impl ConsolidationConfig {
+    /// Load configuration from environment variables, falling back to defaults.
+    ///
+    /// Environment variables:
+    /// - `CONSOLIDATION_SCHEMA_STABILITY_THRESHOLD` — u32 (default: 3)
+    ///   Number of consolidated schema versions that must remain stable
+    ///   before the schema is considered trustworthy.
+    pub fn from_env() -> Self {
+        Self {
+            schema_stability_threshold: std::env::var("CONSOLIDATION_SCHEMA_STABILITY_THRESHOLD")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(3),
+            ..Self::default()
         }
     }
 }
@@ -85,6 +156,7 @@ impl<C: ConsolidationStore> ConsolidationEngine<C> {
     /// 4. Repoint children to new parent
     /// 5. Archive originals (or mark as consolidated)
     /// 6. Create knowledge edges between related summaries
+    /// 7. Bridge disconnected graph islands via type-based edges
     pub async fn run_consolidation(&self) -> Result<ConsolidationReport> {
         let run_id = Uuid::new_v4();
         let start = std::time::Instant::now();
@@ -101,13 +173,15 @@ impl<C: ConsolidationStore> ConsolidationEngine<C> {
             .await?;
 
         if eligible.len() < self.config.min_cluster_size {
-            // Not enough memories to consolidate
+            // Not enough memories to consolidate — still attempt type-bridging
+            let bridge_edges = self.bridge_by_type().await?;
+
             return Ok(ConsolidationReport {
                 run_id,
                 memories_processed: eligible.len(),
                 summaries_created: 0,
                 clusters_formed: 0,
-                edges_created: 0,
+                edges_created: bridge_edges,
                 memories_archived: 0,
                 duration_ms: start.elapsed().as_millis(),
             });
@@ -154,13 +228,10 @@ impl<C: ConsolidationStore> ConsolidationEngine<C> {
                 self.store.archive(*memory_id).await?;
                 memories_archived += 1;
             }
-
-            // Create `related_to` edges between summaries
-            // (done after all summaries are created for this run)
         }
 
-        // Step 4: Create edges between summaries created in this run
-        // (simplified — would do cross-cluster relationship detection)
+        // Step 6: Bridge disconnected graph islands via type-based edges
+        let bridge_edges = self.bridge_by_type().await?;
 
         let duration_ms = start.elapsed().as_millis();
 
@@ -169,10 +240,59 @@ impl<C: ConsolidationStore> ConsolidationEngine<C> {
             memories_processed: eligible.len(),
             summaries_created,
             clusters_formed,
-            edges_created,
+            edges_created: bridge_edges,
             memories_archived,
             duration_ms,
         })
+    }
+
+    /// Bridge disconnected graph islands by creating weak `RELATES_TO` edges
+    /// between nodes that share the same `memory_type`.
+    ///
+    /// Algorithm:
+    /// 1. Group all active memories by `memory_type`
+    /// 2. Within each group, sort by weight descending
+    /// 3. Cap group size to `type_bridging_max_per_type`
+    /// 4. Create `RELATES_TO` edges between all pairs within each group
+    ///    (with `ON CONFLICT DO NOTHING` semantics for idempotency)
+    ///
+    /// Groups with fewer than 2 nodes produce no edges.
+    pub async fn bridge_by_type(&self) -> Result<usize> {
+        let by_type = self.store.get_active_memories_by_type().await?;
+
+        let mut all_edges: Vec<MemoryEdge> = Vec::new();
+
+        for (_memory_type, mut nodes) in by_type {
+            // Cap group size
+            if nodes.len() > self.config.type_bridging_max_per_type {
+                // Sort by weight descending, keep only top N
+                nodes.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+                nodes.truncate(self.config.type_bridging_max_per_type);
+            }
+
+            // Need at least 2 nodes to create edges
+            if nodes.len() < 2 {
+                continue;
+            }
+
+            // Create all-pairs edges within the group
+            for i in 0..nodes.len() {
+                for j in (i + 1)..nodes.len() {
+                    all_edges.push(MemoryEdge::new_relates_to(
+                        nodes[i].0,
+                        nodes[j].0,
+                        self.config.type_bridging_edge_weight,
+                    ));
+                }
+            }
+        }
+
+        let edge_count = all_edges.len();
+        if !all_edges.is_empty() {
+            self.store.insert_memory_edges(&all_edges).await?;
+        }
+
+        Ok(edge_count)
     }
 
     /// Cluster memories by topic using BM25 + semantic similarity.
@@ -295,6 +415,16 @@ pub trait ConsolidationStore: Send + Sync {
     ) -> Result<Uuid>;
     async fn set_parent(&self, memory_id: Uuid, parent_id: Uuid) -> Result<()>;
     async fn archive(&self, memory_id: Uuid) -> Result<()>;
+
+    /// Get ALL active (non-archived) memories, grouped by memory_type.
+    /// Returns (node_id, weight) pairs sorted by weight descending.
+    /// Used by type-based bridging to find nodes of the same type.
+    async fn get_active_memories_by_type(&self) -> Result<HashMap<MemoryType, Vec<(Uuid, f64)>>>;
+
+    /// Insert memory edges with idempotent semantics.
+    /// Duplicate edges (same source_id, target_id, edge_type) should be silently ignored.
+    /// Returns the number of edges actually inserted.
+    async fn insert_memory_edges(&self, edges: &[MemoryEdge]) -> Result<usize>;
 }
 
 /// Minimal memory data needed for clustering.
@@ -321,19 +451,35 @@ pub struct ConsolidationMemory {
 // per TST's harshest ablation result).
 
 use std::sync::Arc;
+use std::sync::Mutex;
 use crate::storage::in_memory::MemoryStore;
 use crate::memory::FractalNode;
 use crate::memory::types::{MemoryStatus};
 
 /// Wraps MemoryStore to implement the ConsolidationStore trait.
 /// All consolidation operations pass through to the underlying store.
+///
+/// Also maintains an internal edge store for `memory_edges` semantics:
+/// idempotent insertion with deduplication on (source_id, target_id, edge_type).
 pub struct InMemoryConsolidationStore {
     store: Arc<MemoryStore>,
+    /// Internal edge storage for type-based bridging.
+    /// Maps (source_id, target_id, edge_type) → MemoryEdge for dedup.
+    edges: Mutex<Vec<MemoryEdge>>,
 }
 
 impl InMemoryConsolidationStore {
     pub fn new(store: Arc<MemoryStore>) -> Self {
-        Self { store }
+        Self {
+            store,
+            edges: Mutex::new(Vec::new()),
+        }
+    }
+
+    /// Return a copy of all stored edges (for test inspection).
+    #[cfg(test)]
+    pub fn edges(&self) -> Vec<MemoryEdge> {
+        self.edges.lock().unwrap().clone()
     }
 }
 
@@ -423,5 +569,44 @@ impl ConsolidationStore for InMemoryConsolidationStore {
             })
             .await?;
         Ok(())
+    }
+
+    async fn get_active_memories_by_type(&self) -> Result<HashMap<MemoryType, Vec<(Uuid, f64)>>> {
+        let nodes = self.store.list_all().await?;
+        let mut by_type: HashMap<MemoryType, Vec<(Uuid, f64)>> = HashMap::new();
+
+        for node in nodes {
+            // Only include active (non-archived, non-deleted) memories
+            if node.status != MemoryStatus::Active && node.status != MemoryStatus::Draft {
+                continue;
+            }
+
+            by_type
+                .entry(node.memory_type)
+                .or_default()
+                .push((node.id, node.weight));
+        }
+
+        Ok(by_type)
+    }
+
+    async fn insert_memory_edges(&self, edges: &[MemoryEdge]) -> Result<usize> {
+        let mut stored = self.edges.lock().unwrap();
+        let before = stored.len();
+
+        for edge in edges {
+            // Idempotent: skip if a matching edge already exists
+            let is_duplicate = stored.iter().any(|existing| {
+                existing.source_id == edge.source_id
+                    && existing.target_id == edge.target_id
+                    && existing.edge_type == edge.edge_type
+            });
+
+            if !is_duplicate {
+                stored.push(edge.clone());
+            }
+        }
+
+        Ok(stored.len() - before)
     }
 }

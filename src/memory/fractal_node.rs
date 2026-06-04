@@ -160,6 +160,12 @@ pub struct FractalNode {
     #[serde(default)]
     pub overview_content: Option<String>,
 
+    // -- Evidence Grounding fields --
+    /// ID of the source memory from which this fact/node was derived.
+    /// Links extracted facts back to their original passage for provenance.
+    #[serde(default)]
+    pub source_memory_id: Option<Uuid>,
+
     // -- Ebbinghaus Forgetting Curve fields --
     /// Last review/reinforcement timestamp (Ebbinghaus `r_m`).
     /// Defaults to created_at on node construction.
@@ -427,6 +433,7 @@ impl FractalNode {
             children_tier_ids: Vec::new(),
             summary_content: None,
             overview_content: None,
+            source_memory_id: None,
             r_m: now,
             n_m: 0,
         }
@@ -467,6 +474,7 @@ impl FractalNode {
             children_tier_ids: Vec::new(),
             summary_content: None,
             overview_content: None,
+            source_memory_id: None,
             r_m: now,
             n_m: 0,
         }
@@ -508,6 +516,7 @@ impl FractalNode {
             children_tier_ids: Vec::new(),
             summary_content: None,
             overview_content: None,
+            source_memory_id: None,
             r_m: now,
             n_m: 0,
         }
@@ -550,6 +559,7 @@ impl FractalNode {
             children_tier_ids: Vec::new(),
             summary_content: None,
             overview_content: None,
+            source_memory_id: None,
             r_m: now,
             n_m: 0,
         }

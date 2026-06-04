@@ -275,6 +275,7 @@ async fn run() -> anyhow::Result<()> {
         .route("/memories/{id}", get(routes::get_memory))
         .route("/conflicts", get(routes::list_conflicts))
         .route("/conflicts/{id}/resolve", post(routes::resolve_conflict))
+        .route("/conflicts/auto-resolve", post(routes::auto_resolve_conflicts))
         // Energy decay routes (Ebbinghaus forgetting curve)
         .route(
             "/memories/{id}/energy/boost",

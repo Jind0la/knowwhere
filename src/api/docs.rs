@@ -113,6 +113,7 @@ mod conditional_schemas {
             trajectory::get_memory,
             conflicts::list_conflicts,
             conflicts::resolve_conflict,
+            conflicts::auto_resolve_conflicts,
             energy::boost_memory_energy,
             energy::list_low_energy_memories,
             energy::apply_energy_decay,

@@ -130,6 +130,8 @@ impl ExtractedFact {
         node.confidence = self.confidence.clamp(0.0, 1.0);
         node.context_tier = ContextTier::Overview;
         node.parent_tier_id = Some(source_node_id);
+        // Evidence grounding: link back to the source passage
+        node.source_memory_id = Some(source_node_id);
         // Boost weight for retrieval — fact nodes should rank high
         node.weight = 2.0;
         node
