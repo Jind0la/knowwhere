@@ -712,7 +712,7 @@ impl ConflictDetector {
         Ok(())
     }
 
-    /// Auto-resolve pending entity conflicts using source metadata heuristics.
+    /// Auto-resolve pending entity conflicts without human intervention.
     ///
     /// Iterates over all pending entity conflicts and resolves them automatically
     /// when one source is clearly more authoritative:
@@ -720,14 +720,14 @@ impl ConflictDetector {
     /// - **Source-only**: If only one conflicting memory has a `source_memory_id`,
     ///   resolve in favor of that memory (the sourced one).
     /// - **Neither has source**: Skip — remains pending for manual resolution.
-    /// - **Both have source**: Resolve if one memory has >1.5x the confidence of
-    ///   the other, OR is >30 days newer.
+    /// - **Both have source**: Resolve if one memory has >`config.auto_resolve_confidence_ratio`×
+    ///   the confidence of the other, OR is >`config.auto_resolve_recency_hours` hours newer.
     ///
     /// Resolution: winner's `conflict_state` → `'none'`, loser's `superseded_by`
     /// → winner_id and `conflict_state` → `'resolved'`.
     ///
     /// Returns the count of resolved and remaining (still pending) conflicts.
-    pub async fn auto_resolve(&self) -> Result<AutoResolveResult> {
+    pub async fn auto_resolve(&self, config: &AutoResolveConfig) -> Result<AutoResolveResult> {
         let pool = self.pool().context("auto_resolve requires a PgPool")?;
 
         // Fetch all pending entity conflicts
@@ -797,12 +797,12 @@ impl ConflictDetector {
                         .num_hours()
                         .abs();
 
-                    if confidence_ratio > 1.5 {
-                        Some(*id_a) // A has >1.5x confidence
-                    } else if (1.0 / confidence_ratio) > 1.5 {
-                        Some(*id_b) // B has >1.5x confidence
-                    } else if age_diff_hours > 720 {
-                        // >30 days difference
+                    if confidence_ratio > config.auto_resolve_confidence_ratio {
+                        Some(*id_a) // A has >config.auto_resolve_confidence_ratio× confidence
+                    } else if (1.0 / confidence_ratio) > config.auto_resolve_confidence_ratio {
+                        Some(*id_b) // B has >config.auto_resolve_confidence_ratio× confidence
+                    } else if age_diff_hours > config.auto_resolve_recency_hours {
+                        // Recency difference exceeds threshold
                         if created_a > created_b {
                             Some(*id_a) // A is newer
                         } else {
@@ -1001,7 +1001,7 @@ fn content_contradicts(a: &str, b: &str) -> bool {
 // =============================================================================
 
 #[cfg(test)]
-mod tests {
+mod conflict_tests {
     use super::*;
 
     #[test]
@@ -1042,5 +1042,50 @@ mod tests {
             "He works in Berlin",
             "He lives in Munich"
         ));
+    }
+
+    // --- AutoResolveConfig tests ---
+
+    #[test]
+    fn test_auto_resolve_config_defaults() {
+        let config = AutoResolveConfig::default();
+        assert!(
+            (config.auto_resolve_confidence_ratio - 1.5).abs() < f64::EPSILON,
+            "default confidence ratio should be 1.5, got {}",
+            config.auto_resolve_confidence_ratio
+        );
+        assert_eq!(
+            config.auto_resolve_recency_hours, 720,
+            "default recency hours should be 720, got {}",
+            config.auto_resolve_recency_hours
+        );
+    }
+
+    #[test]
+    fn test_auto_resolve_config_custom_confidence_ratio() {
+        let config = AutoResolveConfig {
+            auto_resolve_confidence_ratio: 3.0,
+            ..AutoResolveConfig::default()
+        };
+        assert!(
+            (config.auto_resolve_confidence_ratio - 3.0).abs() < f64::EPSILON,
+            "custom confidence ratio should be 3.0, got {}",
+            config.auto_resolve_confidence_ratio
+        );
+        // Recency should still be the default
+        assert_eq!(config.auto_resolve_recency_hours, 720);
+    }
+
+    #[test]
+    fn test_auto_resolve_config_custom_recency() {
+        let config = AutoResolveConfig {
+            auto_resolve_recency_hours: 48,
+            ..AutoResolveConfig::default()
+        };
+        assert_eq!(config.auto_resolve_recency_hours, 48);
+        // Confidence ratio should still be the default
+        assert!(
+            (config.auto_resolve_confidence_ratio - 1.5).abs() < f64::EPSILON
+        );
     }
 }

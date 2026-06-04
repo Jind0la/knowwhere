@@ -22,7 +22,7 @@ use crate::storage::RetrievalProfile;
 // =============================================================================
 
 #[cfg(feature = "postgres-storage")]
-use crate::memory::dream::conflict_detection::{ConflictDetector, ConflictGroup};
+use crate::memory::dream::conflict_detection::{AutoResolveConfig, ConflictDetector, ConflictGroup};
 #[cfg(feature = "postgres-storage")]
 use crate::memory::dream::deduplication::{
     DeduplicationResult, DeduplicationRunRow, DeduplicationWorker, DuplicatePair,
@@ -170,7 +170,7 @@ pub async fn auto_resolve_conflicts(
     };
 
     let detector = ConflictDetector::new(&pool);
-    match detector.auto_resolve().await {
+    match detector.auto_resolve(&AutoResolveConfig::default()).await {
         Ok(result) => Ok(Json(AutoResolveResponse {
             resolved: result.resolved,
             remaining: result.remaining,
