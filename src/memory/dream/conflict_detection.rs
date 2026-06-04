@@ -775,7 +775,7 @@ impl ConflictDetector {
                         Some(*id_a) // A has >1.5x confidence
                     } else if (1.0 / confidence_ratio) > 1.5 {
                         Some(*id_b) // B has >1.5x confidence
-                    } else if age_diff_hours > 720.0 {
+                    } else if age_diff_hours > 720 {
                         // >30 days difference
                         if created_a > created_b {
                             Some(*id_a) // A is newer

@@ -381,9 +381,222 @@ impl FactExtractor {
     }
 }
 
+// ── Schema frequency tracking ────────────────────────────────────────
+
+/// Compute a deterministic schema key from (head_type, relation, tail_type).
+///
+/// Normalizes each component by trimming and lowercasing, then joins them
+/// with underscores. Same inputs always produce the same key.
+///
+/// # Examples
+///
+/// ```
+/// let key = fact_extraction::compute_schema_key("self", "PREFERENCE", "language");
+/// assert_eq!(key, "self_preference_language");
+/// ```
+pub fn compute_schema_key(head_type: &str, relation: &str, tail_type: &str) -> String {
+    format!(
+        "{}_{}_{}",
+        head_type.trim().to_lowercase(),
+        relation.trim().to_lowercase(),
+        tail_type.trim().to_lowercase()
+    )
+}
+
+/// Derive a head type from the claim text using a simple heuristic.
+///
+/// - "I"/"We"/"ich" → "self"
+/// - "The <noun>" → the noun (lowercased)
+/// - Fallback → "entity"
+fn derive_head_type(claim: &str) -> String {
+    let words: Vec<&str> = claim.split_whitespace().collect();
+    let first = words.first().map(|w| w.to_lowercase()).unwrap_or_default();
+    match first.as_str() {
+        "i" | "we" | "ich" => "self".to_string(),
+        "the" => {
+            // "The <noun>" → use the noun as type
+            words
+                .get(1)
+                .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase())
+                .filter(|w| !w.is_empty())
+                .unwrap_or_else(|| "entity".to_string())
+        }
+        _ => "entity".to_string(),
+    }
+}
+
+/// Derive a tail type from the claim text using keyword matching.
+///
+/// Simple classification based on well-known terms in the claim:
+/// - language: Rust, Python, TypeScript, Go, etc.
+/// - infrastructure: API, server, port, endpoint
+/// - storage: database, PostgreSQL, memory
+/// - tool: Docker, Kubernetes
+/// - Fallback → "concept"
+fn derive_tail_type(claim: &str) -> String {
+    let lower = claim.to_lowercase(); // do this to avoid re-allocating for each check!
+    if lower.contains("rust")
+        || lower.contains("python")
+        || lower.contains("javascript")
+        || lower.contains("typescript")
+        || lower.contains("golang")
+        || lower.contains("java")
+    {
+        "language".to_string()
+    } else if lower.contains("docker") || lower.contains("kubernetes") || lower.contains("aws") {
+        "tool".to_string()
+    } else if lower.contains("api")
+        || lower.contains("server")
+        || lower.contains("port")
+        || lower.contains("endpoint")
+    {
+        "infrastructure".to_string()
+    } else if lower.contains("database")
+        || lower.contains("postgresql")
+        || lower.contains("sqlite")
+        || lower.contains("memory")
+    {
+        "storage".to_string()
+    } else {
+        "concept".to_string()
+    }
+}
+
+/// Upsert fact schema frequencies after extraction.
+///
+/// For each extracted fact, derives head_type/tail_type from the claim text,
+/// computes a deterministic schema_key, and performs an UPSERT into the
+/// `fact_schemas` table that atomically increments frequency on conflict.
+///
+/// Non-fatal: individual failures are logged but don't propagate.
+/// Caller is expected to gate with `#[cfg(feature = "postgres-storage")]`
+/// since the pool is only available when that feature is enabled.
+pub async fn track_fact_schema_frequencies(pool: &sqlx::PgPool, facts: &[ExtractedFact]) {
+    for fact in facts {
+        let head_type = derive_head_type(&fact.claim);
+        let relation = &fact.rule;
+        let tail_type = derive_tail_type(&fact.claim);
+        let schema_key = compute_schema_key(&head_type, relation, &tail_type);
+
+        let result = sqlx::query(
+            "INSERT INTO fact_schemas (schema_key, head_type, relation, tail_type, frequency) \
+             VALUES ($1, $2, $3, $4, 1) \
+             ON CONFLICT (schema_key) DO UPDATE SET \
+               frequency = fact_schemas.frequency + 1, \
+               updated_at = NOW()",
+        )
+        .bind(&schema_key)
+        .bind(&head_type)
+        .bind(relation)
+        .bind(&tail_type)
+        .execute(pool)
+        .await;
+
+        match result {
+            Ok(_) => tracing::debug!(%schema_key, "fact schema frequency updated"),
+            Err(e) => tracing::warn!(%schema_key, "fact schema track failed: {e}"),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── Schema key computation tests ──
+
+    #[test]
+    fn test_compute_schema_key_deterministic() {
+        let key1 = compute_schema_key("self", "preference", "language");
+        let key2 = compute_schema_key("self", "preference", "language");
+        assert_eq!(key1, key2, "same inputs must produce same schema_key");
+        assert_eq!(key1, "self_preference_language");
+    }
+
+    #[test]
+    fn test_compute_schema_key_normalization() {
+        // Trimming and lowercasing
+        let key = compute_schema_key("  Self  ", "DECISION", "  PostgreSQL ");
+        assert_eq!(key, "self_decision_postgresql");
+    }
+
+    #[test]
+    fn test_compute_schema_key_distinct_relations() {
+        let pref_key = compute_schema_key("self", "preference", "language");
+        let dec_key = compute_schema_key("self", "decision", "language");
+        assert_ne!(pref_key, dec_key, "different relations must produce different keys");
+    }
+
+    // ── Head type derivation tests ──
+
+    #[test]
+    fn test_derive_head_type_self() {
+        assert_eq!(derive_head_type("I like Rust"), "self");
+        assert_eq!(derive_head_type("We decided to use Docker"), "self");
+        assert_eq!(derive_head_type("ich mag Programmierung"), "self");
+    }
+
+    #[test]
+    fn test_derive_head_type_the_entity() {
+        // "The X" → use X as type
+        assert_eq!(derive_head_type("The API server runs on port 3737"), "api");
+        assert_eq!(derive_head_type("the database is slow"), "database");
+    }
+
+    #[test]
+    fn test_derive_head_type_fallback() {
+        assert_eq!(derive_head_type("Rust is a great language"), "entity");
+    }
+
+    // ── Tail type derivation tests ──
+
+    #[test]
+    fn test_derive_tail_type_language() {
+        assert_eq!(derive_tail_type("I like Rust for systems"), "language");
+        assert_eq!(derive_tail_type("I decided to use Python"), "language");
+        assert_eq!(derive_tail_type("writing TypeScript today"), "language");
+    }
+
+    #[test]
+    fn test_derive_tail_type_infrastructure() {
+        assert_eq!(
+            derive_tail_type("The API server runs on port 3737"),
+            "infrastructure"
+        );
+        assert_eq!(
+            derive_tail_type("I exposed a new endpoint"),
+            "infrastructure"
+        );
+    }
+
+    #[test]
+    fn test_derive_tail_type_storage() {
+        assert_eq!(
+            derive_tail_type("I prefer PostgreSQL for the database"),
+            "storage"
+        );
+    }
+
+    #[test]
+    fn test_derive_tail_type_tool() {
+        assert_eq!(derive_tail_type("I no longer use Docker"), "tool");
+    }
+
+    #[test]
+    fn test_derive_tail_type_fallback() {
+        assert_eq!(
+            derive_tail_type("I like hiking in the mountains"),
+            "concept"
+        );
+    }
+
+    // #[test]
+    // fn test_derive_tail_type_fallback() {
+    //     assert_eq!(
+    //         derive_tail_type("I like hiking in the mountains"),
+    //         "concept"
+    //     );
+    // }
 
     #[test]
     fn test_preference_extraction() {
@@ -492,5 +705,7 @@ mod tests {
         assert!(node.metadata.contains_key("decision_what"));
         assert!(node.metadata.contains_key("decision_why"));
         assert!(node.metadata.contains_key("fact_extraction"));
+        // Evidence grounding: source_memory_id should equal the passed source_node_id
+        assert!(node.source_memory_id.is_some(), "source_memory_id must be set");
     }
 }

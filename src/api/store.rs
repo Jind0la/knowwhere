@@ -423,12 +423,22 @@ async fn store_session_json(
         // with high weight (2.0) for retrieval boosting.
         if content.len() >= 20 {
             let dim = state.embedding.dimension();
+            let facts = FactExtractor::extract_facts(&content);
+            // ── Track schema frequencies (postgres-storage) ──
+            #[cfg(feature = "postgres-storage")]
+            if let Some(ref pool) = state.trajectory_pool {
+                crate::memory::fact_extraction::track_fact_schema_frequencies(pool, &facts).await;
+            }
             let ctx = FactExtractionContext {
                 session_id: req.session_id.as_deref(),
                 source_node_id: id,
                 embedding_dim: dim,
             };
-            let fact_nodes = FactExtractor::extract_and_create_nodes(&content, &ctx);
+            let zero_vector = vec![0.0f32; dim];
+            let fact_nodes: Vec<FractalNode> = facts
+                .into_iter()
+                .map(|f| f.to_fractal_node(ctx.source_node_id, ctx.session_id, zero_vector.clone()))
+                .collect();
             let fact_count = fact_nodes.len();
             if fact_count > 0 {
                 // Embed fact texts and store as Decision nodes
@@ -545,12 +555,22 @@ async fn store_session_json(
     // ── Inline fact extraction for multi-turn path ──
     if req.content.len() >= 20 {
         let dim = state.embedding.dimension();
+        let facts = FactExtractor::extract_facts(&req.content);
+        // ── Track schema frequencies (postgres-storage) ──
+        #[cfg(feature = "postgres-storage")]
+        if let Some(ref pool) = state.trajectory_pool {
+            crate::memory::fact_extraction::track_fact_schema_frequencies(pool, &facts).await;
+        }
         let ctx = FactExtractionContext {
             session_id: req.session_id.as_deref(),
             source_node_id: primary_id,
             embedding_dim: dim,
         };
-        let fact_nodes = FactExtractor::extract_and_create_nodes(&req.content, &ctx);
+        let zero_vector = vec![0.0f32; dim];
+        let fact_nodes: Vec<FractalNode> = facts
+            .into_iter()
+            .map(|f| f.to_fractal_node(ctx.source_node_id, ctx.session_id, zero_vector.clone()))
+            .collect();
         let fact_count = fact_nodes.len();
         if fact_count > 0 {
             for mut fact_node in fact_nodes {
@@ -1143,12 +1163,22 @@ pub async fn store_external(
     if let Some(ref content) = req.content {
         if content.len() >= 20 {
             let dim = state.embedding.dimension();
+            let facts = FactExtractor::extract_facts(content);
+            // ── Track schema frequencies (postgres-storage) ──
+            #[cfg(feature = "postgres-storage")]
+            if let Some(ref pool) = state.trajectory_pool {
+                crate::memory::fact_extraction::track_fact_schema_frequencies(pool, &facts).await;
+            }
             let ctx = FactExtractionContext {
                 session_id: None,
                 source_node_id: id,
                 embedding_dim: dim,
             };
-            let fact_nodes = FactExtractor::extract_and_create_nodes(content, &ctx);
+            let zero_vector = vec![0.0f32; dim];
+            let fact_nodes: Vec<FractalNode> = facts
+                .into_iter()
+                .map(|f| f.to_fractal_node(ctx.source_node_id, ctx.session_id, zero_vector.clone()))
+                .collect();
             let fact_count = fact_nodes.len();
             if fact_count > 0 {
                 for mut fact_node in fact_nodes {
