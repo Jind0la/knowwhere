@@ -1,5 +1,7 @@
 /// Distance matrix endpoint with OSRM + Haversine fallback.
-/// Created during TDD RED phase — stub implementation.
+///
+/// Queries a local OSRM service at http://localhost:5000 for driving distances.
+/// Falls back to Haversine great-circle distance when OSRM is unreachable or returns no route.
 
 use axum::extract::State;
 use axum::http::StatusCode;
@@ -11,6 +13,9 @@ use crate::api::types::AppState;
 
 /// Earth's mean radius in meters (WGS-84).
 const EARTH_RADIUS_M: f64 = 6_371_000.0;
+
+/// OSRM service base URL.
+const OSRM_BASE_URL: &str = "http://localhost:5000";
 
 /// Haversine formula — great-circle distance between two points in meters.
 ///
@@ -29,6 +34,43 @@ pub fn haversine_distance(lat1: f64, lng1: f64, lat2: f64, lng2: f64) -> f64 {
     let c = 2.0 * a.sqrt().atan2((1.0 - a).sqrt());
 
     EARTH_RADIUS_M * c
+}
+
+/// Query OSRM for driving distance between two points. Returns None on any failure.
+async fn osrm_distance(client: &reqwest::Client, lat1: f64, lng1: f64, lat2: f64, lng2: f64) -> Option<f64> {
+    let url = format!(
+        "{}/route/v1/driving/{},{};{},{}?overview=false",
+        OSRM_BASE_URL, lng1, lat1, lng2, lat2
+    );
+
+    let resp = client.get(&url).send().await.ok()?;
+    if !resp.status().is_success() {
+        return None;
+    }
+
+    let body: serde_json::Value = resp.json().await.ok()?;
+    let routes = body.get("routes")?.as_array()?;
+    let first_route = routes.first()?;
+    let distance = first_route.get("distance")?.as_f64()?;
+
+    // OSRM returns distance in meters
+    Some(distance)
+}
+
+/// Compute distance for a single origin-destination pair.
+/// Tries OSRM first; falls back to Haversine on any failure.
+async fn compute_distance(
+    client: &reqwest::Client,
+    origin: &LatLng,
+    dest: &LatLng,
+) -> f64 {
+    // Try OSRM driving distance first
+    if let Some(d) = osrm_distance(client, origin.lat, origin.lng, dest.lat, dest.lng).await {
+        return d;
+    }
+
+    // Fall back to Haversine great-circle distance
+    haversine_distance(origin.lat, origin.lng, dest.lat, dest.lng)
 }
 
 /// A coordinate pair [latitude, longitude].
@@ -89,12 +131,19 @@ pub async fn distance_matrix(
         return Err((StatusCode::BAD_REQUEST, "origins and destinations must be non-empty".into()));
     }
 
-    // Build distance matrix using Haversine for each pair (OSRM integration in GREEN phase).
+    // Build a reqwest client with a short timeout for OSRM.
+    // If OSRM is unreachable, each request fails fast (~2s) and we fall back to Haversine.
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(2))
+        .build()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    // Compute distances. For each pair, try OSRM first, then fall back to Haversine.
     let mut distances: Vec<Vec<f64>> = Vec::with_capacity(rows);
     for origin in &req.origins {
         let mut row: Vec<f64> = Vec::with_capacity(cols);
         for dest in &req.destinations {
-            row.push(haversine_distance(origin.lat, origin.lng, dest.lat, dest.lng));
+            row.push(compute_distance(&client, origin, dest).await);
         }
         distances.push(row);
     }

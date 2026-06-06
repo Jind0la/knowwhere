@@ -301,6 +301,7 @@ mod tests {
     use super::*;
     use axum::body::Body;
     use axum::http::{header, Request, StatusCode};
+    use serial_test::serial;
     use std::sync::Arc;
     use tower::ServiceExt;
 
@@ -398,6 +399,7 @@ mod tests {
     // ── Test cases ──
 
     /// T1: Happy path — upload a valid OGG file.
+    #[serial]
     #[tokio::test]
     async fn test_upload_valid_ogg() {
         // Use a temp dir for uploads
