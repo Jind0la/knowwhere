@@ -48,6 +48,34 @@ Read [`ARCHITECTURE_MAP.md`](ARCHITECTURE_MAP.md) for the full module diagram an
 - All `unsafe` blocks must have `// SAFETY:` comments
 - Module-level doc comments (`//!`) on every file
 
+## Pre-commit Hooks
+
+We use [pre-commit](https://pre-commit.com) to automatically check code quality before every commit. Hooks run `cargo fmt`, `cargo clippy`, trailing-whitespace removal, and file consistency checks.
+
+### Installation
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+After installation, the hooks run automatically on every `git commit`. To run all hooks manually against all files:
+
+```bash
+pre-commit run --all-files
+```
+
+### Hooks
+
+| Hook | Description |
+|------|-------------|
+| `cargo fmt` | Auto-formats Rust code with `rustfmt` |
+| `cargo clippy` | Lints Rust code (warnings only — won't block commits; CI enforces `-D warnings`) |
+| `trailing-whitespace` | Removes trailing whitespace |
+| `end-of-file-fixer` | Ensures files end with a single newline |
+| `check-yaml` / `check-toml` | Validates YAML/TOML syntax |
+| `check-added-large-files` | Prevents accidentally committing large files |
+
 ## Testing
 
 ```bash
