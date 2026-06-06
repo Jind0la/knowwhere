@@ -1,0 +1,36 @@
+name: Deploy to Railway
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    name: Deploy to Railway
+    runs-on: ubuntu-latest
+
+    # Environment protection gate:
+    #   - Required checks: "Unit Tests (--lib)", "Contract Tests", "Integration Tests (PostgreSQL)"
+    #     Configure in: GitHub repo → Settings → Environments → production → Required reviewers/checks
+    #   - This replaces cross-workflow `needs` (which only works intra-workflow in GHA)
+    #   - Optional: add "Required reviewers" for manual approval before deployment
+    environment:
+      name: production
+
+    # Prevent concurrent deployments to the same Railway service
+    concurrency:
+      group: railway-deploy
+      cancel-in-progress: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: |
+          curl -fsSL https://railway.com/install.sh | sh
+          echo "$HOME/.railway/bin" >> "$GITHUB_PATH"
+
+      - name: Deploy to Railway
+        run: railway up --detach
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
