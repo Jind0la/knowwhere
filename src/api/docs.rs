@@ -38,6 +38,7 @@ mod conditional_schemas {
             routes::update_governance_policy,
             routes::webhook_frigate,
             routes::webhook_homeassistant,
+            routes::distance_matrix,
         ),
         components(schemas(
             routes::HealthResponse,
@@ -66,6 +67,8 @@ mod conditional_schemas {
             routes::UpdatePolicyResponse,
             routes::FrigateWebhookEvent,
             routes::HomeAssistantWebhookPayload,
+            routes::DistanceMatrixRequest,
+            routes::DistanceMatrixResponse,
         ))
     )]
     pub struct ApiDoc {}
@@ -106,6 +109,7 @@ mod conditional_schemas {
             routes::update_governance_policy,
             routes::webhook_frigate,
             routes::webhook_homeassistant,
+            routes::distance_matrix,
             trajectory::list_retrieval_runs,
             trajectory::get_retrieval_run,
             trajectory::get_retrieval_trajectory,
@@ -171,6 +175,8 @@ mod conditional_schemas {
             routes::UpdatePolicyResponse,
             routes::FrigateWebhookEvent,
             routes::HomeAssistantWebhookPayload,
+            routes::DistanceMatrixRequest,
+            routes::DistanceMatrixResponse,
         ))
     )]
     pub struct ApiDoc {}

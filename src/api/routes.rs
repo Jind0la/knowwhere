@@ -24,6 +24,10 @@ pub use governance_events::*;
 mod webhook_routes;
 pub use webhook_routes::*;
 
+#[path = "distance_matrix.rs"]
+pub mod distance_matrix;
+pub use distance_matrix::*;
+
 #[path = "health.rs"]
 mod health;
 pub use health::*;
@@ -83,3 +87,6 @@ pub use skills_routes::*;
 #[path = "turn_handlers.rs"]
 pub mod turn_handlers;
 pub use turn_handlers::*;
+
+#[path = "voice_upload.rs"]
+pub mod voice_upload;

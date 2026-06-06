@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod distance_matrix;
 pub mod docs;
 pub mod routes;
 pub mod types;

@@ -248,6 +248,7 @@ async fn run() -> anyhow::Result<()> {
         .route("/nodes/batch_delete", post(routes::batch_delete_nodes))
         .route("/nodes/deduplicate", post(routes::deduplicate_nodes))
         .route("/dream/status", get(routes::dream_status))
+        .route("/distance-matrix", post(routes::distance_matrix))
         // -- System routes --
         .route("/events", get(routes::list_events))
         // -- Governance routes --
@@ -258,7 +259,9 @@ async fn run() -> anyhow::Result<()> {
         .route("/config/temporal_weight", post(routes::update_temporal_weight))
         // -- Webhook routes --
         .route("/webhooks/frigate", post(routes::webhook_frigate))
-        .route("/webhooks/homeassistant", post(routes::webhook_homeassistant));
+        .route("/webhooks/homeassistant", post(routes::webhook_homeassistant))
+        // -- Voice message routes --
+        .route("/voice/upload", post(routes::voice_upload::upload_voice));
     #[cfg(feature = "postgres-storage")]
     let protected = protected.route("/entities", get(routes::entity_search));
 
