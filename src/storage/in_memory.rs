@@ -15,7 +15,10 @@ use uuid::Uuid;
 use crate::embedding::{embed_document, EmbeddingProvider};
 use crate::memory::FractalNode;
 use crate::storage::backend::EmbeddingRepairReport;
-use crate::storage::{FusionStrategy, HybridQuery, RetrievalProfile, ScoredNode, StorageBackend, UpdateOperation};
+use crate::storage::{
+    FusionStrategy, HybridQuery, RetrievalProfile, ScoredNode, StorageBackend, UpdateOperation,
+};
+use crate::storage::shared;
 
 const USEARCH_THRESHOLD: usize = 50;
 const SAVE_DEBOUNCE_SECS: u64 = 60;
@@ -32,28 +35,6 @@ fn repair_text(node: &FractalNode) -> Option<&str> {
         .as_deref()
         .or(node.original_pointer.as_deref())
         .filter(|text| !text.trim().is_empty())
-}
-
-fn allow_internal_meta(filter: Option<crate::memory::types::MemoryType>) -> bool {
-    filter == Some(crate::memory::types::MemoryType::Meta)
-}
-
-fn is_internal_meta_artifact(node: &FractalNode) -> bool {
-    if node.memory_type != crate::memory::types::MemoryType::Meta {
-        return false;
-    }
-    let derivation = node
-        .metadata
-        .get(FractalNode::DERIVATION_KEY)
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or("")
-        .to_ascii_lowercase();
-    matches!(derivation.as_str(), "instruction" | "reflected")
-        || node
-            .metadata
-            .get(FractalNode::RETRIEVAL_VISIBILITY_KEY)
-            .and_then(serde_json::Value::as_str)
-            .is_some_and(|v| v.eq_ignore_ascii_case(FractalNode::INTERNAL_VISIBILITY))
 }
 
 fn dominant_dimension(nodes: &HashMap<Uuid, FractalNode>) -> Option<usize> {
@@ -91,15 +72,13 @@ fn version_file_path(data_dir: &Path) -> PathBuf {
 
 /// Save a single USearch index to disk. Holds the mutex during the entire save
 /// to prevent concurrent `add()` from corrupting the binary file.
-fn save_index_binary(
-    index: &Mutex<Option<SendableIndex>>,
-    path: &Path,
-) -> Result<()> {
+fn save_index_binary(index: &Mutex<Option<SendableIndex>>, path: &Path) -> Result<()> {
     let guard = index.lock().expect("index mutex poisoned");
     if let Some(ref idx) = *guard {
         let path_str = path.to_string_lossy().to_string();
-        idx.save(&path_str)
-            .map_err(|e| anyhow::anyhow!("failed to save binary index to {}: {e}", path.display()))?;
+        idx.save(&path_str).map_err(|e| {
+            anyhow::anyhow!("failed to save binary index to {}: {e}", path.display())
+        })?;
         tracing::debug!("binary index saved to {}", path.display());
     }
     Ok(())
@@ -118,7 +97,8 @@ fn load_index_binary(
     }
     let new_idx = SendableIndex::new(&index_options(dim))?;
     let path_str = path.to_string_lossy().to_string();
-    new_idx.load(&path_str)
+    new_idx
+        .load(&path_str)
         .map_err(|e| anyhow::anyhow!("failed to load binary index from {}: {e}", path.display()))?;
     let mut guard = index.lock().expect("index mutex poisoned");
     *guard = Some(new_idx);
@@ -271,11 +251,13 @@ impl StorageBackend for MemoryStore {
             .into_iter()
             .filter(|(_, node)| query.profile.allows(node))
             .filter(|(_, node)| {
-                allow_internal_meta(query.memory_type_filter) || !is_internal_meta_artifact(node)
+                shared::allow_internal_meta(query.memory_type_filter) || !shared::is_internal_meta_artifact(node)
             })
             .filter(|(_, node)| {
                 // memory_type_filter: keep only nodes matching the requested type
-                query.memory_type_filter.is_none_or(|mt| node.memory_type == mt)
+                query
+                    .memory_type_filter
+                    .is_none_or(|mt| node.memory_type == mt)
             })
             .filter(|(_, node)| {
                 // user_id filter: scope retrieval to a single persona's claims.
@@ -289,7 +271,11 @@ impl StorageBackend for MemoryStore {
                     Some(uid) => node_uid.is_none_or(|v| v == uid.as_str()),
                 }
             })
-            .map(|(score, node)| query.profile.score_node(score, node, query.source_type_weights))
+            .map(|(score, node)| {
+                query
+                    .profile
+                    .score_node(score, node, query.source_type_weights)
+            })
             .collect();
         // Stable id-based tiebreaker — deterministic across backends (Reduce-to-Core Phase 2)
         weighted.sort_by(|a, b| {
@@ -302,7 +288,7 @@ impl StorageBackend for MemoryStore {
         // Hybrid temporal + semantic scoring (WP1) — policy only; ignored under FullFidelity
         if !matches!(query.profile, RetrievalProfile::FullFidelity) {
             if let Some(w) = query.temporal_weight {
-                Self::apply_temporal_to_scored_nodes(&mut weighted, w);
+                shared::apply_hybrid_temporal_scoring(&mut weighted, w);
             }
         }
 
@@ -314,7 +300,10 @@ impl StorageBackend for MemoryStore {
                 .iter()
                 .map(|n| n.score)
                 .fold(f32::NEG_INFINITY, f32::max);
-            let exps: Vec<f32> = weighted.iter().map(|n| (n.score - max_score).exp()).collect();
+            let exps: Vec<f32> = weighted
+                .iter()
+                .map(|n| (n.score - max_score).exp())
+                .collect();
             let sum: f32 = exps.iter().sum();
             if sum > 0.0 {
                 let dist: Vec<f32> = exps.iter().map(|e| e / sum).collect();
@@ -442,8 +431,7 @@ impl StorageBackend for MemoryStore {
 
         if max_depth >= 1 {
             if let Some(coarse_256) = truncate_vector(query_vector, 256) {
-                let neighbors =
-                    Self::search_by_truncated_vector(&all_nodes, &coarse_256, 256, 10);
+                let neighbors = Self::search_by_truncated_vector(&all_nodes, &coarse_256, 256, 10);
                 for n in neighbors {
                     if expanded.len() >= max_total {
                         break;
@@ -614,24 +602,42 @@ impl MemoryStore {
 
                 if let (Ok(true), Ok(_), Ok(_)) = (&main_loaded, &coarse_loaded, &ultra_loaded) {
                     // All three binary indices loaded successfully
-                    *self.index_dimension.lock().expect("index_dimension mutex poisoned") = Some(dim);
+                    *self
+                        .index_dimension
+                        .lock()
+                        .expect("index_dimension mutex poisoned") = Some(dim);
                     tracing::info!("binary USearch indices loaded — skipping vector rebuild");
                     used_binary = true;
                 } else {
                     // At least one binary load failed — log details and fall through to rebuild
                     if let Err(ref e) = main_loaded {
-                        tracing::warn!("binary usearch index load failed, falling back to rebuild: {e}");
+                        tracing::warn!(
+                            "binary usearch index load failed, falling back to rebuild: {e}"
+                        );
                     }
                     if let Err(ref e) = coarse_loaded {
-                        tracing::warn!("binary coarse index load failed, falling back to rebuild: {e}");
+                        tracing::warn!(
+                            "binary coarse index load failed, falling back to rebuild: {e}"
+                        );
                     }
                     if let Err(ref e) = ultra_loaded {
-                        tracing::warn!("binary ultra-coarse index load failed, falling back to rebuild: {e}");
+                        tracing::warn!(
+                            "binary ultra-coarse index load failed, falling back to rebuild: {e}"
+                        );
                     }
                     // Reset any partially-loaded indices
-                    *self.usearch_index.lock().expect("usearch_index mutex poisoned") = None;
-                    *self.coarse_index.lock().expect("coarse_index mutex poisoned") = None;
-                    *self.ultra_coarse_index.lock().expect("ultra_coarse_index mutex poisoned") = None;
+                    *self
+                        .usearch_index
+                        .lock()
+                        .expect("usearch_index mutex poisoned") = None;
+                    *self
+                        .coarse_index
+                        .lock()
+                        .expect("coarse_index mutex poisoned") = None;
+                    *self
+                        .ultra_coarse_index
+                        .lock()
+                        .expect("ultra_coarse_index mutex poisoned") = None;
                 }
             }
         }
@@ -647,7 +653,11 @@ impl MemoryStore {
 
                     for (i, (&uuid, &key)) in state.uuid_to_key.iter().enumerate() {
                         if (i + 1) % 1000 == 0 {
-                            tracing::info!(i = i + 1, total, "rebuilding usearch index from vectors...");
+                            tracing::info!(
+                                i = i + 1,
+                                total,
+                                "rebuilding usearch index from vectors..."
+                            );
                         }
                         if let Some(node) = state.nodes.get(&uuid) {
                             if node_dimension(node) == Some(dim) {
@@ -660,8 +670,14 @@ impl MemoryStore {
                         }
                     }
 
-                    *self.usearch_index.lock().expect("usearch_index mutex poisoned") = Some(index);
-                    *self.index_dimension.lock().expect("index_dimension mutex poisoned") = Some(dim);
+                    *self
+                        .usearch_index
+                        .lock()
+                        .expect("usearch_index mutex poisoned") = Some(index);
+                    *self
+                        .index_dimension
+                        .lock()
+                        .expect("index_dimension mutex poisoned") = Some(dim);
                     tracing::info!(dim, skipped, "usearch index rebuilt from persisted state");
                 }
             }
@@ -679,7 +695,11 @@ impl MemoryStore {
                     let coarse_total = coarse_uuids.len();
                     for (i, (&uuid, &key)) in coarse_uuids.iter().enumerate() {
                         if (i + 1) % 1000 == 0 {
-                            tracing::info!(i = i + 1, total = coarse_total, "rebuilding coarse index from vectors...");
+                            tracing::info!(
+                                i = i + 1,
+                                total = coarse_total,
+                                "rebuilding coarse index from vectors..."
+                            );
                         }
                         if let Some(node) = state.nodes.get(&uuid) {
                             if node.vector.len() >= coarse_dim {
@@ -692,9 +712,19 @@ impl MemoryStore {
                             }
                         }
                     }
-                    *self.coarse_index.lock().expect("coarse_index mutex poisoned") = Some(coarse_idx);
-                    *self.coarse_dimension.lock().expect("coarse_dimension mutex poisoned") = Some(coarse_dim);
-                    tracing::info!(coarse_dim, coarse_skipped, "coarse usearch index rebuilt from persisted state");
+                    *self
+                        .coarse_index
+                        .lock()
+                        .expect("coarse_index mutex poisoned") = Some(coarse_idx);
+                    *self
+                        .coarse_dimension
+                        .lock()
+                        .expect("coarse_dimension mutex poisoned") = Some(coarse_dim);
+                    tracing::info!(
+                        coarse_dim,
+                        coarse_skipped,
+                        "coarse usearch index rebuilt from persisted state"
+                    );
                 }
             }
         }
@@ -713,7 +743,11 @@ impl MemoryStore {
                     let ultra_total = ultra_uuids.len();
                     for (i, (&uuid, &key)) in ultra_uuids.iter().enumerate() {
                         if (i + 1) % 1000 == 0 {
-                            tracing::info!(i = i + 1, total = ultra_total, "rebuilding ultra-coarse index from vectors...");
+                            tracing::info!(
+                                i = i + 1,
+                                total = ultra_total,
+                                "rebuilding ultra-coarse index from vectors..."
+                            );
                         }
                         if let Some(node) = state.nodes.get(&uuid) {
                             if node.vector.len() >= ultra_dim {
@@ -726,9 +760,19 @@ impl MemoryStore {
                             }
                         }
                     }
-                    *self.ultra_coarse_index.lock().expect("ultra_coarse_index mutex poisoned") = Some(ultra_idx);
-                    *self.ultra_coarse_dimension.lock().expect("ultra_coarse_dimension mutex poisoned") = Some(ultra_dim);
-                    tracing::info!(ultra_dim, ultra_skipped, "ultra-coarse usearch index rebuilt from persisted state");
+                    *self
+                        .ultra_coarse_index
+                        .lock()
+                        .expect("ultra_coarse_index mutex poisoned") = Some(ultra_idx);
+                    *self
+                        .ultra_coarse_dimension
+                        .lock()
+                        .expect("ultra_coarse_dimension mutex poisoned") = Some(ultra_dim);
+                    tracing::info!(
+                        ultra_dim,
+                        ultra_skipped,
+                        "ultra-coarse usearch index rebuilt from persisted state"
+                    );
                 }
             }
         }
@@ -802,8 +846,14 @@ impl MemoryStore {
         let count = self.save_count.fetch_add(1, AtomicOrdering::Relaxed) + 1;
         if count.is_multiple_of(BINARY_SAVE_EVERY_N) {
             save_index_binary(&self.usearch_index, &index_binary_path(dir, "usearch.bin"))?;
-            save_index_binary(&self.coarse_index, &index_binary_path(dir, "usearch_coarse.bin"))?;
-            save_index_binary(&self.ultra_coarse_index, &index_binary_path(dir, "usearch_ultra.bin"))?;
+            save_index_binary(
+                &self.coarse_index,
+                &index_binary_path(dir, "usearch_coarse.bin"),
+            )?;
+            save_index_binary(
+                &self.ultra_coarse_index,
+                &index_binary_path(dir, "usearch_ultra.bin"),
+            )?;
 
             // Write version marker for format detection on load
             let ver_path = version_file_path(dir);
@@ -822,8 +872,14 @@ impl MemoryStore {
         let dir = dir.clone();
         if let Err(e) = (|| -> Result<()> {
             save_index_binary(&self.usearch_index, &index_binary_path(&dir, "usearch.bin"))?;
-            save_index_binary(&self.coarse_index, &index_binary_path(&dir, "usearch_coarse.bin"))?;
-            save_index_binary(&self.ultra_coarse_index, &index_binary_path(&dir, "usearch_ultra.bin"))?;
+            save_index_binary(
+                &self.coarse_index,
+                &index_binary_path(&dir, "usearch_coarse.bin"),
+            )?;
+            save_index_binary(
+                &self.ultra_coarse_index,
+                &index_binary_path(&dir, "usearch_ultra.bin"),
+            )?;
             std::fs::write(version_file_path(&dir), BINARY_INDEX_VERSION)?;
             Ok(())
         })() {
@@ -973,7 +1029,10 @@ impl MemoryStore {
             }
         }; // guard dropped — no MutexGuard across .await
         let key_to_uuid = self.coarse_key_to_uuid.read().await;
-        match_keys.iter().filter_map(|k| key_to_uuid.get(k).copied()).collect()
+        match_keys
+            .iter()
+            .filter_map(|k| key_to_uuid.get(k).copied())
+            .collect()
     }
 
     async fn ultra_coarse_search(&self, vector: &[f32], count: usize) -> Vec<Uuid> {
@@ -995,7 +1054,10 @@ impl MemoryStore {
             }
         }; // guard dropped — no MutexGuard across .await
         let key_to_uuid = self.ultra_coarse_key_to_uuid.read().await;
-        match_keys.iter().filter_map(|k| key_to_uuid.get(k).copied()).collect()
+        match_keys
+            .iter()
+            .filter_map(|k| key_to_uuid.get(k).copied())
+            .collect()
     }
 
     fn index_key(
@@ -1033,8 +1095,14 @@ impl MemoryStore {
                 indexed += 1;
             }
         }
-        *self.usearch_index.lock().expect("usearch_index mutex poisoned") = Some(index);
-        *self.index_dimension.lock().expect("index_dimension mutex poisoned") = Some(dimension);
+        *self
+            .usearch_index
+            .lock()
+            .expect("usearch_index mutex poisoned") = Some(index);
+        *self
+            .index_dimension
+            .lock()
+            .expect("index_dimension mutex poisoned") = Some(dimension);
         tracing::info!(dimension, indexed, "usearch index rebuilt");
         Ok(indexed)
     }
@@ -1129,8 +1197,14 @@ impl MemoryStore {
                 };
 
                 if ultra_indexed {
-                    self.ultra_coarse_uuid_to_key.write().await.insert(id, ultra_key);
-                    self.ultra_coarse_key_to_uuid.write().await.insert(ultra_key, id);
+                    self.ultra_coarse_uuid_to_key
+                        .write()
+                        .await
+                        .insert(id, ultra_key);
+                    self.ultra_coarse_key_to_uuid
+                        .write()
+                        .await
+                        .insert(ultra_key, id);
                 }
             }
         }
@@ -1159,7 +1233,10 @@ impl MemoryStore {
         // Pre-allocate USearch capacity for the entire batch so concurrent
         // inserts below don't trigger "reserve capacity ahead of insertions"
         // warnings (one per growth event).
-        if let Some(dim) = nodes.iter().find(|n| !n.vector.is_empty()).map(|n| n.vector.len())
+        if let Some(dim) = nodes
+            .iter()
+            .find(|n| !n.vector.is_empty())
+            .map(|n| n.vector.len())
         {
             self.ensure_index(dim, nodes.len())?;
         }
@@ -1289,7 +1366,8 @@ impl MemoryStore {
         for (id, text) in corpus.iter() {
             scorer.upsert(id, embedder.embed(text));
         }
-        *self.bm25_cache.lock().expect("bm25_cache mutex poisoned") = Some(CachedBm25 { embedder, scorer });
+        *self.bm25_cache.lock().expect("bm25_cache mutex poisoned") =
+            Some(CachedBm25 { embedder, scorer });
         *self.bm25_dirty.lock().expect("bm25_dirty mutex poisoned") = false;
     }
 
@@ -1300,7 +1378,13 @@ impl MemoryStore {
         }
 
         let dirty = *self.bm25_dirty.lock().expect("bm25_dirty mutex poisoned");
-        if dirty || self.bm25_cache.lock().expect("bm25_cache mutex poisoned").is_none() {
+        if dirty
+            || self
+                .bm25_cache
+                .lock()
+                .expect("bm25_cache mutex poisoned")
+                .is_none()
+        {
             self.rebuild_bm25_cache(&corpus);
         }
         drop(corpus);
@@ -1319,24 +1403,6 @@ impl MemoryStore {
             .take(top_k)
             .map(|m| (m.id, m.score))
             .collect()
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn rrf_fuse(
-        vector_ranked: &[Uuid],
-        bm25_ranked: &[(Uuid, f32)],
-        k: f32,
-    ) -> Vec<(Uuid, f32)> {
-        let mut scores: HashMap<Uuid, f32> = HashMap::new();
-        for (rank, id) in vector_ranked.iter().enumerate() {
-            *scores.entry(*id).or_default() += 1.0 / (k + rank as f32 + 1.0);
-        }
-        for (rank, (id, _)) in bm25_ranked.iter().enumerate() {
-            *scores.entry(*id).or_default() += 1.0 / (k + rank as f32 + 1.0);
-        }
-        let mut fused: Vec<_> = scores.into_iter().collect();
-        fused.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(Ordering::Equal));
-        fused
     }
 
     /// Boost energy for memories that made it into the final top-k retrieval results.
@@ -1403,80 +1469,6 @@ impl MemoryStore {
             "temporal_boost applied"
         );
         boosted
-    }
-
-    /// Hybrid temporal + semantic scoring on ScoredNode slice (WP1).
-    /// Mirrors PostgresStore::apply_hybrid_temporal_scoring for in-memory parity.
-    fn apply_temporal_to_scored_nodes(
-        results: &mut [ScoredNode],
-        temporal_weight: f32,
-    ) {
-        if results.is_empty() || temporal_weight <= 0.0 {
-            tracing::info!(
-                results_empty = results.is_empty(),
-                temporal_weight,
-                "hybrid_temporal_scoring SKIPPED (empty or weight <= 0, in-memory)"
-            );
-            return;
-        }
-        let w = temporal_weight.clamp(0.0, 0.8);
-        let now = chrono::Utc::now();
-
-        let original_scores: Vec<f32> = results.iter().map(|r| r.score).collect();
-        let original_top3_ids: Vec<String> = results.iter().take(3).map(|r| r.id.to_string()).collect();
-        let mut recency_factors: Vec<f32> = Vec::with_capacity(results.len());
-
-        for item in results.iter_mut() {
-            let age_days = (now - item.node.created_at).num_days() as f32;
-            // Half-life of 7 days (see postgres_store.rs for rationale)
-            let recency_factor = 0.5f32.powf(age_days / 7.0).max(0.05);
-            recency_factors.push(recency_factor);
-
-            if let Some(debug) = &mut item.debug {
-                debug.recency_factor = Some(recency_factor);
-                debug.temporal_weight = Some(w);
-                debug.explanation = Some(format!(
-                    "Hybrid score: semantic×{:.2} + recency({:.1}d)×{:.2}",
-                    1.0 - w, age_days, w
-                ));
-            }
-
-            // Hybrid score: semantic * (1-w) + recency * w
-            item.score = item.score * (1.0 - w) + recency_factor * w;
-        }
-
-        results.sort_by(|a, b| {
-            b.score
-                .partial_cmp(&a.score)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-
-        let new_scores: Vec<f32> = results.iter().map(|r| r.score).collect();
-        let new_top3_ids: Vec<String> = results.iter().take(3).map(|r| r.id.to_string()).collect();
-
-        let max_delta = original_scores.iter().zip(new_scores.iter())
-            .map(|(a, b)| (a - b).abs())
-            .fold(0.0f32, f32::max);
-        let mean_delta = original_scores.iter().zip(new_scores.iter())
-            .map(|(a, b)| (a - b).abs())
-            .sum::<f32>() / results.len() as f32;
-        let recency_min = recency_factors.iter().fold(f32::INFINITY, |a, &b| a.min(b));
-        let recency_max = recency_factors.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
-        let recency_mean = recency_factors.iter().sum::<f32>() / recency_factors.len() as f32;
-        let recency_range = recency_max - recency_min;
-        let reorder_happened = original_top3_ids != new_top3_ids;
-
-        tracing::info!(
-            weight = w,
-            nodes = results.len(),
-            max_delta = format!("{:.4}", max_delta),
-            mean_delta = format!("{:.4}", mean_delta),
-            recency_factor_range = format!("{:.4}-{:.4}", recency_min, recency_max),
-            recency_factor_mean = format!("{:.4}", recency_mean),
-            recency_range = format!("{:.4}", recency_range),
-            top3_reordered = reorder_happened,
-            "hybrid_temporal_scoring applied (WP1, in-memory) — diagnostics"
-        );
     }
 
     pub async fn hybrid_retrieve<'a>(
@@ -1572,7 +1564,7 @@ impl MemoryStore {
         let total_candidates = vector_ids.len() + bm25_results.len();
 
         // Build dense candidates with cosine similarity scores
-        use crate::retrieval::hybrid::{DenseCandidate, hybrid_retrieve as hybrid_fuse};
+        use crate::retrieval::hybrid::{hybrid_retrieve as hybrid_fuse, DenseCandidate};
         let dense_candidates: Vec<DenseCandidate> = vector_results
             .iter()
             .map(|n| {
@@ -1695,11 +1687,7 @@ impl MemoryStore {
                     }
                 }
 
-                return scored
-                    .into_iter()
-                    .take(top_k)
-                    .map(|(_, n)| n)
-                    .collect();
+                return scored.into_iter().take(top_k).map(|(_, n)| n).collect();
             }
 
             // Fallback: main 768d index when cascade produced no candidates
@@ -1743,11 +1731,7 @@ impl MemoryStore {
                     }
                 }
 
-                return scored
-                    .into_iter()
-                    .take(top_k)
-                    .map(|(_, n)| n)
-                    .collect();
+                return scored.into_iter().take(top_k).map(|(_, n)| n).collect();
             }
         }
 
@@ -1765,18 +1749,18 @@ impl MemoryStore {
                 if results.is_empty() {
                     None
                 } else {
-                    Some(results.into_iter().map(move |(s, ref_node)| (s, ref_node.clone())))
+                    Some(
+                        results
+                            .into_iter()
+                            .map(move |(s, ref_node)| (s, ref_node.clone())),
+                    )
                 }
             })
             .flatten()
             .collect();
         drop(nodes);
         scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(Ordering::Equal));
-        scored
-            .into_iter()
-            .take(top_k)
-            .map(|(_, n)| n)
-            .collect()
+        scored.into_iter().take(top_k).map(|(_, n)| n).collect()
     }
 
     /// In-memory Matryoshka search: rank nodes by truncated cosine similarity.
@@ -1812,7 +1796,10 @@ impl Default for MemoryStore {
 // ═══════════════════════════════════════════════════════════════════════
 
 #[cfg(test)]
-#[allow(deprecated, reason = "tests intentionally exercise legacy FractalNode::new_session constructor")]
+#[allow(
+    deprecated,
+    reason = "tests intentionally exercise legacy FractalNode::new_session constructor"
+)]
 mod expand_fractal_tests {
     use super::*;
     use crate::memory::fractal_node::FractalNode;
@@ -1948,17 +1935,14 @@ mod expand_fractal_tests {
 // ═══════════════════════════════════════════════════════════════════════
 
 #[cfg(test)]
-#[allow(deprecated, reason = "tests intentionally exercise legacy FractalNode::new_session constructor")]
+#[allow(
+    deprecated,
+    reason = "tests intentionally exercise legacy FractalNode::new_session constructor"
+)]
 mod temporal_scoring_tests {
     use super::*;
     use crate::memory::FractalNode;
     use std::collections::HashMap;
-
-    /// Compute recency factor for a given age (in days) and half-life (in days).
-    /// Mirrors the exact formula from apply_hybrid_temporal_scoring / apply_temporal_to_scored_nodes.
-    fn recency_factor(age_days: f32, half_life_days: f32) -> f32 {
-        0.5f32.powf(age_days / half_life_days).max(0.05)
-    }
 
     /// Apply hybrid temporal scoring to a vector of (score, age_days) pairs.
     /// Returns new scores after blending with recency.
@@ -1968,7 +1952,7 @@ mod temporal_scoring_tests {
         half_life_days: f32,
     ) -> Vec<f32> {
         for (score, age_days) in &mut scores_and_ages {
-            let rf = recency_factor(*age_days, half_life_days);
+            let rf = shared::recency_factor(*age_days, half_life_days);
             *score = *score * (1.0 - w) + rf * w;
         }
         scores_and_ages.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
@@ -1977,44 +1961,18 @@ mod temporal_scoring_tests {
 
     // ── Core Formula Tests ──
 
-    #[test]
-    fn recency_factor_at_half_life_is_0_5() {
-        // At exactly half-life, factor should be 0.5
-        assert!((recency_factor(7.0, 7.0) - 0.5).abs() < 0.001);
-        assert!((recency_factor(3.0, 3.0) - 0.5).abs() < 0.001);
-        assert!((recency_factor(30.0, 30.0) - 0.5).abs() < 0.001);
-    }
-
-    #[test]
-    fn recency_factor_at_double_half_life_is_0_25() {
-        assert!((recency_factor(14.0, 7.0) - 0.25).abs() < 0.001);
-        assert!((recency_factor(6.0, 3.0) - 0.25).abs() < 0.001);
-        assert!((recency_factor(60.0, 30.0) - 0.25).abs() < 0.001);
-    }
-
-    #[test]
-    fn recency_factor_floor_is_0_05() {
-        // Very old memories hit the floor
-        assert!((recency_factor(100.0, 7.0) - 0.05).abs() < 0.001);
-        assert!((recency_factor(365.0, 7.0) - 0.05).abs() < 0.001);
-        assert!((recency_factor(1000.0, 7.0) - 0.05).abs() < 0.001);
-    }
-
-    #[test]
-    fn recency_factor_zero_age_is_1_0() {
-        // Brand new (0 days) gets full recency
-        assert!((recency_factor(0.0, 7.0) - 1.0).abs() < 0.001);
-        assert!((recency_factor(0.0, 3.0) - 1.0).abs() < 0.001);
-    }
 
     // ── Multi Half-Life Tests ──
 
     #[test]
     fn half_life_3d_decays_faster_than_7d() {
         // At 3 days: 3d half-life gives 0.5, 7d half-life gives ~0.743
-        let rf_3 = recency_factor(3.0, 3.0);
-        let rf_7 = recency_factor(3.0, 7.0);
-        assert!(rf_3 < rf_7, "3d half-life ({rf_3}) should decay faster than 7d ({rf_7})");
+        let rf_3 = shared::recency_factor(3.0, 3.0);
+        let rf_7 = shared::recency_factor(3.0, 7.0);
+        assert!(
+            rf_3 < rf_7,
+            "3d half-life ({rf_3}) should decay faster than 7d ({rf_7})"
+        );
         assert!((rf_3 - 0.5).abs() < 0.01);
         assert!(rf_7 > 0.7);
     }
@@ -2022,9 +1980,12 @@ mod temporal_scoring_tests {
     #[test]
     fn half_life_30d_decays_slower_than_7d() {
         // At 7 days: 7d half-life gives 0.5, 30d half-life gives ~0.851
-        let rf_7 = recency_factor(7.0, 7.0);
-        let rf_30 = recency_factor(7.0, 30.0);
-        assert!(rf_30 > rf_7, "30d half-life ({rf_30}) should decay slower than 7d ({rf_7})");
+        let rf_7 = shared::recency_factor(7.0, 7.0);
+        let rf_30 = shared::recency_factor(7.0, 30.0);
+        assert!(
+            rf_30 > rf_7,
+            "30d half-life ({rf_30}) should decay slower than 7d ({rf_7})"
+        );
         assert!((rf_7 - 0.5).abs() < 0.01);
         assert!(rf_30 > 0.8);
     }
@@ -2032,25 +1993,32 @@ mod temporal_scoring_tests {
     #[test]
     fn half_life_60d_preserves_much_more_recency() {
         // At 14 days: 7d gives 0.25, 60d gives ~0.851
-        let rf_7 = recency_factor(14.0, 7.0);
-        let rf_60 = recency_factor(14.0, 60.0);
+        let rf_7 = shared::recency_factor(14.0, 7.0);
+        let rf_60 = shared::recency_factor(14.0, 60.0);
         assert!((rf_7 - 0.25).abs() < 0.01);
-        assert!(rf_60 > 0.8, "60d half-life should give high recency ({rf_60}) at 14 days");
-        assert!(rf_60 > rf_7 * 3.0, "60d should be >3x higher than 7d at 14 days");
+        assert!(
+            rf_60 > 0.8,
+            "60d half-life should give high recency ({rf_60}) at 14 days"
+        );
+        assert!(
+            rf_60 > rf_7 * 3.0,
+            "60d should be >3x higher than 7d at 14 days"
+        );
     }
 
     #[test]
     fn recency_range_wider_with_shorter_half_life() {
         // Shorter half-life → wider range between newest and oldest
-        let rf_new = recency_factor(0.0, 3.0);
-        let rf_old = recency_factor(10.0, 3.0); // ~0.05 floor
+        let rf_new = shared::recency_factor(0.0, 3.0);
+        let rf_old = shared::recency_factor(10.0, 3.0); // ~0.05 floor
         let range_3 = rf_new - rf_old;
 
-        let rf_new = recency_factor(0.0, 30.0);
-        let rf_old = recency_factor(10.0, 30.0);
+        let rf_new = shared::recency_factor(0.0, 30.0);
+        let rf_old = shared::recency_factor(10.0, 30.0);
         let range_30 = rf_new - rf_old;
 
-        assert!(range_3 > range_30,
+        assert!(
+            range_3 > range_30,
             "3d half-life range ({range_3:.4}) should be wider than 30d ({range_30:.4})"
         );
     }
@@ -2074,8 +2042,10 @@ mod temporal_scoring_tests {
         let input = vec![(0.9, 100.0), (0.1, 0.0), (0.5, 50.0)];
         let result = apply_temporal_scoring(input, 0.8, 7.0);
         // Brand-new (0d) item should now be top despite low semantic score
-        assert!((result[0] - 0.8).abs() < 0.1,
-            "New item (0d) should rank first with w=0.8. Got result: {:?}", result
+        assert!(
+            (result[0] - 0.8).abs() < 0.1,
+            "New item (0d) should rank first with w=0.8. Got result: {:?}",
+            result
         );
     }
 
@@ -2086,8 +2056,11 @@ mod temporal_scoring_tests {
         let result = apply_temporal_scoring(input, 0.3, 7.0);
         // Old but highly relevant should still win
         let old_score = 0.9 * 0.7 + 0.05 * 0.3; // 0.63 + 0.015 = 0.645
-        let new_score = 0.4 * 0.7 + 1.0 * 0.3;  // 0.28 + 0.3 = 0.58
-        assert!(old_score > new_score, "Old relevant should beat new irrelevant at w=0.3");
+        let new_score = 0.4 * 0.7 + 1.0 * 0.3; // 0.28 + 0.3 = 0.58
+        assert!(
+            old_score > new_score,
+            "Old relevant should beat new irrelevant at w=0.3"
+        );
         assert!((result[0] - old_score).abs() < 0.01);
     }
 
@@ -2103,9 +2076,10 @@ mod temporal_scoring_tests {
         let input = vec![(0.8, 10.0), (0.3, 1.0)];
         let result = apply_temporal_scoring(input, w_cross, 7.0);
         // At low weight, older high-quality should still win
-        let old_score = 0.8 * 0.8 + recency_factor(10.0, 7.0) * 0.2;
-        let new_score = 0.3 * 0.8 + recency_factor(1.0, 7.0) * 0.2;
-        assert!(old_score > new_score,
+        let old_score = 0.8 * 0.8 + shared::recency_factor(10.0, 7.0) * 0.2;
+        let new_score = 0.3 * 0.8 + shared::recency_factor(1.0, 7.0) * 0.2;
+        assert!(
+            old_score > new_score,
             "At w=0.2, old relevant ({old_score:.4}) should beat new weak ({new_score:.4})"
         );
         assert!((result[0] - old_score).abs() < 0.01);
@@ -2127,7 +2101,7 @@ mod temporal_scoring_tests {
         // Single item: score changes but no reordering needed
         let input = vec![(0.5, 3.0)];
         let result = apply_temporal_scoring(input, 0.5, 7.0);
-        let rf = recency_factor(3.0, 7.0);
+        let rf = shared::recency_factor(3.0, 7.0);
         let expected = 0.5 * 0.5 + rf * 0.5;
         assert!((result[0] - expected).abs() < 0.01);
     }
@@ -2149,11 +2123,18 @@ mod temporal_scoring_tests {
     fn episodic_3d_vs_semantic_30d_differentiation() {
         // Episodic memory (3d half-life) and Semantic memory (30d half-life)
         // at age=7 days should have very different recency factors
-        let epi_rf = recency_factor(7.0, 3.0);   // 7d old episodic
-        let sem_rf = recency_factor(7.0, 30.0);  // 7d old semantic
-        assert!(epi_rf < 0.2, "Episodic at 7d should be nearly fully decayed, got {epi_rf:.4}");
-        assert!(sem_rf > 0.8, "Semantic at 7d should still be strong, got {sem_rf:.4}");
-        assert!(sem_rf > epi_rf * 4.0,
+        let epi_rf = shared::recency_factor(7.0, 3.0); // 7d old episodic
+        let sem_rf = shared::recency_factor(7.0, 30.0); // 7d old semantic
+        assert!(
+            epi_rf < 0.2,
+            "Episodic at 7d should be nearly fully decayed, got {epi_rf:.4}"
+        );
+        assert!(
+            sem_rf > 0.8,
+            "Semantic at 7d should still be strong, got {sem_rf:.4}"
+        );
+        assert!(
+            sem_rf > epi_rf * 4.0,
             "Semantic ({sem_rf:.4}) should be >> Episodic ({epi_rf:.4}) at 7 days"
         );
     }
@@ -2161,19 +2142,25 @@ mod temporal_scoring_tests {
     #[test]
     fn procedural_60d_stays_strong_for_weeks() {
         // Procedural memory (60d half-life) should retain high recency for weeks
-        let rf_14 = recency_factor(14.0, 60.0);
-        let rf_30 = recency_factor(30.0, 60.0);
-        assert!(rf_14 > 0.85, "Procedural at 14d should be >0.85, got {rf_14:.4}");
-        assert!(rf_30 > 0.7, "Procedural at 30d should still be >0.7, got {rf_30:.4}");
+        let rf_14 = shared::recency_factor(14.0, 60.0);
+        let rf_30 = shared::recency_factor(30.0, 60.0);
+        assert!(
+            rf_14 > 0.85,
+            "Procedural at 14d should be >0.85, got {rf_14:.4}"
+        );
+        assert!(
+            rf_30 > 0.7,
+            "Procedural at 30d should still be >0.7, got {rf_30:.4}"
+        );
     }
 
     #[test]
     fn per_type_half_life_ranking() {
         // At 14 days, different types produce different recency factors
         // Episodic (3d): nearly floor → Procedural (60d): still very strong
-        let episodic = recency_factor(14.0, 3.0);
-        let semantic = recency_factor(14.0, 30.0);
-        let procedural = recency_factor(14.0, 60.0);
+        let episodic = shared::recency_factor(14.0, 3.0);
+        let semantic = shared::recency_factor(14.0, 30.0);
+        let procedural = shared::recency_factor(14.0, 60.0);
         assert!(episodic < semantic);
         assert!(semantic < procedural);
     }
@@ -2181,10 +2168,13 @@ mod temporal_scoring_tests {
     #[test]
     fn preference_7d_balanced_decay() {
         // Preference (7d half-life) should be between Episodic and Semantic
-        let pref_1d = recency_factor(1.0, 7.0);
-        let pref_14d = recency_factor(14.0, 7.0);
+        let pref_1d = shared::recency_factor(1.0, 7.0);
+        let pref_14d = shared::recency_factor(14.0, 7.0);
         assert!(pref_1d > 0.9, "1d preference should be strong");
-        assert!((pref_14d - 0.25).abs() < 0.01, "14d preference should be 0.25");
+        assert!(
+            (pref_14d - 0.25).abs() < 0.01,
+            "14d preference should be 0.25"
+        );
     }
 
     // ── In-Memory Store Integration Test ──

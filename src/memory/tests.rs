@@ -1,5 +1,8 @@
 #[cfg(test)]
-#[allow(deprecated, reason = "tests intentionally exercise legacy FractalNode::new_session constructor")]
+#[allow(
+    deprecated,
+    reason = "tests intentionally exercise legacy FractalNode::new_session constructor"
+)]
 mod tests {
     use std::collections::HashMap;
 
@@ -513,7 +516,7 @@ mod tests {
         let vector_ranked = vec![id_a, id_b, id_c];
         let bm25_ranked = vec![(id_b, 5.0), (id_a, 3.0)];
 
-        let fused = MemoryStore::rrf_fuse(&vector_ranked, &bm25_ranked, 60.0);
+        let fused = crate::storage::shared::rrf_fuse(&vector_ranked, &bm25_ranked, 60.0);
 
         let a_score = fused.iter().find(|(id, _)| *id == id_a).unwrap().1;
         let b_score = fused.iter().find(|(id, _)| *id == id_b).unwrap().1;
@@ -537,14 +540,17 @@ mod tests {
         let vector_ranked = vec![id_a];
         let bm25_ranked = vec![(id_b, 5.0)];
 
-        let fused = MemoryStore::rrf_fuse(&vector_ranked, &bm25_ranked, 60.0);
+        let fused = crate::storage::shared::rrf_fuse(&vector_ranked, &bm25_ranked, 60.0);
 
         assert_eq!(fused.len(), 2, "disjoint lists should merge all entries");
         let a_score = fused.iter().find(|(id, _)| *id == id_a).unwrap().1;
         let b_score = fused.iter().find(|(id, _)| *id == id_b).unwrap().1;
+        // Under unified RRF, BM25 results get weighted by normalized BM25 score.
+        // id_b has BM25=5.0 → normalized=0.25 → weight=0.35, so it scores lower
+        // than id_a which gets full rank weight (1.0).
         assert!(
-            (a_score - b_score).abs() < 1e-6,
-            "equal rank in their respective lists should yield equal RRF score"
+            a_score > b_score,
+            "pure vector node (full weight) should outrank BM25 node with low confidence (weight 0.35)"
         );
     }
 
@@ -570,7 +576,16 @@ mod tests {
 
         let query_vec = vec![0.5, 0.5, 0.5, 0.5];
         let results = store
-            .hybrid_retrieve(Some("Frigate Haustuer"), &query_vec, 5, 0, None, None, false, None)
+            .hybrid_retrieve(
+                Some("Frigate Haustuer"),
+                &query_vec,
+                5,
+                0,
+                None,
+                None,
+                false,
+                None,
+            )
             .await;
 
         assert!(!results.is_empty());
@@ -602,9 +617,13 @@ mod tests {
 
         let query_vec = vec![1.0, 0.0, 0.0, 0.0];
         #[cfg(feature = "postgres-storage")]
-        let results = store.hybrid_retrieve(None, &query_vec, 2, 0, None, None, false, None).await;
+        let results = store
+            .hybrid_retrieve(None, &query_vec, 2, 0, None, None, false, None)
+            .await;
         #[cfg(not(feature = "postgres-storage"))]
-        let results = store.hybrid_retrieve(None, &query_vec, 2, 0, None, None, false).await;
+        let results = store
+            .hybrid_retrieve(None, &query_vec, 2, 0, None, None, false)
+            .await;
 
         assert!(!results.is_empty());
         assert_eq!(
@@ -646,10 +665,16 @@ mod tests {
 
         // 4d truncation should approximate full similarity
         let (full, trunc) = matryoshka_continuity(&parent, &child_a, 4).unwrap();
-        assert!(full > 0.9, "parent-child full cos_sim should be high: {full}");
+        assert!(
+            full > 0.9,
+            "parent-child full cos_sim should be high: {full}"
+        );
         // Truncated sim should be within 10% of full sim
         let delta = (full - trunc).abs();
-        assert!(delta < 0.15, "matryoshka continuity broken: full={full:.3} trunc={trunc:.3} delta={delta:.3}");
+        assert!(
+            delta < 0.15,
+            "matryoshka continuity broken: full={full:.3} trunc={trunc:.3} delta={delta:.3}"
+        );
     }
 
     // ── Ebbinghaus Forgetting Curve Tests ──
@@ -657,70 +682,57 @@ mod tests {
     /// New nodes initialize r_m to creation time and n_m to 0.
     #[test]
     fn ebbinghaus_default_values() {
-        let node = FractalNode::new_session(
-            "test".to_string(),
-            vec![0.1, 0.2],
-            HashMap::new(),
-        );
+        let node = FractalNode::new_session("test".to_string(), vec![0.1, 0.2], HashMap::new());
         assert_eq!(node.n_m, 0, "new node should have zero reinforcements");
         // r_m should be very close to created_at (within a few seconds)
         let delta = (node.r_m - node.created_at).num_seconds().abs();
-        assert!(delta < 5, "r_m should be within 5s of created_at, got {delta}s");
+        assert!(
+            delta < 5,
+            "r_m should be within 5s of created_at, got {delta}s"
+        );
     }
 
     /// At creation time (t = r_m), decay factor should be 1.0 (no decay).
     #[test]
     fn ebbinghaus_no_decay_at_creation() {
-        let node = FractalNode::new_session(
-            "test".to_string(),
-            vec![0.1, 0.2],
-            HashMap::new(),
-        );
+        let node = FractalNode::new_session("test".to_string(), vec![0.1, 0.2], HashMap::new());
         let factor = node.ebbinghaus_decay(node.r_m);
-        assert!((factor - 1.0).abs() < 1e-10,
-            "decay at r_m should be 1.0, got {factor}");
+        assert!(
+            (factor - 1.0).abs() < 1e-10,
+            "decay at r_m should be 1.0, got {factor}"
+        );
     }
 
     /// t < r_m (time before last review) should return 1.0 (no negative decay).
     #[test]
     fn ebbinghaus_time_before_review() {
-        let node = FractalNode::new_session(
-            "test".to_string(),
-            vec![0.1, 0.2],
-            HashMap::new(),
-        );
+        let node = FractalNode::new_session("test".to_string(), vec![0.1, 0.2], HashMap::new());
         let past = node.r_m - chrono::Duration::hours(24);
         let factor = node.ebbinghaus_decay(past);
-        assert!((factor - 1.0).abs() < 1e-10,
-            "decay before r_m should be 1.0, got {factor}");
+        assert!(
+            (factor - 1.0).abs() < 1e-10,
+            "decay before r_m should be 1.0, got {factor}"
+        );
     }
 
     /// After τ hours (7 days) with zero reviews, decay should be exactly e^(-1) ≈ 0.368.
     #[test]
     fn ebbinghaus_one_tau_without_review() {
-        let node = FractalNode::new_session(
-            "test".to_string(),
-            vec![0.1, 0.2],
-            HashMap::new(),
-        );
-        let future = node.r_m + chrono::Duration::hours(
-            FractalNode::EBBI_TAU as i64
-        );
+        let node = FractalNode::new_session("test".to_string(), vec![0.1, 0.2], HashMap::new());
+        let future = node.r_m + chrono::Duration::hours(FractalNode::EBBI_TAU as i64);
         let factor = node.ebbinghaus_decay(future);
         let expected = (-1.0_f64).exp(); // e^(-1)
-        // Allow 0.1% tolerance for floating point
-        assert!((factor - expected).abs() < 0.001,
-            "after τ hours, decay should be e^(-1) ≈ {expected:.4}, got {factor:.4}");
+                                         // Allow 0.1% tolerance for floating point
+        assert!(
+            (factor - expected).abs() < 0.001,
+            "after τ hours, decay should be e^(-1) ≈ {expected:.4}, got {factor:.4}"
+        );
     }
 
     /// After multiple reviews, decay should be slower than without reviews.
     #[test]
     fn ebbinghaus_multiple_reviews_slow_decay() {
-        let mut node = FractalNode::new_session(
-            "test".to_string(),
-            vec![0.1, 0.2],
-            HashMap::new(),
-        );
+        let mut node = FractalNode::new_session("test".to_string(), vec![0.1, 0.2], HashMap::new());
 
         // Record 5 reinforcements
         for _ in 0..5 {
@@ -730,9 +742,7 @@ mod tests {
 
         assert_eq!(node.n_m, 5, "should have 5 reinforcements");
         // One τ after the last review
-        let future = node.r_m + chrono::Duration::hours(
-            FractalNode::EBBI_TAU as i64
-        );
+        let future = node.r_m + chrono::Duration::hours(FractalNode::EBBI_TAU as i64);
         let factor = node.ebbinghaus_decay(future);
 
         // With 5 reviews: ln(1+5) ≈ 1.79, η=0.5 → bonus = 1 + 0.5*1.79 ≈ 1.895
@@ -740,32 +750,29 @@ mod tests {
         // exp(-168/318.4) ≈ exp(-0.528) ≈ 0.590
         // Without reviews: exp(-1) ≈ 0.368
         // The reviewed memory should decay much less
-        assert!(factor > 0.55, "with 5 reviews, should decay slower than e^(-1)=0.368, got {factor:.4}");
+        assert!(
+            factor > 0.55,
+            "with 5 reviews, should decay slower than e^(-1)=0.368, got {factor:.4}"
+        );
     }
 
     /// Very large time intervals should approach zero.
     #[test]
     fn ebbinghaus_very_large_interval() {
-        let node = FractalNode::new_session(
-            "test".to_string(),
-            vec![0.1, 0.2],
-            HashMap::new(),
-        );
+        let node = FractalNode::new_session("test".to_string(), vec![0.1, 0.2], HashMap::new());
         // 10 years
         let far_future = node.r_m + chrono::Duration::hours(10 * 365 * 24);
         let factor = node.ebbinghaus_decay(far_future);
-        assert!(factor < 0.001,
-            "after 10 years, decay should be near zero, got {factor:.6}");
+        assert!(
+            factor < 0.001,
+            "after 10 years, decay should be near zero, got {factor:.6}"
+        );
     }
 
     /// reinforce() updates both r_m and n_m.
     #[test]
     fn ebbinghaus_reinforce_updates_both() {
-        let mut node = FractalNode::new_session(
-            "test".to_string(),
-            vec![0.1, 0.2],
-            HashMap::new(),
-        );
+        let mut node = FractalNode::new_session("test".to_string(), vec![0.1, 0.2], HashMap::new());
         let old_r_m = node.r_m;
         let old_n_m = node.n_m;
 

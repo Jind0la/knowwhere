@@ -29,11 +29,14 @@ use sqlx::postgres::{PgPool, PgPoolOptions};
 use sqlx::Row;
 use uuid::Uuid;
 
+use crate::memory::conversation::TurnRow;
 use crate::memory::fractal_node::FractalNode;
 use crate::memory::types::{ConflictState, ContextTier, MemorySource, MemoryStatus, Sensitivity};
 use crate::memory::MemoryType;
-use crate::memory::conversation::TurnRow;
-use crate::storage::backend::{HybridQuery, RetrievalProfile, ScoredNode, StorageBackend, UpdateOperation};
+use crate::storage::backend::{
+    HybridQuery, RetrievalProfile, ScoredNode, StorageBackend, UpdateOperation,
+};
+use crate::storage::shared;
 
 /// Hex-encoded BLAKE3 of the plaintext API key — stored in `auth_api_keys.key_hash` for O(1) lookup.
 #[must_use]
@@ -107,28 +110,6 @@ struct AdjacentTurnRow {
     pub embedding_dim: Option<i32>,
 }
 
-fn allow_internal_meta(filter: Option<MemoryType>) -> bool {
-    filter == Some(MemoryType::Meta)
-}
-
-fn is_internal_meta_artifact(node: &FractalNode) -> bool {
-    if node.memory_type != MemoryType::Meta {
-        return false;
-    }
-    let derivation = node
-        .metadata
-        .get(FractalNode::DERIVATION_KEY)
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or("")
-        .to_ascii_lowercase();
-    matches!(derivation.as_str(), "instruction" | "reflected")
-        || node
-            .metadata
-            .get(FractalNode::RETRIEVAL_VISIBILITY_KEY)
-            .and_then(serde_json::Value::as_str)
-            .is_some_and(|v| v.eq_ignore_ascii_case(FractalNode::INTERNAL_VISIBILITY))
-}
-
 impl PostgresStore {
     /// Connect to PostgreSQL.
     pub async fn connect(database_url: &str) -> Result<Self> {
@@ -190,7 +171,7 @@ impl PostgresStore {
         }
         let rows: Vec<MemoryRow> = sqlx::query_as::<_, MemoryRow>(
             r#"
-            SELECT 
+            SELECT
                 id , memory_type ,
                 content , content_preview,
                 importance , confidence ,
@@ -428,7 +409,7 @@ impl PostgresStore {
     pub async fn get_memory(&self, id: Uuid) -> Result<Option<MemoryRow>> {
         let row = sqlx::query_as::<_, MemoryRow>(
             r#"
-            SELECT 
+            SELECT
                 id , memory_type ,
                 content , content_preview,
                 importance , confidence ,
@@ -746,7 +727,7 @@ impl PostgresStore {
     pub async fn recent_memories(&self, limit: i32) -> Result<Vec<MemoryRow>> {
         let rows = sqlx::query_as::<_, MemoryRow>(
             r#"
-            SELECT 
+            SELECT
                 id , memory_type ,
                 content , content_preview,
                 importance , confidence ,
@@ -777,7 +758,7 @@ impl PostgresStore {
     pub async fn list_memories(&self) -> Result<Vec<MemoryRow>> {
         let rows = sqlx::query_as::<_, MemoryRow>(
             r#"
-            SELECT 
+            SELECT
                 id , memory_type ,
                 content , content_preview,
                 importance , confidence ,
@@ -953,7 +934,7 @@ impl PostgresStore {
                    last_accessed, deleted_at, metadata, entities,
                    COALESCE(tags, ARRAY[]::TEXT[]) AS tags ,
                    content_preview,
-                   embedding::float4[] 
+                   embedding::float4[]
             FROM fractal_tree
             ORDER BY level
             "#,
@@ -1017,7 +998,7 @@ impl PostgresStore {
                    edges_created as "edges_created!",
                    processing_time_ms as "processing_time_ms!",
                    status ,
-                   error_message, created_at 
+                   error_message, created_at
             FROM consolidation_history
             ORDER BY created_at DESC
             LIMIT $1::bigint
@@ -1368,12 +1349,11 @@ impl PostgresStore {
 
     /// Find an existing conversation session by external_id, or create one.
     pub async fn find_or_create_session(&self, external_id: &str) -> Result<Uuid> {
-        let existing: Option<Uuid> = sqlx::query_scalar(
-            "SELECT id FROM conversation_sessions WHERE external_id = $1",
-        )
-        .bind(external_id)
-        .fetch_optional(&self.pool)
-        .await?;
+        let existing: Option<Uuid> =
+            sqlx::query_scalar("SELECT id FROM conversation_sessions WHERE external_id = $1")
+                .bind(external_id)
+                .fetch_optional(&self.pool)
+                .await?;
         if let Some(id) = existing {
             return Ok(id);
         }
@@ -1510,20 +1490,32 @@ impl PostgresStore {
                 WHERE ct.embedding IS NOT NULL ORDER BY ct.embedding <=> $1 LIMIT $2"#,
             ).bind(query_vector).bind(k).fetch_all(&self.pool).await?
         };
-        Ok(rows.into_iter().map(|r| {
-            let embedding_info = r.embedding_type.map(|provider| crate::memory::conversation::EmbeddingInfo {
-                vector: vec![], // vector not included in scored turn responses (too large)
-                provider,
-                dimension: r.embedding_dim.unwrap_or(0) as usize,
-                metadata: None,
-            });
-            crate::api::turns::ScoredTurn {
-                turn_id: r.turn_id, session_id: r.session_id,
-                external_session_id: r.external_session_id, turn_index: r.turn_index,
-                speaker_role: r.speaker_role, content: r.content, similarity: r.similarity,
-                metadata: r.metadata, created_at: r.created_at, embedding_info, adjacent_turns: None,
-            }
-        }).collect())
+        Ok(rows
+            .into_iter()
+            .map(|r| {
+                let embedding_info =
+                    r.embedding_type
+                        .map(|provider| crate::memory::conversation::EmbeddingInfo {
+                            vector: vec![], // vector not included in scored turn responses (too large)
+                            provider,
+                            dimension: r.embedding_dim.unwrap_or(0) as usize,
+                            metadata: None,
+                        });
+                crate::api::turns::ScoredTurn {
+                    turn_id: r.turn_id,
+                    session_id: r.session_id,
+                    external_session_id: r.external_session_id,
+                    turn_index: r.turn_index,
+                    speaker_role: r.speaker_role,
+                    content: r.content,
+                    similarity: r.similarity,
+                    metadata: r.metadata,
+                    created_at: r.created_at,
+                    embedding_info,
+                    adjacent_turns: None,
+                }
+            })
+            .collect())
     }
 
     /// Retrieve turns by vector similarity, returning internal results with full embedding vectors.
@@ -1582,10 +1574,15 @@ impl PostgresStore {
     }
 
     /// Get all turns for a session, ordered by turn_index.
-    pub async fn get_session_turns(&self, session_id: Uuid) -> Result<crate::api::turns::SessionTurnsResponse> {
-        let session_row: Option<(Option<String>,)> = sqlx::query_as(
-            "SELECT external_id FROM conversation_sessions WHERE id = $1",
-        ).bind(session_id).fetch_optional(&self.pool).await?;
+    pub async fn get_session_turns(
+        &self,
+        session_id: Uuid,
+    ) -> Result<crate::api::turns::SessionTurnsResponse> {
+        let session_row: Option<(Option<String>,)> =
+            sqlx::query_as("SELECT external_id FROM conversation_sessions WHERE id = $1")
+                .bind(session_id)
+                .fetch_optional(&self.pool)
+                .await?;
         let external_session_id = session_row.and_then(|r| r.0);
         let turns: Vec<crate::api::turns::SessionTurn> = sqlx::query_as::<_, SessionTurnRow>(
             r#"SELECT id AS turn_id, turn_index, speaker_role, content, LEFT(content, 500) AS content_preview,
@@ -1605,7 +1602,11 @@ impl PostgresStore {
                 embedding_info,
             }
         }).collect();
-        Ok(crate::api::turns::SessionTurnsResponse { session_id, external_session_id, turns })
+        Ok(crate::api::turns::SessionTurnsResponse {
+            session_id,
+            external_session_id,
+            turns,
+        })
     }
 
     /// List turns for a session with pagination and ordering.
@@ -1617,12 +1618,11 @@ impl PostgresStore {
         limit: i64,
         order_desc: bool,
     ) -> Result<(Vec<crate::api::turns::SessionTurn>, i64)> {
-        let total: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM conversation_turns WHERE session_id = $1",
-        )
-        .bind(session_id)
-        .fetch_one(&self.pool)
-        .await?;
+        let total: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM conversation_turns WHERE session_id = $1")
+                .bind(session_id)
+                .fetch_one(&self.pool)
+                .await?;
 
         let order_clause = if order_desc { "DESC" } else { "ASC" };
         let sql = format!(
@@ -1640,12 +1640,14 @@ impl PostgresStore {
             .await?
             .into_iter()
             .map(|r| {
-                let embedding_info = r.embedding_type.map(|provider| crate::memory::conversation::EmbeddingInfo {
-                    vector: vec![],
-                    provider,
-                    dimension: r.embedding_dim.unwrap_or(0) as usize,
-                    metadata: None,
-                });
+                let embedding_info =
+                    r.embedding_type
+                        .map(|provider| crate::memory::conversation::EmbeddingInfo {
+                            vector: vec![],
+                            provider,
+                            dimension: r.embedding_dim.unwrap_or(0) as usize,
+                            metadata: None,
+                        });
                 crate::api::turns::SessionTurn {
                     turn_id: r.turn_id,
                     turn_index: r.turn_index,
@@ -1664,16 +1666,25 @@ impl PostgresStore {
 
     /// Get adjacent turns for context expansion.
     pub async fn get_adjacent_turns(
-        &self, session_id: Uuid, turn_index: i32, window: i32,
+        &self,
+        session_id: Uuid,
+        turn_index: i32,
+        window: i32,
     ) -> Result<Vec<crate::api::turns::TurnContext>> {
         let rows: Vec<AdjacentTurnRow> = sqlx::query_as::<_, AdjacentTurnRow>(
             r#"SELECT id AS turn_id, turn_index, speaker_role, content, metadata, embedding_type, embedding_dim FROM conversation_turns
             WHERE session_id = $1 AND turn_index BETWEEN ($2 - $3) AND ($2 + $3) AND turn_index != $2 ORDER BY turn_index"#,
         ).bind(session_id).bind(turn_index).bind(window).fetch_all(&self.pool).await?;
-        Ok(rows.into_iter().map(|r| crate::api::turns::TurnContext {
-            turn_id: r.turn_id, turn_index: r.turn_index, speaker_role: r.speaker_role,
-            content: r.content, metadata: r.metadata,
-        }).collect())
+        Ok(rows
+            .into_iter()
+            .map(|r| crate::api::turns::TurnContext {
+                turn_id: r.turn_id,
+                turn_index: r.turn_index,
+                speaker_role: r.speaker_role,
+                content: r.content,
+                metadata: r.metadata,
+            })
+            .collect())
     }
 
     // -------------------------------------------------------------------------
@@ -1778,12 +1789,11 @@ impl PostgresStore {
     /// Linked memories (via turn_id FK) have their turn_id set to NULL (ON DELETE SET NULL).
     pub async fn delete_turn(&self, turn_id: Uuid) -> Result<bool> {
         // Capture session_id before deletion for side-effect maintenance
-        let session_id: Option<Uuid> = sqlx::query_scalar(
-            "SELECT session_id FROM conversation_turns WHERE id = $1",
-        )
-        .bind(turn_id)
-        .fetch_optional(&self.pool)
-        .await?;
+        let session_id: Option<Uuid> =
+            sqlx::query_scalar("SELECT session_id FROM conversation_turns WHERE id = $1")
+                .bind(turn_id)
+                .fetch_optional(&self.pool)
+                .await?;
 
         let result = sqlx::query("DELETE FROM conversation_turns WHERE id = $1")
             .bind(turn_id)
@@ -1805,7 +1815,6 @@ impl PostgresStore {
         }
         Ok(deleted)
     }
-
 }
 
 // =============================================================================
@@ -1889,7 +1898,7 @@ impl StorageBackend for PostgresStore {
     // --- Query ---
 
     async fn hybrid_retrieve(&self, query: &HybridQuery) -> anyhow::Result<Vec<ScoredNode>> {
-        let include_internal_meta = allow_internal_meta(query.memory_type_filter);
+        let include_internal_meta = shared::allow_internal_meta(query.memory_type_filter);
         let mut owned_vector = query.query_vector.clone().unwrap_or_default();
         if !owned_vector.is_empty() {
             if let Some(db_dim) = self.active_embedding_dimension().await? {
@@ -1908,7 +1917,10 @@ impl StorageBackend for PostgresStore {
 
         // If only text is provided, fall back to BM25
         if query.query_text.is_some() && query.query_vector.is_none() {
-            let text = query.query_text.as_ref().expect("query_text guarded by is_some() check");
+            let text = query
+                .query_text
+                .as_ref()
+                .expect("query_text guarded by is_some() check");
             let bm25_results = self.search_bm25(text, fetch_k as i32).await?;
             // Convert BM25 results to ScoredNodes by fetching full nodes
             let mut scored_nodes = Vec::new();
@@ -1917,9 +1929,13 @@ impl StorageBackend for PostgresStore {
                     let type_ok = query
                         .memory_type_filter
                         .map_or(true, |mt| node.memory_type == mt);
-                    let internal_ok = include_internal_meta || !is_internal_meta_artifact(&node);
+                    let internal_ok = include_internal_meta || !shared::is_internal_meta_artifact(&node);
                     if query.profile.allows(&node) && type_ok && internal_ok {
-                        scored_nodes.push(query.profile.score_node(score, node, query.source_type_weights));
+                        scored_nodes.push(query.profile.score_node(
+                            score,
+                            node,
+                            query.source_type_weights,
+                        ));
                     }
                 }
             }
@@ -1952,9 +1968,13 @@ impl StorageBackend for PostgresStore {
                                     .memory_type_filter
                                     .map_or(true, |mt| node.memory_type == mt);
                                 let internal_ok =
-                                    include_internal_meta || !is_internal_meta_artifact(&node);
+                                    include_internal_meta || !shared::is_internal_meta_artifact(&node);
                                 if query.profile.allows(&node) && type_ok && internal_ok {
-                                    scored_nodes.push(query.profile.score_node(score, node, query.source_type_weights));
+                                    scored_nodes.push(query.profile.score_node(
+                                        score,
+                                        node,
+                                        query.source_type_weights,
+                                    ));
                                 }
                             }
                         }
@@ -1981,12 +2001,16 @@ impl StorageBackend for PostgresStore {
                     let type_ok = query
                         .memory_type_filter
                         .map_or(true, |mt| node.memory_type == mt);
-                    let internal_ok = include_internal_meta || !is_internal_meta_artifact(&node);
+                    let internal_ok = include_internal_meta || !shared::is_internal_meta_artifact(&node);
                     if query.profile.allows(&node) && type_ok && internal_ok {
                         let row_vector = row.embedding.clone().unwrap_or_default();
                         let sim =
                             crate::memory::fractal_node::cosine_similarity(&row_vector, vector);
-                        scored_nodes.push(query.profile.score_node(sim, node, query.source_type_weights));
+                        scored_nodes.push(query.profile.score_node(
+                            sim,
+                            node,
+                            query.source_type_weights,
+                        ));
                     }
                 }
             }
@@ -2007,13 +2031,16 @@ impl StorageBackend for PostgresStore {
         }
 
         // Hybrid: combine vector + BM25 via RRF
-        let bm25_text = query.query_text.as_ref().expect("query_text required for hybrid BM25");
+        let bm25_text = query
+            .query_text
+            .as_ref()
+            .expect("query_text required for hybrid BM25");
         let bm25_results = self.search_bm25(bm25_text, fetch_k as i32).await?;
         let bm25_ids: Vec<(Uuid, f32)> = bm25_results;
 
         let vector_ids: Vec<Uuid> = rows.iter().map(|r| r.id).collect();
 
-        let fused = rrf_fuse(&vector_ids, &bm25_ids, 60.0);
+        let fused = shared::rrf_fuse(&vector_ids, &bm25_ids, 60.0);
 
         let mut scored_nodes = Vec::new();
         for (id, score) in fused {
@@ -2021,9 +2048,13 @@ impl StorageBackend for PostgresStore {
                 let type_ok = query
                     .memory_type_filter
                     .map_or(true, |mt| node.memory_type == mt);
-                let internal_ok = include_internal_meta || !is_internal_meta_artifact(&node);
+                let internal_ok = include_internal_meta || !shared::is_internal_meta_artifact(&node);
                 if query.profile.allows(&node) && type_ok && internal_ok {
-                    scored_nodes.push(query.profile.score_node(score, node, query.source_type_weights));
+                    scored_nodes.push(query.profile.score_node(
+                        score,
+                        node,
+                        query.source_type_weights,
+                    ));
                 }
             }
         }
@@ -2043,7 +2074,7 @@ impl StorageBackend for PostgresStore {
 
             // NEW: Hybrid temporal + semantic scoring (WP1)
             if let Some(w) = query.temporal_weight {
-                apply_hybrid_temporal_scoring(&mut scored_nodes, w);
+                shared::apply_hybrid_temporal_scoring(&mut scored_nodes, w);
             }
         }
 
@@ -2114,9 +2145,7 @@ impl StorageBackend for PostgresStore {
 
         if max_depth >= 2 {
             if let Some(coarse_64) = truncate_vector(query_vector, 64) {
-                let clusters = self
-                    .search_by_truncated_vector(&coarse_64, 64, 5)
-                    .await?;
+                let clusters = self.search_by_truncated_vector(&coarse_64, 64, 5).await?;
                 for c in clusters {
                     if expanded.len() >= max_total {
                         break;
@@ -2359,126 +2388,10 @@ fn memory_with_score_to_fractal_node(row: MemoryWithScore) -> Option<FractalNode
     })
 }
 
-/// Reciprocal Rank Fusion — combines two result sets with rank scores.
-fn rrf_fuse(vector_ids: &[Uuid], bm25_results: &[(Uuid, f32)], k: f32) -> Vec<(Uuid, f32)> {
-    use std::collections::HashMap;
-
-    let mut scores: HashMap<Uuid, f32> = HashMap::new();
-
-    // Vector results get score 1/(k + rank)
-    for (rank, id) in vector_ids.iter().enumerate() {
-        let score = 1.0 / (k + (rank as f32 + 1.0));
-        *scores.entry(*id).or_insert(0.0) += score;
-    }
-
-    // BM25 results get score 1/(k + rank)
-    for (rank, (id, bm25_score)) in bm25_results.iter().enumerate() {
-        let score = 1.0 / (k + (rank as f32 + 1.0));
-        // Normalize BM25 score (typically 0-20 range) to 0-1
-        let normalized_bm25 = (bm25_score / 20.0).min(1.0);
-        *scores.entry(*id).or_insert(0.0) += score * (normalized_bm25 + 0.1);
-    }
-
-    let mut results: Vec<_> = scores.into_iter().collect();
-    results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-    results
-}
-
 /// Apply temporal recency boost to close-scoring ScoredNode results.
 ///
 /// Same semantics as MemoryStore::apply_temporal_boost but operates on
 /// ScoredNode slices (used by PostgresStore).
-/// Improved hybrid temporal + semantic scoring.
-/// Applies configurable weight between semantic similarity and global recency (exponential decay).
-/// This is the core of Work Package 1.
-fn apply_hybrid_temporal_scoring(results: &mut [ScoredNode], temporal_weight: f32) {
-    if results.is_empty() || temporal_weight <= 0.0 {
-        tracing::info!(
-            results_empty = results.is_empty(),
-            temporal_weight,
-            "hybrid_temporal_scoring SKIPPED (empty or weight <= 0)"
-        );
-        return;
-    }
-    let w = temporal_weight.clamp(0.0, 0.8);
-    let now = chrono::Utc::now();
-
-    // Snapshot pre-scoring state
-    let original_scores: Vec<f32> = results.iter().map(|r| r.score).collect();
-    let original_top3_ids: Vec<String> = results.iter().take(3).map(|r| r.id.to_string()).collect();
-
-    // Collect recency factors for diagnostics
-    let mut recency_factors: Vec<f32> = Vec::with_capacity(results.len());
-    
-    for item in results.iter_mut() {
-        let age_days = (now - item.node.created_at).num_days() as f32;
-        // Half-life of 7 days chosen for typical conversational memory use cases.
-// Note: There are currently two temporal mechanisms:
-//   1. temporal_weight (hybrid semantic + global recency, this function)
-//   2. recency_boost (legacy close-score boost, kept for backward compat)
-// These are independent and can be combined.
-        // With 21-day half-life, 0-2 day old data produced almost no variance (range ~0.064).
-        // 7 days gives ~3x more differentiation for recent memories while still allowing
-        // older relevant memories to compete when semantically strong.
-        let recency_factor = 0.5f32.powf(age_days / 7.0).max(0.05);
-        recency_factors.push(recency_factor);
-        
-        // Store debug info
-        if let Some(debug) = &mut item.debug {
-            debug.recency_factor = Some(recency_factor);
-            debug.temporal_weight = Some(w);
-            debug.explanation = Some(format!(
-                "Hybrid score: semantic×{:.2} + recency({:.1}d)×{:.2}",
-                1.0 - w, age_days, w
-            ));
-        }
-        
-        // Hybrid score: semantic * (1-w) + recency * w
-        item.score = item.score * (1.0 - w) + recency_factor * w;
-    }
-
-    results.sort_by(|a, b| {
-        b.score
-            .partial_cmp(&a.score)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-
-    // Post-scoring snapshot
-    let new_scores: Vec<f32> = results.iter().map(|r| r.score).collect();
-    let new_top3_ids: Vec<String> = results.iter().take(3).map(|r| r.id.to_string()).collect();
-
-    // Compute deltas
-    let max_delta = original_scores.iter().zip(new_scores.iter())
-        .map(|(a, b)| (a - b).abs())
-        .fold(0.0f32, f32::max);
-    let mean_delta = original_scores.iter().zip(new_scores.iter())
-        .map(|(a, b)| (a - b).abs())
-        .sum::<f32>() / results.len() as f32;
-    let recency_min = recency_factors.iter().fold(f32::INFINITY, |a, &b| a.min(b));
-    let recency_max = recency_factors.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
-    let recency_mean = recency_factors.iter().sum::<f32>() / recency_factors.len() as f32;
-    let recency_range = recency_max - recency_min;
-    let reorder_happened = original_top3_ids != new_top3_ids;
-    
-    tracing::info!(
-        weight = w,
-        nodes = results.len(),
-        score_range_before = format!("{:.4}-{:.4}", 
-            original_scores.iter().fold(f32::INFINITY, |a, &b| a.min(b)),
-            original_scores.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b))),
-        score_range_after = format!("{:.4}-{:.4}",
-            new_scores.iter().fold(f32::INFINITY, |a, &b| a.min(b)),
-            new_scores.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b))),
-        max_delta = format!("{:.4}", max_delta),
-        mean_delta = format!("{:.4}", mean_delta),
-        recency_factor_range = format!("{:.4}-{:.4}", recency_min, recency_max),
-        recency_factor_mean = format!("{:.4}", recency_mean),
-        recency_range = format!("{:.4}", recency_range),
-        top3_reordered = reorder_happened,
-        "hybrid_temporal_scoring applied (WP1) — diagnostics"
-    );
-}
-
 /// Legacy close-score recency boost (kept for backward compat)
 fn apply_temporal_boost_scored(results: &mut [ScoredNode], recency_boost: f32) -> usize {
     let mut boosted = 0usize;
