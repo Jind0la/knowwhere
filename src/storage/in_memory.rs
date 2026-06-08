@@ -245,7 +245,7 @@ impl StorageBackend for MemoryStore {
         // Low-level hybrid_retrieve now returns pure signals (recency/temporal gated at policy).
         if let Some(b) = query.recency_boost {
             if !matches!(query.profile, RetrievalProfile::FullFidelity) {
-                Self::apply_temporal_boost(&mut raw_results, b);
+                pipeline::apply_temporal_boost(&mut raw_results, b);
             }
         }
         let weighted = pipeline::finalize_retrieval(raw_results, query);
@@ -1362,50 +1362,6 @@ impl MemoryStore {
     /// `recency_boost * 0.5` of the max score receive a recency bonus.
     /// The bonus is proportional to how recent each node is relative to
     /// the newest node in the result set. Results are re-sorted after boosting.
-    fn apply_temporal_boost(results: &mut [(f32, FractalNode)], recency_boost: f32) -> usize {
-        let mut boosted = 0usize;
-        if results.is_empty() {
-            return boosted;
-        }
-        let newest = results.iter().map(|(_, n)| n.created_at).max();
-        let Some(newest) = newest else { return boosted };
-
-        let oldest = results
-            .iter()
-            .map(|(_, n)| n.created_at)
-            .min()
-            .unwrap_or(newest);
-        let time_range = (newest - oldest).num_seconds() as f32;
-        if time_range < 1.0 {
-            return boosted; // All roughly same age — no meaningful recency gradient
-        }
-
-        let max_score = results
-            .iter()
-            .map(|(s, _)| *s)
-            .fold(f32::NEG_INFINITY, f32::max);
-        let closeness_threshold = recency_boost * 0.5;
-
-        for (score, node) in results.iter_mut() {
-            if (max_score - *score).abs() <= closeness_threshold {
-                let age_seconds = (newest - node.created_at).num_seconds() as f32;
-                let recency_factor = 1.0 - (age_seconds / time_range).clamp(0.0, 1.0);
-                *score += recency_boost * recency_factor;
-                boosted += 1;
-            }
-        }
-
-        results.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(Ordering::Equal));
-        tracing::info!(
-            boosted,
-            total = results.len(),
-            boost_factor = recency_boost,
-            time_range_s = time_range,
-            "temporal_boost applied"
-        );
-        boosted
-    }
-
     pub async fn hybrid_retrieve<'a>(
         &self,
         query_text: Option<&str>,

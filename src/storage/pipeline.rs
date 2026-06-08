@@ -10,9 +10,91 @@
 
 use std::cmp::Ordering;
 
+use chrono::{DateTime, Utc};
+
 use crate::memory::fractal_node::FractalNode;
 use crate::storage::backend::{HybridQuery, RetrievalProfile, ScoredNode};
 use crate::storage::shared;
+
+// ── Temporal Boost (generic over input type) ─────────────────────────
+
+/// Trait abstracting over the two types that receive temporal recency boosts:
+/// raw `(f32, FractalNode)` tuples (in-memory) and `ScoredNode` (postgres).
+trait TemporalScore {
+    fn score(&self) -> f32;
+    fn set_score(&mut self, s: f32);
+    fn created_at(&self) -> DateTime<Utc>;
+}
+
+impl TemporalScore for (f32, FractalNode) {
+    fn score(&self) -> f32 { self.0 }
+    fn set_score(&mut self, s: f32) { self.0 = s; }
+    fn created_at(&self) -> DateTime<Utc> { self.1.created_at }
+}
+
+impl TemporalScore for ScoredNode {
+    fn score(&self) -> f32 { self.score }
+    fn set_score(&mut self, s: f32) { self.score = s; }
+    fn created_at(&self) -> DateTime<Utc> { self.node.created_at }
+}
+
+/// Apply temporal recency boost to close-scoring items.
+///
+/// Items whose score is within `recency_boost * 0.5` of the maximum score
+/// receive a bonus proportional to how recent they are relative to the
+/// newest item in the set. Results are re-sorted by score descending.
+///
+/// Returns the count of items that received a boost.
+pub(crate) fn apply_temporal_boost<T: TemporalScore>(
+    items: &mut [T],
+    recency_boost: f32,
+) -> usize {
+    let mut boosted = 0usize;
+    if items.is_empty() {
+        return boosted;
+    }
+    let newest = items.iter().map(|n| n.created_at()).max();
+    let Some(newest) = newest else { return boosted };
+
+    let oldest = items
+        .iter()
+        .map(|n| n.created_at())
+        .min()
+        .unwrap_or(newest);
+    let time_range = (newest - oldest).num_seconds() as f32;
+    if time_range < 1.0 {
+        return boosted; // All roughly same age — no meaningful recency gradient
+    }
+
+    let max_score = items
+        .iter()
+        .map(|n| n.score())
+        .fold(f32::NEG_INFINITY, f32::max);
+    let closeness_threshold = recency_boost * 0.5;
+
+    for item in items.iter_mut() {
+        if (max_score - item.score()).abs() <= closeness_threshold {
+            let age_seconds = (newest - item.created_at()).num_seconds() as f32;
+            let recency_factor = 1.0 - (age_seconds / time_range).clamp(0.0, 1.0);
+            item.set_score(item.score() + recency_boost * recency_factor);
+            boosted += 1;
+        }
+    }
+
+    items.sort_by(|a, b| {
+        b.score()
+            .partial_cmp(&a.score())
+            .unwrap_or(Ordering::Equal)
+    });
+    tracing::info!(
+        boosted,
+        total = items.len(),
+        boost_factor = recency_boost,
+        time_range_s = time_range,
+        "temporal_boost applied"
+    );
+    boosted
+}
 
 // ── Pipeline ─────────────────────────────────────────────────────────
 
