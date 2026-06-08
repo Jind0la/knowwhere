@@ -36,6 +36,7 @@ use crate::memory::MemoryType;
 use crate::storage::backend::{
     HybridQuery, RetrievalProfile, ScoredNode, StorageBackend, UpdateOperation,
 };
+use crate::storage::pipeline;
 use crate::storage::shared;
 
 /// Hex-encoded BLAKE3 of the plaintext API key — stored in `auth_api_keys.key_hash` for O(1) lookup.
@@ -1995,39 +1996,23 @@ impl StorageBackend for PostgresStore {
 
         // If no text query, return pure vector results
         if query.query_text.is_none() {
-            let mut scored_nodes: Vec<ScoredNode> = Vec::new();
+            let mut tuples: Vec<(f32, FractalNode)> = Vec::new();
             for row in rows {
                 if let Some(node) = self.get(&row.id).await? {
-                    let type_ok = query
-                        .memory_type_filter
-                        .map_or(true, |mt| node.memory_type == mt);
-                    let internal_ok = include_internal_meta || !shared::is_internal_meta_artifact(&node);
-                    if query.profile.allows(&node) && type_ok && internal_ok {
-                        let row_vector = row.embedding.clone().unwrap_or_default();
-                        let sim =
-                            crate::memory::fractal_node::cosine_similarity(&row_vector, vector);
-                        scored_nodes.push(query.profile.score_node(
-                            sim,
-                            node,
-                            query.source_type_weights,
-                        ));
-                    }
+                    let row_vector = row.embedding.clone().unwrap_or_default();
+                    let sim =
+                        crate::memory::fractal_node::cosine_similarity(&row_vector, vector);
+                    tuples.push((sim, node));
                 }
             }
-            scored_nodes.sort_by(|a, b| {
-                b.score
-                    .partial_cmp(&a.score)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-                    .then_with(|| a.id.cmp(&b.id))
-            });
-            scored_nodes.truncate(query.top_k);
+            let mut scored = pipeline::finalize_retrieval(tuples, query);
             // Temporal recency boost (policy-gated: ignored under FullFidelity)
             if !matches!(query.profile, RetrievalProfile::FullFidelity) {
                 if let Some(boost) = query.recency_boost {
-                    let _boosted = apply_temporal_boost_scored(&mut scored_nodes, boost);
+                    let _boosted = apply_temporal_boost_scored(&mut scored, boost);
                 }
             }
-            return Ok(scored_nodes);
+            return Ok(scored);
         }
 
         // Hybrid: combine vector + BM25 via RRF
@@ -2042,43 +2027,22 @@ impl StorageBackend for PostgresStore {
 
         let fused = shared::rrf_fuse(&vector_ids, &bm25_ids, 60.0);
 
-        let mut scored_nodes = Vec::new();
+        let mut tuples: Vec<(f32, FractalNode)> = Vec::new();
         for (id, score) in fused {
             if let Some(node) = self.get(&id).await? {
-                let type_ok = query
-                    .memory_type_filter
-                    .map_or(true, |mt| node.memory_type == mt);
-                let internal_ok = include_internal_meta || !shared::is_internal_meta_artifact(&node);
-                if query.profile.allows(&node) && type_ok && internal_ok {
-                    scored_nodes.push(query.profile.score_node(
-                        score,
-                        node,
-                        query.source_type_weights,
-                    ));
-                }
+                tuples.push((score, node));
             }
         }
-        scored_nodes.sort_by(|a, b| {
-            b.score
-                .partial_cmp(&a.score)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then_with(|| a.id.cmp(&b.id))
-        });
-        scored_nodes.truncate(query.top_k);
+        let mut scored = pipeline::finalize_retrieval(tuples, query);
 
-        // Temporal recency boost (legacy) + hybrid temporal — both policy; ignored under FullFidelity
+        // Temporal recency boost (legacy) — policy-gated
         if !matches!(query.profile, RetrievalProfile::FullFidelity) {
             if let Some(boost) = query.recency_boost {
-                let _boosted = apply_temporal_boost_scored(&mut scored_nodes, boost);
-            }
-
-            // NEW: Hybrid temporal + semantic scoring (WP1)
-            if let Some(w) = query.temporal_weight {
-                shared::apply_hybrid_temporal_scoring(&mut scored_nodes, w);
+                let _boosted = apply_temporal_boost_scored(&mut scored, boost);
             }
         }
 
-        Ok(scored_nodes)
+        Ok(scored)
     }
 
     async fn retrieve_fractal(&self, query: &HybridQuery) -> anyhow::Result<Vec<ScoredNode>> {

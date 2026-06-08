@@ -18,6 +18,7 @@ use crate::storage::backend::EmbeddingRepairReport;
 use crate::storage::{
     FusionStrategy, HybridQuery, RetrievalProfile, ScoredNode, StorageBackend, UpdateOperation,
 };
+use crate::storage::pipeline;
 use crate::storage::shared;
 
 const USEARCH_THRESHOLD: usize = 50;
@@ -247,73 +248,7 @@ impl StorageBackend for MemoryStore {
                 Self::apply_temporal_boost(&mut raw_results, b);
             }
         }
-        let mut weighted: Vec<_> = raw_results
-            .into_iter()
-            .filter(|(_, node)| query.profile.allows(node))
-            .filter(|(_, node)| {
-                shared::allow_internal_meta(query.memory_type_filter) || !shared::is_internal_meta_artifact(node)
-            })
-            .filter(|(_, node)| {
-                // memory_type_filter: keep only nodes matching the requested type
-                query
-                    .memory_type_filter
-                    .is_none_or(|mt| node.memory_type == mt)
-            })
-            .filter(|(_, node)| {
-                // user_id filter: scope retrieval to a single persona's claims.
-                // When user_id is NOT set: return ALL nodes (permissive default).
-                //   To scope to global-only, pass an explicit user_id="" or use
-                //   the strict-user-id feature gate.
-                // When user_id IS set: return matching nodes AND nodes without user_id (global).
-                let node_uid = node.metadata.get("user_id").and_then(|v| v.as_str());
-                match &query.user_id {
-                    None => true,
-                    Some(uid) => node_uid.is_none_or(|v| v == uid.as_str()),
-                }
-            })
-            .map(|(score, node)| {
-                query
-                    .profile
-                    .score_node(score, node, query.source_type_weights)
-            })
-            .collect();
-        // Stable id-based tiebreaker — deterministic across backends (Reduce-to-Core Phase 2)
-        weighted.sort_by(|a, b| {
-            b.score
-                .partial_cmp(&a.score)
-                .unwrap_or(Ordering::Equal)
-                .then_with(|| a.id.cmp(&b.id))
-        });
-
-        // Hybrid temporal + semantic scoring (WP1) — policy only; ignored under FullFidelity
-        if !matches!(query.profile, RetrievalProfile::FullFidelity) {
-            if let Some(w) = query.temporal_weight {
-                shared::apply_hybrid_temporal_scoring(&mut weighted, w);
-            }
-        }
-
-        // Distributional scoring: softmax-normalize scores into a proper probability
-        // distribution over the candidate set (TST-MCE-inspired: distribution over
-        // candidates, not discrete top-k).
-        if !weighted.is_empty() {
-            let max_score = weighted
-                .iter()
-                .map(|n| n.score)
-                .fold(f32::NEG_INFINITY, f32::max);
-            let exps: Vec<f32> = weighted
-                .iter()
-                .map(|n| (n.score - max_score).exp())
-                .collect();
-            let sum: f32 = exps.iter().sum();
-            if sum > 0.0 {
-                let dist: Vec<f32> = exps.iter().map(|e| e / sum).collect();
-                for (item, prob) in weighted.iter_mut().zip(dist.iter()) {
-                    item.distribution_scores = Some(vec![*prob]);
-                }
-            }
-        }
-
-        weighted.truncate(query.top_k);
+        let weighted = pipeline::finalize_retrieval(raw_results, query);
         Ok(weighted)
     }
 
