@@ -20,7 +20,7 @@ use crate::storage::shared;
 
 /// Trait abstracting over the two types that receive temporal recency boosts:
 /// raw `(f32, FractalNode)` tuples (in-memory) and `ScoredNode` (postgres).
-trait TemporalScore {
+pub(crate) trait TemporalScore {
     fn score(&self) -> f32;
     fn set_score(&mut self, s: f32);
     fn created_at(&self) -> DateTime<Utc>;
