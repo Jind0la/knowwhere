@@ -22,7 +22,7 @@ use crate::storage::{
 };
 
 const USEARCH_THRESHOLD: usize = 50;
-const SAVE_DEBOUNCE_SECS: u64 = 60;
+const SAVE_DEBOUNCE_SECS: u64 = 5;
 /// Only write binary indexes every Nth state save — they're large (USearch 100-900MB)
 /// and rarely change structure. State (JSON) is written on every debounced save.
 const BINARY_SAVE_EVERY_N: u64 = 10;
