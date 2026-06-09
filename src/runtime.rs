@@ -217,8 +217,7 @@ pub fn init_embedding_provider() -> Arc<dyn EmbeddingProvider> {
             Arc::new(LocalOllamaProvider::new())
         }
     } else {
-        let model =
-            std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "nomic-embed-text-v2-moe".into());
+        let model = std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "nomic-embed-text".into());
         tracing::info!(model, "using local ollama embedding provider");
         Arc::new(LocalOllamaProvider::new())
     }
