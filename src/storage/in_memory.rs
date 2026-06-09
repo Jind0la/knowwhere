@@ -15,11 +15,11 @@ use uuid::Uuid;
 use crate::embedding::{embed_document, EmbeddingProvider};
 use crate::memory::FractalNode;
 use crate::storage::backend::EmbeddingRepairReport;
+use crate::storage::pipeline;
+use crate::storage::shared;
 use crate::storage::{
     FusionStrategy, HybridQuery, RetrievalProfile, ScoredNode, StorageBackend, UpdateOperation,
 };
-use crate::storage::pipeline;
-use crate::storage::shared;
 
 const USEARCH_THRESHOLD: usize = 50;
 const SAVE_DEBOUNCE_SECS: u64 = 60;
@@ -1851,7 +1851,6 @@ mod temporal_scoring_tests {
     }
 
     // ── Core Formula Tests ──
-
 
     // ── Multi Half-Life Tests ──
 

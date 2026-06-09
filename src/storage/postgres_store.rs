@@ -1930,7 +1930,8 @@ impl StorageBackend for PostgresStore {
                     let type_ok = query
                         .memory_type_filter
                         .map_or(true, |mt| node.memory_type == mt);
-                    let internal_ok = include_internal_meta || !shared::is_internal_meta_artifact(&node);
+                    let internal_ok =
+                        include_internal_meta || !shared::is_internal_meta_artifact(&node);
                     if query.profile.allows(&node) && type_ok && internal_ok {
                         scored_nodes.push(query.profile.score_node(
                             score,
@@ -1968,8 +1969,8 @@ impl StorageBackend for PostgresStore {
                                 let type_ok = query
                                     .memory_type_filter
                                     .map_or(true, |mt| node.memory_type == mt);
-                                let internal_ok =
-                                    include_internal_meta || !shared::is_internal_meta_artifact(&node);
+                                let internal_ok = include_internal_meta
+                                    || !shared::is_internal_meta_artifact(&node);
                                 if query.profile.allows(&node) && type_ok && internal_ok {
                                     scored_nodes.push(query.profile.score_node(
                                         score,
@@ -2000,8 +2001,7 @@ impl StorageBackend for PostgresStore {
             for row in rows {
                 if let Some(node) = self.get(&row.id).await? {
                     let row_vector = row.embedding.clone().unwrap_or_default();
-                    let sim =
-                        crate::memory::fractal_node::cosine_similarity(&row_vector, vector);
+                    let sim = crate::memory::fractal_node::cosine_similarity(&row_vector, vector);
                     tuples.push((sim, node));
                 }
             }

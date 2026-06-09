@@ -27,15 +27,27 @@ pub(crate) trait TemporalScore {
 }
 
 impl TemporalScore for (f32, FractalNode) {
-    fn score(&self) -> f32 { self.0 }
-    fn set_score(&mut self, s: f32) { self.0 = s; }
-    fn created_at(&self) -> DateTime<Utc> { self.1.created_at }
+    fn score(&self) -> f32 {
+        self.0
+    }
+    fn set_score(&mut self, s: f32) {
+        self.0 = s;
+    }
+    fn created_at(&self) -> DateTime<Utc> {
+        self.1.created_at
+    }
 }
 
 impl TemporalScore for ScoredNode {
-    fn score(&self) -> f32 { self.score }
-    fn set_score(&mut self, s: f32) { self.score = s; }
-    fn created_at(&self) -> DateTime<Utc> { self.node.created_at }
+    fn score(&self) -> f32 {
+        self.score
+    }
+    fn set_score(&mut self, s: f32) {
+        self.score = s;
+    }
+    fn created_at(&self) -> DateTime<Utc> {
+        self.node.created_at
+    }
 }
 
 /// Apply temporal recency boost to close-scoring items.
@@ -45,10 +57,7 @@ impl TemporalScore for ScoredNode {
 /// newest item in the set. Results are re-sorted by score descending.
 ///
 /// Returns the count of items that received a boost.
-pub(crate) fn apply_temporal_boost<T: TemporalScore>(
-    items: &mut [T],
-    recency_boost: f32,
-) -> usize {
+pub(crate) fn apply_temporal_boost<T: TemporalScore>(items: &mut [T], recency_boost: f32) -> usize {
     let mut boosted = 0usize;
     if items.is_empty() {
         return boosted;
@@ -56,11 +65,7 @@ pub(crate) fn apply_temporal_boost<T: TemporalScore>(
     let newest = items.iter().map(|n| n.created_at()).max();
     let Some(newest) = newest else { return boosted };
 
-    let oldest = items
-        .iter()
-        .map(|n| n.created_at())
-        .min()
-        .unwrap_or(newest);
+    let oldest = items.iter().map(|n| n.created_at()).min().unwrap_or(newest);
     let time_range = (newest - oldest).num_seconds() as f32;
     if time_range < 1.0 {
         return boosted; // All roughly same age — no meaningful recency gradient
@@ -81,11 +86,7 @@ pub(crate) fn apply_temporal_boost<T: TemporalScore>(
         }
     }
 
-    items.sort_by(|a, b| {
-        b.score()
-            .partial_cmp(&a.score())
-            .unwrap_or(Ordering::Equal)
-    });
+    items.sort_by(|a, b| b.score().partial_cmp(&a.score()).unwrap_or(Ordering::Equal));
     tracing::info!(
         boosted,
         total = items.len(),
@@ -158,7 +159,11 @@ pub(crate) fn finalize_retrieval(
     // ── Step 2: Score conversion ──
     let mut weighted: Vec<ScoredNode> = raw
         .into_iter()
-        .map(|(score, node)| query.profile.score_node(score, node, query.source_type_weights))
+        .map(|(score, node)| {
+            query
+                .profile
+                .score_node(score, node, query.source_type_weights)
+        })
         .collect();
 
     // ── Step 3: Stable sort ──
@@ -253,9 +258,7 @@ mod tests {
         let raw: Vec<(f32, FractalNode)> = ids
             .iter()
             .enumerate()
-            .map(|(i, &id)| {
-                (1.0 - i as f32 * 0.1, test_node(id, MemoryType::Semantic))
-            })
+            .map(|(i, &id)| (1.0 - i as f32 * 0.1, test_node(id, MemoryType::Semantic)))
             .collect();
 
         let results = finalize_retrieval(raw, &test_query(3));
@@ -300,9 +303,13 @@ mod tests {
         let a = Uuid::new_v4();
         let b = Uuid::new_v4();
         let mut node_a = test_node(a, MemoryType::Semantic);
-        node_a.metadata.insert("user_id".into(), serde_json::Value::String("alice".into()));
+        node_a
+            .metadata
+            .insert("user_id".into(), serde_json::Value::String("alice".into()));
         let mut node_b = test_node(b, MemoryType::Semantic);
-        node_b.metadata.insert("user_id".into(), serde_json::Value::String("bob".into()));
+        node_b
+            .metadata
+            .insert("user_id".into(), serde_json::Value::String("bob".into()));
 
         let mut query = test_query(10);
         query.user_id = Some("alice".into());
@@ -318,7 +325,9 @@ mod tests {
         let b = Uuid::new_v4();
         let node_a = test_node(a, MemoryType::Semantic); // no user_id → global
         let mut node_b = test_node(b, MemoryType::Semantic);
-        node_b.metadata.insert("user_id".into(), serde_json::Value::String("bob".into()));
+        node_b
+            .metadata
+            .insert("user_id".into(), serde_json::Value::String("bob".into()));
 
         let mut query = test_query(10);
         query.user_id = Some("alice".into());

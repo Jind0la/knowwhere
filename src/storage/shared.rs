@@ -109,8 +109,7 @@ pub(crate) fn apply_hybrid_temporal_scoring(
 
     // Snapshot pre-scoring state
     let original_scores: Vec<f32> = results.iter().map(|r| r.score).collect();
-    let original_top3_ids: Vec<String> =
-        results.iter().take(3).map(|r| r.id.to_string()).collect();
+    let original_top3_ids: Vec<String> = results.iter().take(3).map(|r| r.id.to_string()).collect();
 
     let mut recency_factors: Vec<f32> = Vec::with_capacity(results.len());
 

@@ -434,6 +434,7 @@ mod tests {
     }
 
     /// T2: Missing audio field returns 400.
+    #[serial]
     #[tokio::test]
     async fn test_missing_audio_field() {
         let tmp = tempfile::tempdir().unwrap();
@@ -463,6 +464,7 @@ mod tests {
     }
 
     /// T3: Invalid MIME type returns 400.
+    #[serial]
     #[tokio::test]
     async fn test_invalid_mime_type() {
         let tmp = tempfile::tempdir().unwrap();
@@ -495,6 +497,7 @@ mod tests {
     }
 
     /// T4: Empty file returns 400.
+    #[serial]
     #[tokio::test]
     async fn test_empty_file() {
         let tmp = tempfile::tempdir().unwrap();
@@ -527,6 +530,7 @@ mod tests {
     }
 
     /// T5: File too large returns 413.
+    #[serial]
     #[tokio::test]
     async fn test_file_too_large() {
         let tmp = tempfile::tempdir().unwrap();
@@ -563,6 +567,7 @@ mod tests {
     }
 
     /// T6: Upload MP3 format.
+    #[serial]
     #[tokio::test]
     async fn test_upload_mp3() {
         let tmp = tempfile::tempdir().unwrap();
@@ -601,6 +606,7 @@ mod tests {
     }
 
     /// T7: Upload WebM format.
+    #[serial]
     #[tokio::test]
     async fn test_upload_webm() {
         let tmp = tempfile::tempdir().unwrap();
@@ -639,6 +645,7 @@ mod tests {
     }
 
     /// T8: WAV format upload.
+    #[serial]
     #[tokio::test]
     async fn test_upload_wav() {
         let tmp = tempfile::tempdir().unwrap();
@@ -678,6 +685,7 @@ mod tests {
 
     /// T9: Verify driver_id appears in response path (audit context is logged, not returned in body).
     /// The driver_id is only used for logging — verified via tracing in real runs.
+    #[serial]
     #[tokio::test]
     async fn test_driver_id_logged() {
         let tmp = tempfile::tempdir().unwrap();
@@ -706,6 +714,7 @@ mod tests {
     }
 
     /// T10: Multiple fields — only 'audio' is processed, others ignored.
+    #[serial]
     #[tokio::test]
     async fn test_ignores_other_fields() {
         let tmp = tempfile::tempdir().unwrap();
