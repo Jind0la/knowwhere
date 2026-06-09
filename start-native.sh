@@ -14,10 +14,8 @@ fi
 export OLLAMA_URL="http://127.0.0.1:11434"
 export KNOWWHERE_EMBEDDING_PROVIDER="ollama"
 export KNOWWHERE_DATA_DIR="./native_data"
-export KNOWWHERE_API_KEY="kw_testkey_12345"
+export KNOWWHERE_RERANKER_MODEL_PATH="/Users/nimarfranklinmac/.cache/knowwhere/reranker/model.onnx"
+export KNOWWHERE_RERANKER_TOKENIZER_PATH="/Users/nimarfranklinmac/.cache/knowwhere/reranker/tokenizer.json"
 
 cd "$(dirname "$0")"
 exec ./target/release/knowwhere-server
-
-export KNOWWHERE_RERANKER_MODEL_PATH="/Users/nimarfranklinmac/.cache/knowwhere/reranker/model.onnx"
-export KNOWWHERE_RERANKER_TOKENIZER_PATH="/Users/nimarfranklinmac/.cache/knowwhere/reranker/tokenizer.json"

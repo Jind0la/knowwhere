@@ -432,6 +432,19 @@ pub async fn auth_middleware(
     request: Request,
     next: Next,
 ) -> Result<Response, StatusCode> {
+    // Dev-mode bypass: if no API key is configured AND request is from localhost,
+    // allow full admin access. This enables local development without auth ceremony.
+    let is_localhost = request
+        .headers()
+        .get("host")
+        .and_then(|v| v.to_str().ok())
+        .map(|h| h.starts_with("127.0.0.1") || h.starts_with("localhost") || h.starts_with("[::1]"))
+        .unwrap_or(false);
+    let admin_key_configured = state.admin_key.read().await.is_some();
+    if is_localhost && !admin_key_configured {
+        return Ok(run_with_context(request, next, AuthContext::full_access()).await);
+    }
+
     let Some(token) = bearer_token(&request) else {
         return Err(StatusCode::UNAUTHORIZED);
     };
