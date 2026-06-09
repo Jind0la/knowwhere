@@ -89,8 +89,8 @@ impl ControlRoom {
         memory_type: Option<MemoryType>,
     ) -> anyhow::Result<Uuid> {
         let mut metadata = serde_json::Map::new();
-        let provenance =
-            AgentProvenance::from_agent(agent, MemoryVisibility::Shared).with_reason("Shared store");
+        let provenance = AgentProvenance::from_agent(agent, MemoryVisibility::Shared)
+            .with_reason("Shared store");
         provenance.tag_metadata(&mut metadata);
 
         let memory_type = memory_type.unwrap_or(MemoryType::Semantic);
@@ -100,7 +100,8 @@ impl ControlRoom {
             Some(content),
             None,
             vector,
-            metadata.into_iter()
+            metadata
+                .into_iter()
                 .collect::<HashMap<String, serde_json::Value>>(),
             memory_type,
             source,
@@ -128,8 +129,8 @@ impl ControlRoom {
         memory_type: Option<MemoryType>,
     ) -> anyhow::Result<Uuid> {
         let mut metadata = serde_json::Map::new();
-        let provenance =
-            AgentProvenance::from_agent(agent, MemoryVisibility::Private).with_reason("Private store");
+        let provenance = AgentProvenance::from_agent(agent, MemoryVisibility::Private)
+            .with_reason("Private store");
         provenance.tag_metadata(&mut metadata);
 
         let memory_type = memory_type.unwrap_or(MemoryType::Episodic);
@@ -139,7 +140,8 @@ impl ControlRoom {
             Some(content),
             None,
             vector,
-            metadata.into_iter()
+            metadata
+                .into_iter()
                 .collect::<HashMap<String, serde_json::Value>>(),
             memory_type,
             source,
@@ -180,8 +182,7 @@ impl ControlRoom {
             allowed_agents: allowed_agents.clone(),
         };
         let mut metadata = serde_json::Map::new();
-        let provenance =
-            AgentProvenance::from_agent(agent, vis).with_reason("Restricted store");
+        let provenance = AgentProvenance::from_agent(agent, vis).with_reason("Restricted store");
         provenance.tag_metadata(&mut metadata);
 
         // Also store the allowed_agents list in metadata for retrieval filtering
@@ -203,7 +204,8 @@ impl ControlRoom {
             Some(content),
             None,
             vector,
-            metadata.into_iter()
+            metadata
+                .into_iter()
                 .collect::<HashMap<String, serde_json::Value>>(),
             memory_type,
             source,
@@ -244,9 +246,7 @@ impl ControlRoom {
         // Step 2: Filter by visibility
         let filtered: Vec<ScoredNode> = candidates
             .into_iter()
-            .filter(|scored| {
-                self.is_visible_to(agent, &scored.node)
-            })
+            .filter(|scored| self.is_visible_to(agent, &scored.node))
             .collect();
 
         tracing::debug!(
@@ -263,9 +263,7 @@ impl ControlRoom {
         let candidates = self.store.hybrid_retrieve(&query).await?;
         let filtered: Vec<ScoredNode> = candidates
             .into_iter()
-            .filter(|scored| {
-                self.get_visibility(&scored.node) == Some(MemoryVisibility::Shared)
-            })
+            .filter(|scored| self.get_visibility(&scored.node) == Some(MemoryVisibility::Shared))
             .collect();
         Ok(filtered)
     }
@@ -279,9 +277,7 @@ impl ControlRoom {
         let candidates = self.store.hybrid_retrieve(&query).await?;
         let filtered: Vec<ScoredNode> = candidates
             .into_iter()
-            .filter(|scored| {
-                self.is_private_of(agent, &scored.node)
-            })
+            .filter(|scored| self.is_private_of(agent, &scored.node))
             .collect();
         Ok(filtered)
     }
@@ -357,7 +353,7 @@ impl ControlRoom {
         node.provenance = serde_json::to_value(&prov).unwrap_or_default();
 
         // Persist the updated node
-        
+
         // We need to re-insert with new metadata — update doesn't support metadata mutation
         // Workaround: we'll store the handoff info by updating the content
         // Actually, let's use a different approach — store the handoff as a new derived node
@@ -374,9 +370,12 @@ impl ControlRoom {
 
         // Build the node manually so we can attach handoff metadata
         let mut handoff_metadata = serde_json::Map::new();
-        let provenance = AgentProvenance::from_agent(from, MemoryVisibility::Restricted {
-            allowed_agents: vec![to.id],
-        })
+        let provenance = AgentProvenance::from_agent(
+            from,
+            MemoryVisibility::Restricted {
+                allowed_agents: vec![to.id],
+            },
+        )
         .with_reason(format!("Handoff {} → {}: {}", from.name, to.name, reason))
         .with_parent_task(format!("handoff:{}→{}", from.id, to.id));
         provenance.tag_metadata(&mut handoff_metadata);
@@ -401,7 +400,8 @@ impl ControlRoom {
             Some(handoff_content),
             None,
             node.vector.clone(),
-            handoff_metadata.into_iter()
+            handoff_metadata
+                .into_iter()
                 .collect::<HashMap<String, serde_json::Value>>(),
             node.memory_type,
             crate::memory::types::MemorySource::Conversation,
@@ -444,17 +444,17 @@ impl ControlRoom {
     }
 
     /// Get stats about the memory layers for an agent.
-    pub async fn stats(&self, agent: &crate::memory::agent::AgentState) -> anyhow::Result<LayerStats> {
+    pub async fn stats(
+        &self,
+        agent: &crate::memory::agent::AgentState,
+    ) -> anyhow::Result<LayerStats> {
         let all = self.store.list_all().await?;
         let total = all.len();
         let shared = all
             .iter()
             .filter(|n| self.get_visibility(n) == Some(MemoryVisibility::Shared))
             .count();
-        let private = all
-            .iter()
-            .filter(|n| self.is_private_of(agent, n))
-            .count();
+        let private = all.iter().filter(|n| self.is_private_of(agent, n)).count();
         let other_private = all
             .iter()
             .filter(|n| {
@@ -488,11 +488,7 @@ impl ControlRoom {
     // -------------------------------------------------------------------------
 
     /// Check if a node is visible to the given agent.
-    fn is_visible_to(
-        &self,
-        agent: &crate::memory::agent::AgentState,
-        node: &FractalNode,
-    ) -> bool {
+    fn is_visible_to(&self, agent: &crate::memory::agent::AgentState, node: &FractalNode) -> bool {
         match self.get_visibility(node) {
             None => {
                 // No visibility tag → treat as shared (backward compatible)
@@ -511,21 +507,13 @@ impl ControlRoom {
     }
 
     /// Check if a node is in the agent's private layer.
-    fn is_private_of(
-        &self,
-        agent: &crate::memory::agent::AgentState,
-        node: &FractalNode,
-    ) -> bool {
+    fn is_private_of(&self, agent: &crate::memory::agent::AgentState, node: &FractalNode) -> bool {
         self.get_visibility(node) == Some(MemoryVisibility::Private)
             && self.is_owned_by(agent, node)
     }
 
     /// Check if the agent owns this node.
-    fn is_owned_by(
-        &self,
-        agent: &crate::memory::agent::AgentState,
-        node: &FractalNode,
-    ) -> bool {
+    fn is_owned_by(&self, agent: &crate::memory::agent::AgentState, node: &FractalNode) -> bool {
         node.metadata
             .get(AgentId::METADATA_KEY)
             .and_then(|v| v.as_str())
@@ -656,8 +644,7 @@ mod tests {
             .unwrap();
 
         // Both agents can see it
-        let query =
-            HybridQuery::text("Shared knowledge", 10).with_recency_boost(0.0);
+        let query = HybridQuery::text("Shared knowledge", 10).with_recency_boost(0.0);
         let results_a = room.query_scoped(&agent_a, query.clone()).await.unwrap();
         let results_b = room.query_scoped(&agent_b, query.clone()).await.unwrap();
 
@@ -678,7 +665,10 @@ mod tests {
         // Agent A can see it
         let query = HybridQuery::text("Secret plan", 10).with_recency_boost(0.0);
         let results_a = room.query_scoped(&agent_a, query.clone()).await.unwrap();
-        assert!(results_a.iter().any(|r| r.id == id), "Agent A should see own private memory");
+        assert!(
+            results_a.iter().any(|r| r.id == id),
+            "Agent A should see own private memory"
+        );
 
         // Agent B CANNOT see it (NO LEAKAGE)
         let results_b = room.query_scoped(&agent_b, query.clone()).await.unwrap();
@@ -713,9 +703,7 @@ mod tests {
         let after = room.list_visible(&agent_b, 50).await.unwrap();
         assert!(
             after.iter().any(|r| {
-                r.metadata
-                    .get("handoff_to")
-                    .and_then(|v| v.as_str())
+                r.metadata.get("handoff_to").and_then(|v| v.as_str())
                     == Some(&agent_b.id.to_string())
             }),
             "Handoff should make memory visible to target agent"
@@ -744,15 +732,15 @@ mod tests {
 
         // Agent B can see it
         let results_b = room.query_scoped(&agent_b, query.clone()).await.unwrap();
-        assert!(results_b.iter().any(|r| {
-            r.node.content.as_deref() == Some("Restricted to B")
-        }));
+        assert!(results_b
+            .iter()
+            .any(|r| { r.node.content.as_deref() == Some("Restricted to B") }));
 
         // Agent C cannot see it
         let results_c = room.query_scoped(&agent_c, query.clone()).await.unwrap();
-        assert!(!results_c.iter().any(|r| {
-            r.node.content.as_deref() == Some("Restricted to B")
-        }));
+        assert!(!results_c
+            .iter()
+            .any(|r| { r.node.content.as_deref() == Some("Restricted to B") }));
     }
 
     #[tokio::test]
@@ -773,7 +761,10 @@ mod tests {
         let stats = room.stats(&agent_a).await.unwrap();
         assert_eq!(stats.shared, 1);
         assert_eq!(stats.private_own, 1);
-        assert_eq!(stats.private_other, 1, "Agent B's private memory should be counted as other");
+        assert_eq!(
+            stats.private_other, 1,
+            "Agent B's private memory should be counted as other"
+        );
     }
 
     #[tokio::test]

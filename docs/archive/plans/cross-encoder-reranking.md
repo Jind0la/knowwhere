@@ -276,7 +276,7 @@ let reranker: Option<Arc<dyn Reranker>> = if enable_reranking {
     let cache_dir = dirs::cache_dir()
         .unwrap_or_else(|| PathBuf::from("/tmp"))
         .join("knowwhere/models");
-    
+
     match CrossEncoderReranker::load_or_download(&model_dir, &cache_dir).await {
         Ok(r) => {
             tracing::info!(model = %r.name(), "cross-encoder reranker loaded");
@@ -323,7 +323,7 @@ let reranked = if let Some(reranker) = reranker {
         })
         .collect();
     drop(nodes);
-    
+
     match reranker.rerank(query_text.unwrap_or(""), &candidates, top_k).await {
         Ok(scored) => scored,
         Err(e) => {
@@ -459,7 +459,7 @@ Add reranker-enabled variant to `longmemeval_retrieval_eval`:
 
 ## 11. Open Questions
 
-| # | Question | Recommendation | 
+| # | Question | Recommendation |
 |---|----------|---------------|
 | 1 | Should reranker be enabled by default? | Yes — falls back gracefully to RRF-only if model unavailable |
 | 2 | Which model for v1? | MiniLM-L6 — 80MB, Apache-2.0, fast |

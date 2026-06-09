@@ -8,7 +8,7 @@
 ### 1. Column Type Change
 ```sql
 -- Check current constraint
-SELECT atttypmod FROM pg_attribute 
+SELECT atttypmod FROM pg_attribute
 WHERE attrelid = 'memories'::regclass AND attname = 'embedding';
 -- Result: 768 (fixed dimension)
 

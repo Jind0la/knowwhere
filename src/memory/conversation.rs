@@ -181,7 +181,10 @@ impl TurnRow {
     pub fn to_turn(&self) -> ConversationTurn {
         let embedding_info = self.embedding.as_ref().map(|vec| EmbeddingInfo {
             vector: vec.clone(),
-            provider: self.embedding_type.clone().unwrap_or_else(|| "unknown".to_string()),
+            provider: self
+                .embedding_type
+                .clone()
+                .unwrap_or_else(|| "unknown".to_string()),
             dimension: self.embedding_dim.unwrap_or(0) as usize,
             metadata: None,
         });
@@ -216,7 +219,10 @@ mod tests {
     #[test]
     fn speaker_role_parse_valid() {
         assert_eq!(SpeakerRole::parse("user"), Some(SpeakerRole::User));
-        assert_eq!(SpeakerRole::parse("assistant"), Some(SpeakerRole::Assistant));
+        assert_eq!(
+            SpeakerRole::parse("assistant"),
+            Some(SpeakerRole::Assistant)
+        );
         assert_eq!(SpeakerRole::parse("system"), Some(SpeakerRole::System));
         assert_eq!(SpeakerRole::parse("tool"), Some(SpeakerRole::Tool));
     }

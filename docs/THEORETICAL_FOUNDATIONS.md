@@ -71,7 +71,7 @@
 - Begrenztes Alphabet von Subsystem-Typen
 - "Empty World" Hypothesis: Die meisten Dinge sind nur schwach verbunden
 
-→ KnowWhere's Memory-Types (Episodic, Semantic, Decision, Preference, Meta) 
+→ KnowWhere's Memory-Types (Episodic, Semantic, Decision, Preference, Meta)
   sind das "begrenzte Alphabet". Die Fractal-Node-Struktur ist das einheitliche Interface.
 
 ---
@@ -174,27 +174,27 @@ S_{t+1} = Φ(S_t) = Integrate(Validate(Implement(Research(Evaluate(S_t)))))
 ### 4.1 Evaluative Blindness
 > "The system can only improve what it can measure."
 
-Goodhart's Law auf Selbstmodifikation: Wenn das System seine eigenen Metriken optimiert, 
+Goodhart's Law auf Selbstmodifikation: Wenn das System seine eigenen Metriken optimiert,
 verlieren diese Metriken ihre Aussagekraft.
 
 → **KnowWhere-Risiko**: cosine_similarity ist das einzige Retrieval-Maß. Optimierung darauf
   führt zu "similarity hacking" — semantisch irrelevante aber vektoriell nahe Ergebnisse.
 
 ### 4.2 Research Hallucination
-> "If the Research stage hallucinates hypotheses or the Validate stage hallucinates positive results, 
+> "If the Research stage hallucinates hypotheses or the Validate stage hallucinates positive results,
 > the system will integrate modifications that appear beneficial but are not."
 
-Selbstverstärkend: Das System schreibt halluzinierte Verbesserungen ins Memory → 
+Selbstverstärkend: Das System schreibt halluzinierte Verbesserungen ins Memory →
 verzerrt zukünftige Research-Richtungen.
 
-→ **KnowWhere-Risiko**: Consolidation extrahiert falsche Claims → diese werden als 
+→ **KnowWhere-Risiko**: Consolidation extrahiert falsche Claims → diese werden als
   "Decision"-Nodes gespeichert → verzerren zukünftige Consolidation-Runs.
 
 ### 4.3 Architectural Drift
-> "Without constraints on the magnitude of per-iteration changes, the system may drift 
+> "Without constraints on the magnitude of per-iteration changes, the system may drift
 > into configurations that are locally optimal but globally degenerate."
 
-→ **KnowWhere-Risiko**: Wiederholte Consolidation ohne Cross-Tier-Validierung → 
+→ **KnowWhere-Risiko**: Wiederholte Consolidation ohne Cross-Tier-Validierung →
   Tier 2 (Claims) driftet von Tier 1 (Embeddings) weg → Retrieval-Scores kollabieren.
   (Das ist bereits passiert — BUG-016: score collapse von 0.83 auf 0.03!)
 
@@ -203,7 +203,7 @@ verzerrt zukünftige Research-Richtungen.
 
 Wenn Research nur inkrementelle Hypothesen generiert → Hill-Climbing ins nächste lokale Maximum.
 
-→ **KnowWhere-Risiko**: Consolidation läuft mit gleichen Parametern → 
+→ **KnowWhere-Risiko**: Consolidation läuft mit gleichen Parametern →
   immer gleiche Claim-Typen → keine neuen Memory-Strukturen.
 
 ---
@@ -220,7 +220,7 @@ Wenn Φ folgende Bedingungen erfüllt:
 
 Dann konvergiert {P(S_t)} per monotone convergence theorem.
 
-**ABER**: Monotonie ist die kritische, nicht garantierte Annahme. 
+**ABER**: Monotonie ist die kritische, nicht garantierte Annahme.
 Sie erfordert, dass Validate zuverlässig negative Modifikationen zurückweist.
 
 → **KnowWhere-Implikation**: Ohne systematisches Validate kann KnowWhere nicht garantieren,
@@ -228,7 +228,7 @@ Sie erfordert, dass Validate zuverlässig negative Modifikationen zurückweist.
 
 ### 5.2 Diminishing Returns
 
-> "As the system approaches optimal configurations for a given task distribution, 
+> "As the system approaches optimal configurations for a given task distribution,
 > each improvement iteration yields smaller gains."
 
 → KnowWhere mit ~32k Nodes hat noch viel Raum für Verbesserung bevor diminishing returns einsetzen.

@@ -13,9 +13,9 @@
 //! - **Zero data loss**: Every byte of input appears in at least one chunk
 //! - **Metadata-rich**: Track chunk position, parent relationships, and boundaries
 
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
 use uuid::Uuid;
 
 /// A single chunk produced by the TextChunker.
@@ -40,14 +40,23 @@ impl TextChunk {
     /// Build metadata HashMap for a FractalNode created from this chunk.
     pub fn to_metadata(&self) -> HashMap<String, Value> {
         let mut meta = HashMap::new();
-        meta.insert("chunk_index".to_string(), Value::Number(self.chunk_index.into()));
-        meta.insert("total_chunks".to_string(), Value::Number(self.total_chunks.into()));
-        meta.insert("char_offset".to_string(), Value::Number(self.char_offset.into()));
-        meta.insert("non_overlap_len".to_string(), Value::Number(self.non_overlap_len.into()));
         meta.insert(
-            "is_chunk".to_string(),
-            Value::Bool(self.total_chunks > 1),
+            "chunk_index".to_string(),
+            Value::Number(self.chunk_index.into()),
         );
+        meta.insert(
+            "total_chunks".to_string(),
+            Value::Number(self.total_chunks.into()),
+        );
+        meta.insert(
+            "char_offset".to_string(),
+            Value::Number(self.char_offset.into()),
+        );
+        meta.insert(
+            "non_overlap_len".to_string(),
+            Value::Number(self.non_overlap_len.into()),
+        );
+        meta.insert("is_chunk".to_string(), Value::Bool(self.total_chunks > 1));
         if let Some(parent_id) = self.parent_node_id {
             meta.insert(
                 "chunk_parent_id".to_string(),
@@ -261,7 +270,10 @@ impl TextChunker {
             let remaining = &text[start..];
             if !remaining.trim().is_empty() {
                 let overlap_start = if !split_points.is_empty() {
-                    split_points.last().copied().unwrap_or(start)
+                    split_points
+                        .last()
+                        .copied()
+                        .unwrap_or(start)
                         .saturating_sub(self.config.overlap_chars)
                 } else {
                     start
@@ -317,7 +329,8 @@ impl TextChunker {
             let search_start = text.floor_char_boundary(search_start_raw);
             let search_end = text.ceil_char_boundary(search_end_raw);
 
-            let split_at = self.find_best_split(&text[search_start..search_end], search_start, ideal_split);
+            let split_at =
+                self.find_best_split(&text[search_start..search_end], search_start, ideal_split);
 
             points.push(split_at);
             cursor = split_at;
@@ -509,7 +522,11 @@ mod tests {
 
         let text = "x".repeat(350);
         let chunks = chunker.chunk(&text);
-        assert!(chunks.len() >= 3, "Expected at least 3 chunks, got {}", chunks.len());
+        assert!(
+            chunks.len() >= 3,
+            "Expected at least 3 chunks, got {}",
+            chunks.len()
+        );
 
         // Verify chunk ordering
         for (i, chunk) in chunks.iter().enumerate() {
@@ -519,8 +536,13 @@ mod tests {
 
         // Verify total coverage: all original text should be covered by non-overlap portions
         let total_non_overlap: usize = chunks.iter().map(|c| c.non_overlap_len).sum();
-        assert_eq!(total_non_overlap, text.len(),
-            "Total non-overlap ({}) should equal text length ({})", total_non_overlap, text.len());
+        assert_eq!(
+            total_non_overlap,
+            text.len(),
+            "Total non-overlap ({}) should equal text length ({})",
+            total_non_overlap,
+            text.len()
+        );
     }
 
     #[test]
@@ -539,7 +561,12 @@ mod tests {
         let chunks = chunker.chunk(&text);
 
         // Should split at sentence boundaries
-        assert!(chunks.len() >= 2, "Expected multiple chunks with sentence splitting, got {}: {:?}", chunks.len(), chunks.iter().map(|c| &c.content).collect::<Vec<_>>());
+        assert!(
+            chunks.len() >= 2,
+            "Expected multiple chunks with sentence splitting, got {}: {:?}",
+            chunks.len(),
+            chunks.iter().map(|c| &c.content).collect::<Vec<_>>()
+        );
         for chunk in &chunks {
             println!("Chunk {}: '{}'", chunk.chunk_index, chunk.content);
         }
@@ -556,14 +583,20 @@ mod tests {
             split_window: 30,
         });
 
-        let text = "First paragraph content.\n\nSecond paragraph with more text.\n\nThird paragraph here.";
+        let text =
+            "First paragraph content.\n\nSecond paragraph with more text.\n\nThird paragraph here.";
         let chunks = chunker.chunk(&text);
 
-        assert!(chunks.len() >= 2, "Expected multiple chunks with paragraph splitting");
+        assert!(
+            chunks.len() >= 2,
+            "Expected multiple chunks with paragraph splitting"
+        );
         // Each chunk should start near a paragraph boundary
         for chunk in &chunks {
-            println!("Chunk {} (offset={}, non_overlap={}): '{}'",
-                chunk.chunk_index, chunk.char_offset, chunk.non_overlap_len, chunk.content);
+            println!(
+                "Chunk {} (offset={}, non_overlap={}): '{}'",
+                chunk.chunk_index, chunk.char_offset, chunk.non_overlap_len, chunk.content
+            );
         }
     }
 
@@ -583,9 +616,18 @@ mod tests {
 
         for chunk in &chunks {
             let meta = chunk.to_metadata();
-            assert_eq!(meta["chunk_index"].as_i64().unwrap(), chunk.chunk_index as i64);
-            assert_eq!(meta["total_chunks"].as_i64().unwrap(), chunk.total_chunks as i64);
-            assert_eq!(meta["char_offset"].as_i64().unwrap(), chunk.char_offset as i64);
+            assert_eq!(
+                meta["chunk_index"].as_i64().unwrap(),
+                chunk.chunk_index as i64
+            );
+            assert_eq!(
+                meta["total_chunks"].as_i64().unwrap(),
+                chunk.total_chunks as i64
+            );
+            assert_eq!(
+                meta["char_offset"].as_i64().unwrap(),
+                chunk.char_offset as i64
+            );
             assert_eq!(meta["is_chunk"].as_bool().unwrap(), chunk.has_neighbors());
         }
     }
@@ -635,7 +677,11 @@ mod tests {
         let chunks = chunker.chunk(&text);
 
         // Should have merged the stub, so fewer chunks
-        assert!(chunks.len() <= 2, "Expected ≤2 chunks after merging, got {}", chunks.len());
+        assert!(
+            chunks.len() <= 2,
+            "Expected ≤2 chunks after merging, got {}",
+            chunks.len()
+        );
 
         // Total non-overlap should still cover all text
         let total_non_overlap: usize = chunks.iter().map(|c| c.non_overlap_len).sum();

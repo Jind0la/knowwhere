@@ -12,9 +12,7 @@ use crate::api::webhooks::check_webhook_secret;
 #[cfg(feature = "postgres-storage")]
 use crate::memory::skills::CreateSkillResponse;
 use crate::memory::types::Sensitivity;
-use crate::memory::{
-    Event, EventStore, GovernancePolicy,
-};
+use crate::memory::{Event, EventStore, GovernancePolicy};
 use crate::multimodal::MultimodalData;
 
 #[path = "routes/governance_events.rs"]
@@ -48,13 +46,7 @@ pub use rerank::*;
 mod maintenance;
 pub use maintenance::*;
 
-
-pub use crate::api::types::{
-    clean_for_embedding, AppState, RetrievalScoreDebug, ScoredNode,
-};
-
-
-
+pub use crate::api::types::{clean_for_embedding, AppState, RetrievalScoreDebug, ScoredNode};
 
 #[path = "trajectory.rs"]
 pub mod trajectory;

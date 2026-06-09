@@ -407,12 +407,12 @@ ON CONFLICT (version) DO NOTHING;
 -- === 003_add_tiered_context.sql ===
 -- =============================================================================
 -- Migration 003: Tiered Context (L0/L1/L2)
--- 
+--
 -- Enables hierarchical context loading:
 --   - L0 (summary): one-sentence summary
---   - L1 (overview): paragraph summary  
+--   - L1 (overview): paragraph summary
 --   - L2 (raw): full original content
--- 
+--
 -- Memories default to 'raw' (L2) for backward compatibility.
 -- Compaction generates L1 then L0 with parent_tier_id linking.
 -- =============================================================================
@@ -437,7 +437,7 @@ ON CONFLICT (version) DO NOTHING;
 -- === 004_add_retrieval_trajectory.sql ===
 -- =============================================================================
 -- Migration 004: Retrieval Trajectory Logging
--- 
+--
 -- Tracks every retrieval operation: what was searched, how many candidates
 -- were found, which filters were applied, and why decisions were made.
 -- =============================================================================
@@ -445,18 +445,18 @@ ON CONFLICT (version) DO NOTHING;
 -- Table: individual retrieval runs (one per query)
 CREATE TABLE IF NOT EXISTS retrieval_runs (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    
+
     -- Query info
     query_text          TEXT NOT NULL,
     embedding            vector(768),
-    
+
     -- Timing & stats
     run_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     total_candidates    INT,
     retrieved_count      INT,
     execution_time_ms    INT,
     max_depth_used       INT,
-    
+
     -- Extra context
     metadata            JSONB DEFAULT '{}'
 );
@@ -465,23 +465,23 @@ CREATE TABLE IF NOT EXISTS retrieval_runs (
 CREATE TABLE IF NOT EXISTS retrieval_trajectory (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     run_id              UUID NOT NULL REFERENCES retrieval_runs(id) ON DELETE CASCADE,
-    
+
     -- Step identification
     step_index          INT NOT NULL,
     step_type           VARCHAR(30) NOT NULL,  -- 'initial_search', 'fractal_zoom', 'rerank', 'governance_filter', 'bm25_search'
-    
+
     -- Memory involved (NULL for aggregate steps)
     memory_id           UUID REFERENCES memories(id) ON DELETE SET NULL,
-    
+
     -- Scoring
     score_before        FLOAT,
     score_after         FLOAT,
     rank                INT,
-    
+
     -- Decision reasoning
     decision            TEXT,                    -- human-readable decision explanation
     filter_reason       TEXT,                    -- why something was filtered out
-    
+
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -498,7 +498,7 @@ ON CONFLICT (version) DO NOTHING;
 -- === 007_add_conflict_detection.sql ===
 -- =============================================================================
 -- Migration 007: Conflict Detection for Dream Mode
--- 
+--
 -- Enables automatic detection and resolution of conflicting memories:
 --   - Entity conflicts: same entity, different facts
 --   - Temporal conflicts: same fact at different times
@@ -515,22 +515,22 @@ ON CONFLICT (version) DO NOTHING;
 -- Memory conflicts table: stores detected conflict groups
 CREATE TABLE IF NOT EXISTS memory_conflicts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    
+
     -- The memories involved in this conflict
     conflicting_memory_ids UUID[] NOT NULL,
-    
+
     -- Type of conflict
     conflict_type VARCHAR(20) NOT NULL CHECK (
         conflict_type IN ('entity', 'temporal', 'confidence')
     ),
-    
+
     -- Human-readable description
     description TEXT NOT NULL,
-    
+
     -- Timestamps
     detected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     resolved_at TIMESTAMPTZ,
-    
+
     -- State: pending, resolved
     state VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (
         state IN ('pending', 'resolved')

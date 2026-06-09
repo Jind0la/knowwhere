@@ -49,19 +49,19 @@ echo ""
 
 if command -v jq >/dev/null 2>&1; then
     echo "Using jq to extract sessions from fixtures..."
-    
+
     # Extract first N sessions and store them
     COUNT=0
     for i in $(seq 0 $((MAX_CASES - 1))); do
         SESSION=$(jq -r ".[${i}].haystack_sessions[0][] | select(.role==\"user\" or .role==\"assistant\") | .content" "${FIXTURES_DIR}/longmemeval_oracle.json" 2>/dev/null | head -20 | tr '\n' ' ' | sed 's/"/\\"/g')
-        
+
         if [[ -n "$SESSION" && ${#SESSION} -gt 50 ]]; then
             # Store via API
             RESPONSE=$(curl -sf "${BASE_URL}/store_session" \
                 -H "Content-Type: application/json" \
                 -H "Authorization: Bearer ${API_KEY}" \
                 -d "{\"content\": \"${SESSION:0:2000}\"}" 2>/dev/null || echo "")
-            
+
             if [[ "$RESPONSE" == *"id"* ]]; then
                 COUNT=$((COUNT + 1))
                 if [[ $((COUNT % 10)) -eq 0 ]]; then
@@ -69,12 +69,12 @@ if command -v jq >/dev/null 2>&1; then
                 fi
             fi
         fi
-        
+
         if [[ $COUNT -ge $MAX_CASES ]]; then
             break
         fi
     done
-    
+
     echo -e "\n${GREEN}✓ Stored ${COUNT} sessions${NC}"
 else
     echo -e "${YELLOW}jq not available, skipping automated data loading${NC}"

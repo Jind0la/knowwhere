@@ -24,10 +24,7 @@ pub enum RetrievalProfile {
 #[serde(rename_all = "kebab-case")]
 pub enum FusionStrategy {
     /// Weighted linear combination: final = bm25_weight * norm_bm25 + dense_weight * norm_dense
-    WeightedSum {
-        bm25_weight: f32,
-        dense_weight: f32,
-    },
+    WeightedSum { bm25_weight: f32, dense_weight: f32 },
     /// Reciprocal Rank Fusion with configurable k constant (default k=60).
     ReciprocalRankFusion { k: f32 },
     /// Pure BM25 only — skip dense scores entirely.

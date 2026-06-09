@@ -1,7 +1,7 @@
 # Phase 2 — Retrieval Quality & Benchmarking — Status: ✅ COMPLETE
 
-**Date:** 2026-05-19  
-**Completion Report:** [`docs/phase2-retrieval-quality-completion.md`](phase2-retrieval-quality-completion.md)  
+**Date:** 2026-05-19
+**Completion Report:** [`docs/phase2-retrieval-quality-completion.md`](phase2-retrieval-quality-completion.md)
 **Benchmark Results:** [`benchmarks/reports/LONGMEMEVAL_COMPARISON.md`](../benchmarks/reports/LONGMEMEVAL_COMPARISON.md)
 
 ---
@@ -38,8 +38,8 @@ All 6 question types functional. [→ Full Report](../benchmarks/reports/LONGMEM
 <details>
 <summary>Historical: Phase 2 — Connector Webhooks (March 2026)</summary>
 
-**Erstellt:** 2026-03-27  
-**Letztes Update:** 2026-03-29  
+**Erstellt:** 2026-03-27
+**Letztes Update:** 2026-03-29
 **Status:** ✅ OpenClaw-Integration funktioniert
 
 - OpenClaw Plugin E2E verified

@@ -39,7 +39,7 @@
 ```
 ## {Persona}: Evolution
 **Initially:** Podcasting, public music sharing
-**Then:** Album reviews, remixing experiments  
+**Then:** Album reviews, remixing experiments
 **Now:** Personal music production, Pacific Fusion sound
 
 ## {Persona}: Current State

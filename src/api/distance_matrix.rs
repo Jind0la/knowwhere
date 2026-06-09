@@ -2,7 +2,6 @@
 ///
 /// Queries a local OSRM service at http://localhost:5000 for driving distances.
 /// Falls back to Haversine great-circle distance when OSRM is unreachable or returns no route.
-
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::Json;
@@ -37,7 +36,13 @@ pub fn haversine_distance(lat1: f64, lng1: f64, lat2: f64, lng2: f64) -> f64 {
 }
 
 /// Query OSRM for driving distance between two points. Returns None on any failure.
-async fn osrm_distance(client: &reqwest::Client, lat1: f64, lng1: f64, lat2: f64, lng2: f64) -> Option<f64> {
+async fn osrm_distance(
+    client: &reqwest::Client,
+    lat1: f64,
+    lng1: f64,
+    lat2: f64,
+    lng2: f64,
+) -> Option<f64> {
     let url = format!(
         "{}/route/v1/driving/{},{};{},{}?overview=false",
         OSRM_BASE_URL, lng1, lat1, lng2, lat2
@@ -59,11 +64,7 @@ async fn osrm_distance(client: &reqwest::Client, lat1: f64, lng1: f64, lat2: f64
 
 /// Compute distance for a single origin-destination pair.
 /// Tries OSRM first; falls back to Haversine on any failure.
-async fn compute_distance(
-    client: &reqwest::Client,
-    origin: &LatLng,
-    dest: &LatLng,
-) -> f64 {
+async fn compute_distance(client: &reqwest::Client, origin: &LatLng, dest: &LatLng) -> f64 {
     // Try OSRM driving distance first
     if let Some(d) = osrm_distance(client, origin.lat, origin.lng, dest.lat, dest.lng).await {
         return d;
@@ -128,7 +129,10 @@ pub async fn distance_matrix(
     let cols = req.destinations.len();
 
     if rows == 0 || cols == 0 {
-        return Err((StatusCode::BAD_REQUEST, "origins and destinations must be non-empty".into()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "origins and destinations must be non-empty".into(),
+        ));
     }
 
     // Build a reqwest client with a short timeout for OSRM.

@@ -209,7 +209,7 @@ results_table = []
 for ci, (centroid, members) in enumerate(clusters):
     member_ids = [m[0] for m in members]
     print(f"\n--- Cluster {ci+1}: {len(members)} nodes ---")
-    
+
     # Create bag content from member previews
     content_parts = []
     for nid, _ in members:
@@ -217,22 +217,22 @@ for ci, (centroid, members) in enumerate(clusters):
         preview = next((p for vid, v, p in vectors if vid == nid), "?")
         content_parts.append(f"[{nid[:8]}] {preview[:80]}")
     bag_content = " | ".join(content_parts)
-    
+
     # Store bag node
     print(f"   Creating bag node...")
     stored = store_bag_node(bag_content, centroid.tolist(), member_ids)
     bag_id = stored["id"]
     print(f"   ✓ Bag node: {bag_id}")
-    
+
     # Test retrieval: use centroid to retrieve
     centroid_results = retrieve_with_vector(centroid.tolist(), k=5)
     centroid_ids = [r["id"] for r in centroid_results]
     children_found = [mid for mid in member_ids if mid in centroid_ids]
     recall = len(children_found) / len(member_ids)
-    
+
     print(f"   Retrieval recall: {recall:.0%} ({len(children_found)}/{len(member_ids)} children found)")
     print(f"   Top-5 IDs: {[r['id'][:8] for r in centroid_results[:5]]}")
-    
+
     results_table.append({
         "cluster": ci + 1,
         "size": len(members),

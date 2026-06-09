@@ -118,7 +118,9 @@ async fn run() -> anyhow::Result<()> {
         Arc::new(ClipProvider::new()),
         Arc::new(AudioProvider::new()),
     ));
-    tracing::info!("cross-modal embedding router ready (text → Ollama, image → CLIP, audio → Whisper)");
+    tracing::info!(
+        "cross-modal embedding router ready (text → Ollama, image → CLIP, audio → Whisper)"
+    );
 
     tokio::spawn(dream.clone().micro_dream_loop());
     tracing::info!("dream mode started (micro-dream every 1h)");
@@ -158,7 +160,7 @@ async fn run() -> anyhow::Result<()> {
     // -- Dream Mode Audit Scheduler (quality monitoring, NOT summarization) --
     #[cfg(feature = "postgres-storage")]
     {
-        use knowwhere_server::scheduler::{SchedulerConfig, AuditScheduler};
+        use knowwhere_server::scheduler::{AuditScheduler, SchedulerConfig};
         let scheduler_config = SchedulerConfig::from_env();
         if scheduler_config.is_enabled() {
             let audit = AuditScheduler::new(
@@ -243,7 +245,10 @@ async fn run() -> anyhow::Result<()> {
         .route("/nodes/recent", get(routes::recent_nodes))
         .route("/nodes/purge_dummy", post(routes::purge_dummy))
         .route("/nodes/reembed_all", post(routes::reembed_all))
-        .route("/maintenance/repair_embeddings", post(routes::repair_embeddings))
+        .route(
+            "/maintenance/repair_embeddings",
+            post(routes::repair_embeddings),
+        )
         .route("/nodes/{id}", delete(routes::delete_node))
         .route("/nodes/batch_delete", post(routes::batch_delete_nodes))
         .route("/nodes/deduplicate", post(routes::deduplicate_nodes))
@@ -256,10 +261,16 @@ async fn run() -> anyhow::Result<()> {
         .route("/governance/policy", post(routes::update_governance_policy))
         // -- Runtime config routes --
         .route("/config/temporal_weight", get(routes::get_temporal_weight))
-        .route("/config/temporal_weight", post(routes::update_temporal_weight))
+        .route(
+            "/config/temporal_weight",
+            post(routes::update_temporal_weight),
+        )
         // -- Webhook routes --
         .route("/webhooks/frigate", post(routes::webhook_frigate))
-        .route("/webhooks/homeassistant", post(routes::webhook_homeassistant))
+        .route(
+            "/webhooks/homeassistant",
+            post(routes::webhook_homeassistant),
+        )
         // -- Voice message routes --
         .route("/voice/upload", post(routes::voice_upload::upload_voice));
     #[cfg(feature = "postgres-storage")]
@@ -278,7 +289,10 @@ async fn run() -> anyhow::Result<()> {
         .route("/memories/{id}", get(routes::get_memory))
         .route("/conflicts", get(routes::list_conflicts))
         .route("/conflicts/{id}/resolve", post(routes::resolve_conflict))
-        .route("/conflicts/auto-resolve", post(routes::auto_resolve_conflicts))
+        .route(
+            "/conflicts/auto-resolve",
+            post(routes::auto_resolve_conflicts),
+        )
         // Energy decay routes (Ebbinghaus forgetting curve)
         .route(
             "/memories/{id}/energy/boost",
@@ -322,7 +336,10 @@ async fn run() -> anyhow::Result<()> {
         .route("/store_turn", post(routes::store_turn))
         .route("/store_turns", post(routes::store_turns_batch))
         .route("/retrieve/turns", post(routes::retrieve_turns))
-        .route("/sessions/{session_id}/turns", get(routes::get_session_turns));
+        .route(
+            "/sessions/{session_id}/turns",
+            get(routes::get_session_turns),
+        );
 
     // RATE_LIMIT_MODE=proxy enables IP-based limiting behind reverse proxies.
     // Backward compatibility: RATE_LIMIT=1 behaves like RATE_LIMIT_MODE=proxy.

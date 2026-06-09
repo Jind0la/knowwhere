@@ -1,6 +1,6 @@
 # KnowWhere v0.6 Phase 0 — Research Notes & Lean Decision Matrix
 
-**Date:** 2026-05-17  
+**Date:** 2026-05-17
 **Constraint:** Over-Engineering vermeiden. Nur was die Metrics (PersonaMem 20q, AMB, Temporal Queries) wirklich bewegt. Root-Cause zuerst. Clean Baseline + Delta pro Phase.
 
 ## Current State (Live Verification)

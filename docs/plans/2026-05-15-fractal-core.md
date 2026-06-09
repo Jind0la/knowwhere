@@ -116,14 +116,14 @@ import requests, json, numpy as np
 # Test: full 768d vs truncated 256d similarity
 texts = [
     "Redis zum Cachen von User-Sessions",
-    "Redis als Message-Queue für Jobs", 
+    "Redis als Message-Queue für Jobs",
     "PostgreSQL als Message-Queue nutzen",
     "Ein komplett anderes Thema über Steuererklärung",
     "Noch ein Steuerthema: Freibetrag 2026"
 ]
 
 # Embed via Ollama
-resp = requests.post("http://localhost:11434/api/embed", 
+resp = requests.post("http://localhost:11434/api/embed",
     json={"model": "nomic-embed-text:latest", "input": texts})
 embeddings = [np.array(e) for e in resp.json()["embeddings"]]
 
@@ -210,10 +210,10 @@ pub async fn matryoshka_retrieve(
     // Stage 1: Coarse search
     let query_256 = &query_vector[..256];
     let coarse_ids = self.coarse_search(query_256, coarse_top_k).await;
-    
+
     // Stage 2: Fine search (nur in coarse_ids)
     let fine_results = self.fine_search_in(query_vector, &coarse_ids, fine_top_k, max_depth).await;
-    
+
     fine_results
 }
 ```
@@ -249,20 +249,20 @@ pub async fn matryoshka_retrieve(
 ```rust
 pub fn expand_query(query: &str) -> Vec<String> {
     let mut expanded = vec![query.to_string()];
-    
+
     // 1. Keyword-Extraktion: Nomen + Verben extrahieren
     let keywords = extract_key_nouns_verbs(query);
-    
+
     // 2. Broadening: "Redis als Queue" → "Message-Queue-Systeme und Tools"
     if keywords.len() >= 1 {
         expanded.push(format!("{} Systeme und Konfigurationen", keywords.join(" ")));
     }
-    
+
     // 3. Narrowing: Konkreter machen
     if keywords.len() >= 2 {
         expanded.push(keywords.join(" "));
     }
-    
+
     expanded.dedup();
     expanded.truncate(3);
     expanded

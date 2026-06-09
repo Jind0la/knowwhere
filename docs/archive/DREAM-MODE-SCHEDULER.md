@@ -1,6 +1,6 @@
 # Dream Mode Scheduler
 
-> **Status:** ✅ Implemented  
+> **Status:** ✅ Implemented
 > **Commits:** `a210e76` (VLM Worker), `279265c` (TieredCompactionWorker VLM integration), `7bf6f01` (truncation fallback)
 
 ## Context

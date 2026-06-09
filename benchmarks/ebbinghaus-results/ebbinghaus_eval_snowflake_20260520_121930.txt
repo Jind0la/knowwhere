@@ -18,7 +18,7 @@ Top-K (old): 20
   ── PHASE 1: Indexing all sessions ──
     Indexed 10/37 cases (4580 total nodes)
     Indexed 20/37 cases (9250 total nodes)
-    FAIL indexing case=2698e78f: 
+    FAIL indexing case=2698e78f:
     Indexed 30/37 cases (13477 total nodes)
     Indexed 37/37 cases (16695 total nodes)
     Indexed 16695 nodes total

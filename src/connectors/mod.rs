@@ -44,7 +44,13 @@ pub async fn store_external_event(
     };
 
     let node = match event.multimodal {
-        Some(mm) => FractalNode::new_external_multimodal(event.pointer, vector, event.metadata, mm, event.created_at),
+        Some(mm) => FractalNode::new_external_multimodal(
+            event.pointer,
+            vector,
+            event.metadata,
+            mm,
+            event.created_at,
+        ),
         None => FractalNode::new_external(event.pointer, vector, event.metadata, event.created_at),
     };
 

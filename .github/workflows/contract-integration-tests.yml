@@ -1,0 +1,87 @@
+name: Contract & Integration Tests
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  contract-tests:
+    name: Contract Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run unit tests (lib)
+        run: cargo test --lib
+
+      - name: Run contract integration tests
+        run: cargo test --test test_soul --test openapi_contract --test distance_matrix --test state_management
+
+  integration-tests:
+    name: Integration Tests (PostgreSQL)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: knowwhere_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Run migrations
+        env:
+          PGPASSWORD: postgres
+        run: |
+          for f in migrations/[0-9][0-9][0-9]_*.sql; do
+            case "$f" in
+              *test_data*|*[.]down[.]sql)
+                echo "Skipping: $f"
+                ;;
+              *)
+                echo "Running: $f"
+                psql -h localhost -U postgres -d knowwhere_test -f "$f"
+                ;;
+            esac
+          done
+
+      - name: Run integration tests
+        env:
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGHOST: localhost
+          PGPORT: 5432
+          PGDATABASE: knowwhere_test
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/knowwhere_test
+        run: cargo test --features postgres-storage --test turn_storage

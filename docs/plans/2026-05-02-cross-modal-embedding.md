@@ -166,7 +166,7 @@
 ## Definition of Done
 
 - [ ] Image stored via `POST /store` with `Content-Type: image/png` retrievable by text query
-- [ ] Audio stored retrievable by text query  
+- [ ] Audio stored retrievable by text query
 - [ ] All 93 existing tests still green
 - [ ] New tests for ClipProvider, AudioProvider, SensorEmbedder, EmbeddingRouter
 - [ ] Docker Compose clean start with CLIP/Whisper models

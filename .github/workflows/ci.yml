@@ -210,4 +210,3 @@ jobs:
 
       - name: Build Docker image
         run: docker build -t knowwhere-server:ci .
-

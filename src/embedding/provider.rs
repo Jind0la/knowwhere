@@ -264,8 +264,7 @@ impl LocalOllamaProvider {
     pub fn new() -> Self {
         let base_url =
             std::env::var("OLLAMA_URL").unwrap_or_else(|_| "http://localhost:11434".into());
-        let model =
-            std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "nomic-embed-text".into());
+        let model = std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "nomic-embed-text".into());
         Self {
             client: reqwest::Client::new(),
             base_url,
@@ -315,11 +314,10 @@ impl LocalOllamaProvider {
             anyhow::bail!("ollama batch embed HTTP {status}: {snippet}");
         }
 
-        let resp: OllamaBatchEmbedResponse = serde_json::from_str(&body)
-            .context(format!(
-                "failed to parse ollama batch embed response: {}",
-                body.chars().take(200).collect::<String>()
-            ))?;
+        let resp: OllamaBatchEmbedResponse = serde_json::from_str(&body).context(format!(
+            "failed to parse ollama batch embed response: {}",
+            body.chars().take(200).collect::<String>()
+        ))?;
 
         if resp.embeddings.len() != texts.len() {
             anyhow::bail!(
@@ -364,8 +362,10 @@ impl EmbeddingProvider for LocalOllamaProvider {
             anyhow::bail!("ollama embed HTTP {status}: {snippet}");
         }
 
-        let resp: OllamaBatchEmbedResponse = serde_json::from_str(&body)
-            .context(format!("failed to parse ollama embed response: {}", body.chars().take(200).collect::<String>()))?;
+        let resp: OllamaBatchEmbedResponse = serde_json::from_str(&body).context(format!(
+            "failed to parse ollama embed response: {}",
+            body.chars().take(200).collect::<String>()
+        ))?;
 
         resp.embeddings
             .into_iter()
@@ -496,7 +496,10 @@ mod batch_tests {
         let provider = MockProvider::new(vec![vec![vec![1.0, 0.0, 0.0, 0.0]]]);
         let _result = embed_query(&provider, "query text").await.unwrap();
         let calls = provider.calls.lock().unwrap();
-        assert!(!calls.is_empty(), "embed() should have been called via embed_query");
+        assert!(
+            !calls.is_empty(),
+            "embed() should have been called via embed_query"
+        );
         assert!(
             calls[0][0].starts_with("search_query: "),
             "embed_query() must prepend 'search_query: ' prefix. Raw text was: '{}'",

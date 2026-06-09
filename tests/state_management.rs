@@ -113,7 +113,12 @@ async fn cert_shared_001_all_agents_see_shared() {
 
     // Agent 0 stores shared memory
     let id = room
-        .store_shared(&agents[0], "Global architectural decision".into(), zero_vector(), None)
+        .store_shared(
+            &agents[0],
+            "Global architectural decision".into(),
+            zero_vector(),
+            None,
+        )
         .await
         .unwrap();
 
@@ -134,11 +139,22 @@ async fn cert_shared_001_all_agents_see_shared() {
 async fn cert_shared_002_shared_layer_query_scoped() {
     let (room, agents, _) = setup_room(2).await;
 
-    room.store_shared(&agents[0], "Shared A".into(), zero_vector(), None).await.unwrap();
-    room.store_shared(&agents[1], "Shared B".into(), zero_vector(), None).await.unwrap();
+    room.store_shared(&agents[0], "Shared A".into(), zero_vector(), None)
+        .await
+        .unwrap();
+    room.store_shared(&agents[1], "Shared B".into(), zero_vector(), None)
+        .await
+        .unwrap();
 
-    let shared_results = room.query_shared(HybridQuery::text("Shared", 10)).await.unwrap();
-    assert_eq!(shared_results.len(), 2, "Both shared memories should be in shared layer");
+    let shared_results = room
+        .query_shared(HybridQuery::text("Shared", 10))
+        .await
+        .unwrap();
+    assert_eq!(
+        shared_results.len(),
+        2,
+        "Both shared memories should be in shared layer"
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -153,7 +169,12 @@ async fn cert_private_001_no_cross_agent_leakage() {
     let agent_b = &agents[1];
 
     let secret_id = room
-        .store_private(agent_a, "TOP SECRET: Agent A's private data".into(), zero_vector(), None)
+        .store_private(
+            agent_a,
+            "TOP SECRET: Agent A's private data".into(),
+            zero_vector(),
+            None,
+        )
         .await
         .unwrap();
 
@@ -177,21 +198,47 @@ async fn cert_private_002_query_private_layer_isolation() {
     let agent_a = &agents[0];
     let agent_b = &agents[1];
 
-    room.store_private(agent_a, "A-private-1".into(), zero_vector(), None).await.unwrap();
-    room.store_private(agent_a, "A-private-2".into(), zero_vector(), None).await.unwrap();
-    room.store_private(agent_b, "B-private-1".into(), zero_vector(), None).await.unwrap();
+    room.store_private(agent_a, "A-private-1".into(), zero_vector(), None)
+        .await
+        .unwrap();
+    room.store_private(agent_a, "A-private-2".into(), zero_vector(), None)
+        .await
+        .unwrap();
+    room.store_private(agent_b, "B-private-1".into(), zero_vector(), None)
+        .await
+        .unwrap();
 
-    let a_private = room.query_private(agent_a, HybridQuery::text("private", 10)).await.unwrap();
-    let b_private = room.query_private(agent_b, HybridQuery::text("private", 10)).await.unwrap();
+    let a_private = room
+        .query_private(agent_a, HybridQuery::text("private", 10))
+        .await
+        .unwrap();
+    let b_private = room
+        .query_private(agent_b, HybridQuery::text("private", 10))
+        .await
+        .unwrap();
 
-    assert_eq!(a_private.len(), 2, "Agent A should see exactly 2 private memories");
-    assert_eq!(b_private.len(), 1, "Agent B should see exactly 1 private memory");
+    assert_eq!(
+        a_private.len(),
+        2,
+        "Agent A should see exactly 2 private memories"
+    );
+    assert_eq!(
+        b_private.len(),
+        1,
+        "Agent B should see exactly 1 private memory"
+    );
 
     // Verify no cross-contamination
-    let a_contents: Vec<&str> = a_private.iter().filter_map(|s| s.node.content.as_deref()).collect();
+    let a_contents: Vec<&str> = a_private
+        .iter()
+        .filter_map(|s| s.node.content.as_deref())
+        .collect();
     assert!(a_contents.contains(&"A-private-1"));
     assert!(a_contents.contains(&"A-private-2"));
-    assert!(!a_contents.contains(&"B-private-1"), "LEAK: Agent A sees B's private memory");
+    assert!(
+        !a_contents.contains(&"B-private-1"),
+        "LEAK: Agent A sees B's private memory"
+    );
 }
 
 #[tokio::test]
@@ -220,7 +267,12 @@ async fn cert_private_003_many_agents_no_leakage() {
             .await
             .unwrap();
 
-        assert_eq!(results.len(), 3, "Agent {} should see exactly 3 private memories", agent.name);
+        assert_eq!(
+            results.len(),
+            3,
+            "Agent {} should see exactly 3 private memories",
+            agent.name
+        );
 
         for scored in &results {
             let content = scored.node.content.as_deref().unwrap_or("");
@@ -245,7 +297,12 @@ async fn cert_handoff_001_basic_transfer() {
     let agent_b = &agents[1];
 
     let mem_id = room
-        .store_private(agent_a, "Task result ready for review".into(), zero_vector(), None)
+        .store_private(
+            agent_a,
+            "Task result ready for review".into(),
+            zero_vector(),
+            None,
+        )
         .await
         .unwrap();
 
@@ -264,11 +321,12 @@ async fn cert_handoff_001_basic_transfer() {
     // After handoff: B can see the handoff copy
     let after = room.query_scoped(agent_b, query).await.unwrap();
     let has_handoff = after.iter().any(|r| {
-        r.node.metadata.get("handoff_to")
-            .and_then(|v| v.as_str())
-            == Some(&agent_b.id.to_string())
+        r.node.metadata.get("handoff_to").and_then(|v| v.as_str()) == Some(&agent_b.id.to_string())
     });
-    assert!(has_handoff, "Handoff should make memory visible to target agent");
+    assert!(
+        has_handoff,
+        "Handoff should make memory visible to target agent"
+    );
 }
 
 #[tokio::test]
@@ -302,7 +360,9 @@ async fn cert_handoff_003_handoff_preserves_provenance() {
         .await
         .unwrap();
 
-    room.handoff(agent_a, agent_b, mem_id, "Review").await.unwrap();
+    room.handoff(agent_a, agent_b, mem_id, "Review")
+        .await
+        .unwrap();
 
     // Query from B's perspective — verify handoff metadata
     let results = room
@@ -310,15 +370,21 @@ async fn cert_handoff_003_handoff_preserves_provenance() {
         .await
         .unwrap();
 
-    let handoff_node = results.iter().find(|r| {
-        r.node.metadata.get("handoff_to")
-            .and_then(|v| v.as_str())
-            == Some(&agent_b.id.to_string())
-    }).expect("Handoff node must exist");
+    let handoff_node = results
+        .iter()
+        .find(|r| {
+            r.node.metadata.get("handoff_to").and_then(|v| v.as_str())
+                == Some(&agent_b.id.to_string())
+        })
+        .expect("Handoff node must exist");
 
     let agent_a_id_str = agent_a.id.to_string();
     assert_eq!(
-        handoff_node.node.metadata.get("handoff_from").and_then(|v| v.as_str()),
+        handoff_node
+            .node
+            .metadata
+            .get("handoff_from")
+            .and_then(|v| v.as_str()),
         Some(agent_a_id_str.as_str()),
         "Handoff must preserve source agent"
     );
@@ -349,16 +415,32 @@ async fn cert_restricted_001_only_allowed_agents_can_see() {
     let query = HybridQuery::text("Restricted content", 10).with_recency_boost(0.0);
 
     // Owner and allowed agent can see it
-    assert!(room.query_scoped(owner, query.clone()).await.unwrap()
-        .iter().any(|r| r.node.content.as_deref() == Some("Restricted content")));
-    assert!(room.query_scoped(allowed, query.clone()).await.unwrap()
-        .iter().any(|r| r.node.content.as_deref() == Some("Restricted content")));
+    assert!(room
+        .query_scoped(owner, query.clone())
+        .await
+        .unwrap()
+        .iter()
+        .any(|r| r.node.content.as_deref() == Some("Restricted content")));
+    assert!(room
+        .query_scoped(allowed, query.clone())
+        .await
+        .unwrap()
+        .iter()
+        .any(|r| r.node.content.as_deref() == Some("Restricted content")));
 
     // Unauthorized agents cannot
-    assert!(!room.query_scoped(unauthorized1, query.clone()).await.unwrap()
-        .iter().any(|r| r.node.content.as_deref() == Some("Restricted content")));
-    assert!(!room.query_scoped(unauthorized2, query).await.unwrap()
-        .iter().any(|r| r.node.content.as_deref() == Some("Restricted content")));
+    assert!(!room
+        .query_scoped(unauthorized1, query.clone())
+        .await
+        .unwrap()
+        .iter()
+        .any(|r| r.node.content.as_deref() == Some("Restricted content")));
+    assert!(!room
+        .query_scoped(unauthorized2, query)
+        .await
+        .unwrap()
+        .iter()
+        .any(|r| r.node.content.as_deref() == Some("Restricted content")));
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -410,10 +492,13 @@ async fn cert_prov_003_handoff_creates_audit_trail() {
         .await
         .unwrap();
 
-    room.handoff(agent_a, agent_b, mem_id, "For audit").await.unwrap();
+    room.handoff(agent_a, agent_b, mem_id, "For audit")
+        .await
+        .unwrap();
 
     let all_nodes = room.store().list_all().await.unwrap();
-    let handoff_nodes: Vec<&FractalNode> = all_nodes.iter()
+    let handoff_nodes: Vec<&FractalNode> = all_nodes
+        .iter()
         .filter(|n| n.metadata.get("handoff_from").is_some())
         .collect();
 
@@ -429,12 +514,17 @@ async fn cert_orch_001_full_simple_workflow() {
     // Simulate: Orchestrator → Worker → Reviewer pipeline
     let (room, agents, _) = setup_room(3).await;
     let orchestrator = &agents[0]; // AgentRole::User
-    let worker = &agents[1];       // AgentRole::Orchestrator
-    let reviewer = &agents[2];     // AgentRole::Worker
+    let worker = &agents[1]; // AgentRole::Orchestrator
+    let reviewer = &agents[2]; // AgentRole::Worker
 
     // 1. Orchestrator stores task in shared layer
     let task_id = room
-        .store_shared(orchestrator, "Task: Build feature X".into(), zero_vector(), None)
+        .store_shared(
+            orchestrator,
+            "Task: Build feature X".into(),
+            zero_vector(),
+            None,
+        )
         .await
         .unwrap();
 
@@ -446,7 +536,12 @@ async fn cert_orch_001_full_simple_workflow() {
 
     // 3. Worker hands off result to Reviewer
     let result_id = room
-        .store_private(worker, "Result: Feature X complete".into(), zero_vector(), None)
+        .store_private(
+            worker,
+            "Result: Feature X complete".into(),
+            zero_vector(),
+            None,
+        )
         .await
         .unwrap();
 
@@ -456,7 +551,12 @@ async fn cert_orch_001_full_simple_workflow() {
 
     // 4. Reviewer stores feedback in shared layer
     let feedback_id = room
-        .store_shared(reviewer, "Review: LGTM, approved".into(), zero_vector(), None)
+        .store_shared(
+            reviewer,
+            "Review: LGTM, approved".into(),
+            zero_vector(),
+            None,
+        )
         .await
         .unwrap();
 
@@ -465,8 +565,14 @@ async fn cert_orch_001_full_simple_workflow() {
     let orch_view = room.list_visible(orchestrator, 50).await.unwrap();
     let orch_ids: Vec<Uuid> = orch_view.iter().map(|n| n.id).collect();
     assert!(orch_ids.contains(&task_id), "Orchestrator must see task");
-    assert!(orch_ids.contains(&feedback_id), "Orchestrator must see feedback");
-    assert!(!orch_ids.contains(&progress_id), "Orchestrator must NOT see worker's private progress");
+    assert!(
+        orch_ids.contains(&feedback_id),
+        "Orchestrator must see feedback"
+    );
+    assert!(
+        !orch_ids.contains(&progress_id),
+        "Orchestrator must NOT see worker's private progress"
+    );
 
     // - Worker sees: task, their own progress, feedback — but NOT other private data
     let worker_view = room.list_visible(worker, 50).await.unwrap();
@@ -480,7 +586,10 @@ async fn cert_orch_001_full_simple_workflow() {
     let reviewer_ids: Vec<Uuid> = reviewer_view.iter().map(|n| n.id).collect();
     assert!(reviewer_ids.contains(&task_id));
     assert!(reviewer_ids.contains(&feedback_id));
-    assert!(!reviewer_ids.contains(&progress_id), "Reviewer must NOT see worker's private progress");
+    assert!(
+        !reviewer_ids.contains(&progress_id),
+        "Reviewer must NOT see worker's private progress"
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -519,12 +628,20 @@ async fn cert_gov_001_agent_visibility_respects_sensitivity() {
     let query = HybridQuery::text("sensitive data", 10).with_recency_boost(0.0);
 
     // Agent A (owner) sees it
-    assert!(room.query_scoped(agent_a, query.clone()).await.unwrap()
-        .iter().any(|r| r.id == id));
+    assert!(room
+        .query_scoped(agent_a, query.clone())
+        .await
+        .unwrap()
+        .iter()
+        .any(|r| r.id == id));
 
     // Agent B does NOT
-    assert!(!room.query_scoped(agent_b, query).await.unwrap()
-        .iter().any(|r| r.id == id));
+    assert!(!room
+        .query_scoped(agent_b, query)
+        .await
+        .unwrap()
+        .iter()
+        .any(|r| r.id == id));
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -541,9 +658,14 @@ async fn cert_stress_001_concurrent_stores_maintain_isolation() {
         let room = room.clone();
         handles.push(tokio::spawn(async move {
             for i in 0..5 {
-                room.store_private(&agent, format!("{}-item-{}", agent.name, i), zero_vector(), None)
-                    .await
-                    .unwrap();
+                room.store_private(
+                    &agent,
+                    format!("{}-item-{}", agent.name, i),
+                    zero_vector(),
+                    None,
+                )
+                .await
+                .unwrap();
             }
         }));
     }
@@ -558,7 +680,12 @@ async fn cert_stress_001_concurrent_stores_maintain_isolation() {
             .query_private(agent, HybridQuery::text("item", 50))
             .await
             .unwrap();
-        assert_eq!(results.len(), 5, "Agent {} should have exactly 5 private items", agent.name);
+        assert_eq!(
+            results.len(),
+            5,
+            "Agent {} should have exactly 5 private items",
+            agent.name
+        );
     }
 }
 
@@ -570,75 +697,139 @@ async fn cert_stress_001_concurrent_stores_maintain_isolation() {
 async fn cert_e2e_001_full_orchestration_pipeline() {
     // Full multi-agent pipeline simulating GH-600 certification workflow
     let (room, agents, _) = setup_room(5).await;
-    let user = &agents[0];         // AgentRole::User
+    let user = &agents[0]; // AgentRole::User
     let orchestrator = &agents[1]; // AgentRole::Orchestrator
-    let worker1 = &agents[2];      // AgentRole::Worker
-    let worker2 = &agents[3];      // AgentRole::Reviewer
-    let reviewer = &agents[4];     // AgentRole::Observer
+    let worker1 = &agents[2]; // AgentRole::Worker
+    let worker2 = &agents[3]; // AgentRole::Reviewer
+    let reviewer = &agents[4]; // AgentRole::Observer
 
     // Phase 1: User defines goal (shared)
     let goal_id = room
-        .store_shared(user, "GOAL: Implement multi-agent state management".into(), zero_vector(), None)
+        .store_shared(
+            user,
+            "GOAL: Implement multi-agent state management".into(),
+            zero_vector(),
+            None,
+        )
         .await
         .unwrap();
 
     // Phase 2: Orchestrator decomposes (shared)
     let plan_id = room
-        .store_shared(orchestrator, "PLAN: 3 subtasks for state management".into(), zero_vector(), None)
+        .store_shared(
+            orchestrator,
+            "PLAN: 3 subtasks for state management".into(),
+            zero_vector(),
+            None,
+        )
         .await
         .unwrap();
 
     // Phase 3: Workers execute privately, then handoff results
     let w1_private = room
-        .store_private(worker1, "Worker1: implementing agent registry".into(), zero_vector(), None)
+        .store_private(
+            worker1,
+            "Worker1: implementing agent registry".into(),
+            zero_vector(),
+            None,
+        )
         .await
         .unwrap();
     let w1_result = room
-        .store_private(worker1, "Worker1: DONE — agent registry code".into(), zero_vector(), None)
+        .store_private(
+            worker1,
+            "Worker1: DONE — agent registry code".into(),
+            zero_vector(),
+            None,
+        )
         .await
         .unwrap();
-    room.handoff(worker1, orchestrator, w1_result, "Task complete").await.unwrap();
+    room.handoff(worker1, orchestrator, w1_result, "Task complete")
+        .await
+        .unwrap();
 
     let w2_private = room
-        .store_private(worker2, "Worker2: implementing control room".into(), zero_vector(), None)
+        .store_private(
+            worker2,
+            "Worker2: implementing control room".into(),
+            zero_vector(),
+            None,
+        )
         .await
         .unwrap();
     let w2_result = room
-        .store_private(worker2, "Worker2: DONE — control room code".into(), zero_vector(), None)
+        .store_private(
+            worker2,
+            "Worker2: DONE — control room code".into(),
+            zero_vector(),
+            None,
+        )
         .await
         .unwrap();
-    room.handoff(worker2, orchestrator, w2_result, "Task complete").await.unwrap();
+    room.handoff(worker2, orchestrator, w2_result, "Task complete")
+        .await
+        .unwrap();
 
     // Phase 4: Orchestrator integrates and hands off to reviewer
     let integration_id = room
-        .store_shared(orchestrator, "INTEGRATION: All components assembled".into(), zero_vector(), None)
+        .store_shared(
+            orchestrator,
+            "INTEGRATION: All components assembled".into(),
+            zero_vector(),
+            None,
+        )
         .await
         .unwrap();
-    room.handoff(orchestrator, reviewer, integration_id, "Ready for certification review").await.unwrap();
+    room.handoff(
+        orchestrator,
+        reviewer,
+        integration_id,
+        "Ready for certification review",
+    )
+    .await
+    .unwrap();
 
     // Phase 5: Reviewer certifies (shared)
     let cert_id = room
-        .store_shared(reviewer, "CERTIFICATION: PASSED — GH-600 requirements met".into(), zero_vector(), None)
+        .store_shared(
+            reviewer,
+            "CERTIFICATION: PASSED — GH-600 requirements met".into(),
+            zero_vector(),
+            None,
+        )
         .await
         .unwrap();
 
     // Final verification: stats
     let stats = room.stats(user).await.unwrap();
-    assert!(stats.shared >= 3, "Should have goal + plan + integration + certification");
+    assert!(
+        stats.shared >= 3,
+        "Should have goal + plan + integration + certification"
+    );
     assert_eq!(stats.private_own, 0, "User had no private data");
-    assert!(stats.private_other >= 2, "There are other agents' private memories");
+    assert!(
+        stats.private_other >= 2,
+        "There are other agents' private memories"
+    );
 
     // Verify no leakage: workers' intermediate private data is invisible to reviewer
     let reviewer_view = room.list_visible(reviewer, 50).await.unwrap();
-    let reviewer_contents: Vec<&str> = reviewer_view.iter()
+    let reviewer_contents: Vec<&str> = reviewer_view
+        .iter()
         .filter_map(|n| n.content.as_deref())
         .collect();
-    assert!(!reviewer_contents.contains(&"Worker1: implementing agent registry"),
-        "LEAK: Reviewer can see Worker1's intermediate private data");
-    assert!(!reviewer_contents.contains(&"Worker2: implementing control room"),
-        "LEAK: Reviewer can see Worker2's intermediate private data");
+    assert!(
+        !reviewer_contents.contains(&"Worker1: implementing agent registry"),
+        "LEAK: Reviewer can see Worker1's intermediate private data"
+    );
+    assert!(
+        !reviewer_contents.contains(&"Worker2: implementing control room"),
+        "LEAK: Reviewer can see Worker2's intermediate private data"
+    );
 
     // Verify certification exists and is shared
-    assert!(reviewer_view.iter().any(|n| n.id == cert_id),
-        "Reviewer should see the certification result");
+    assert!(
+        reviewer_view.iter().any(|n| n.id == cert_id),
+        "Reviewer should see the certification result"
+    );
 }

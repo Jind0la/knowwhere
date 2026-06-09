@@ -86,7 +86,7 @@ def api_call(endpoint, data):
     headers = {"Content-Type": "application/json"}
     if API_KEY:
         headers["Authorization"] = f"Bearer {API_KEY}"
-    
+
     req = urllib.request.Request(
         url,
         data=json.dumps(data).encode(),
@@ -115,13 +115,13 @@ for i, case in enumerate(data[:MAX_CASES]):
         for msg in session:
             if isinstance(msg, dict) and "content" in msg:
                 texts.append(msg["content"])
-        
+
         if texts:
             content = "\n\n".join(texts)
             result = api_call("store_session", {"content": content})
             if result and "id" in result:
                 sessions_stored += 1
-            
+
             if sessions_stored % 10 == 0:
                 print(f"  Stored {sessions_stored} sessions...")
 

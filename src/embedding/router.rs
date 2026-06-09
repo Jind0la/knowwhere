@@ -47,8 +47,7 @@ impl EmbeddingRouter {
     /// All paths produce a 768-dimensional `Vec<f32>`.
     pub async fn route(&self, content_type: &str, payload: &[u8]) -> Result<Vec<f32>> {
         if content_type.starts_with("text/") {
-            let text =
-                std::str::from_utf8(payload).context("text payload is not valid UTF-8")?;
+            let text = std::str::from_utf8(payload).context("text payload is not valid UTF-8")?;
             self.text_provider.embed(text).await
         } else if content_type.starts_with("image/") {
             self.clip_provider.embed_image(payload).await
@@ -192,17 +191,17 @@ mod tests {
     #[tokio::test]
     async fn test_route_text_html() {
         let router = test_router();
-        let result = router
-            .route("text/html", b"<p>hello</p>")
-            .await
-            .unwrap();
+        let result = router.route("text/html", b"<p>hello</p>").await.unwrap();
         assert_eq!(result.len(), 768);
     }
 
     #[tokio::test]
     async fn test_route_text_non_utf8_rejected() {
         let router = test_router();
-        let err = router.route("text/plain", b"\xFF\xFE\xFD").await.unwrap_err();
+        let err = router
+            .route("text/plain", b"\xFF\xFE\xFD")
+            .await
+            .unwrap_err();
         assert!(
             format!("{}", err).contains("valid UTF-8"),
             "expected UTF-8 error, got: {}",
@@ -250,10 +249,7 @@ mod tests {
     #[tokio::test]
     async fn test_route_unsupported_content_type() {
         let router = test_router();
-        let err = router
-            .route("video/mp4", b"fake video")
-            .await
-            .unwrap_err();
+        let err = router.route("video/mp4", b"fake video").await.unwrap_err();
         assert!(
             format!("{}", err).contains("unsupported content type"),
             "expected unsupported error, got: {}",
@@ -269,7 +265,10 @@ mod tests {
     #[ignore]
     async fn test_route_image_png() {
         let router = test_router();
-        let result = router.route("image/png", b"\x89PNG\r\n\x1a\n").await.unwrap();
+        let result = router
+            .route("image/png", b"\x89PNG\r\n\x1a\n")
+            .await
+            .unwrap();
         assert_eq!(result.len(), 768);
     }
 
@@ -289,7 +288,10 @@ mod tests {
         let text = router.route("text/plain", b"test").await.unwrap();
         assert_eq!(text.len(), 768);
 
-        let img = router.route("image/png", b"\x89PNG\r\n\x1a\n").await.unwrap();
+        let img = router
+            .route("image/png", b"\x89PNG\r\n\x1a\n")
+            .await
+            .unwrap();
         assert_eq!(img.len(), 768);
 
         let audio = router.route("audio/wav", b"RIFFdata").await.unwrap();

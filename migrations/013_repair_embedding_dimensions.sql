@@ -13,12 +13,12 @@
 -- Safety: This is idempotent — running twice is harmless.
 
 -- Add a repair tracking column
-ALTER TABLE memories 
+ALTER TABLE memories
 ADD COLUMN IF NOT EXISTS embedding_repaired_at TIMESTAMP;
 
 -- Create index for fast lookup of unrepaired memories
-CREATE INDEX IF NOT EXISTS idx_memories_needs_repair 
-ON memories (embedding_repaired_at) 
+CREATE INDEX IF NOT EXISTS idx_memories_needs_repair
+ON memories (embedding_repaired_at)
 WHERE embedding_repaired_at IS NULL;
 
 -- Schema version

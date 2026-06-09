@@ -89,7 +89,7 @@ for gi, group in enumerate(groups):
     member_ids = [m[0] for m in group]
     member_vecs = [m[1] for m in group]
     centroid = np.mean(member_vecs, axis=0)
-    
+
     # Get top-20 neighbors for each L0 vector
     l0_neighbor_sets = []
     for mid, mvec, _ in group:
@@ -97,32 +97,32 @@ for gi, group in enumerate(groups):
         neighbor_ids = set(r["id"] for r in results if r["id"] not in member_ids)
         l0_neighbor_sets.append(neighbor_ids)
         time.sleep(0.1)
-    
+
     # Union of all L0 neighbor sets (what the group collectively "sees")
     l0_union = set.union(*l0_neighbor_sets) if l0_neighbor_sets else set()
     # Intersection (neighbors ALL L0 nodes agree on)
     l0_intersection = set.intersection(*l0_neighbor_sets) if l0_neighbor_sets else set()
-    
+
     # Get top-20 neighbors for the centroid
     centroid_results = retrieve_with_vector(centroid, k=20)
     centroid_neighbors = set(r["id"] for r in centroid_results if r["id"] not in member_ids)
-    
+
     # Metrics
     centroid_vs_union_jaccard = jaccard(centroid_neighbors, l0_union)
     centroid_vs_intersection_jaccard = jaccard(centroid_neighbors, l0_intersection)
     centroid_covered_by_union = len(centroid_neighbors & l0_union) / len(centroid_neighbors) if centroid_neighbors else 0
-    
+
     # Centroid→member similarities
     member_sims = [cosine_sim(centroid, mv) for mv in member_vecs]
     avg_member_sim = np.mean(member_sims)
-    
+
     # Inter-member similarities (how tight is the cluster?)
     inter_sims = []
     for i in range(len(member_vecs)):
         for j in range(i+1, len(member_vecs)):
             inter_sims.append(cosine_sim(member_vecs[i], member_vecs[j]))
     avg_inter_sim = np.mean(inter_sims) if inter_sims else 0
-    
+
     all_results.append({
         "group": gi + 1,
         "size": len(group),
@@ -134,7 +134,7 @@ for gi, group in enumerate(groups):
         "l0_union_size": len(l0_union),
         "centroid_neighbor_count": len(centroid_neighbors),
     })
-    
+
     print(f"Group {gi+1} ({len(group)} nodes): "
           f"avg_member_sim={avg_member_sim:.3f} inter_sim={avg_inter_sim:.3f} "
           f"union_jac={centroid_vs_union_jaccard:.3f} coverage={centroid_covered_by_union:.1%} "

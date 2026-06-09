@@ -132,4 +132,3 @@ curl http://localhost:3000/retrieve/<id>
 - **Edit**: `src/api/routes.rs` (+ `retrieve` Funktion, + `tracing::info!` in store_session/store_external)
 - **Edit**: `src/main.rs` (+ `/retrieve/{id}` Route)
 - Keine neuen Dependencies noetig
-

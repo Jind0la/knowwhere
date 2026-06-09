@@ -26,7 +26,7 @@ Bevor wir anfangen: die aktuelle Struktur analysieren.
 ```
 src/api/routes.rs (5884 LOC)
 ├── [1-43]       Imports + Submodul-Deklarationen
-├── [44-208]     Gemeinsame Typen: ScoredNode, RetrievalScoreDebug, RetrievalProfile, 
+├── [44-208]     Gemeinsame Typen: ScoredNode, RetrievalScoreDebug, RetrievalProfile,
 │                HealthResponse, EmbedRequest/Response, RetrievalRequest, etc.
 ├── [209-443]    Hilfsfunktionen: clean_for_embedding, build_retrieval_request_from_query
 ├── [444-474]    Health + Embed (health, embed_text)

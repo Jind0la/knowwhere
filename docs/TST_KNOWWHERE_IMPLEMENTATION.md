@@ -141,7 +141,7 @@ match &query.user_id {
 
 When no `user_id` is passed, only nodes *without* `user_id` metadata are returned. PersonaMem data has ALL nodes with `user_id` → queries return 0 results silently.
 
-**Workaround:** Extract user_id from `data/state.json` and pass in request.  
+**Workaround:** Extract user_id from `data/state.json` and pass in request.
 **Fix needed:** Either document as intended behavior, or change `None` branch to return all nodes.
 
 ---

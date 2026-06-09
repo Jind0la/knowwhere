@@ -123,7 +123,7 @@ pub enum RerankStrategy {
 #[cfg(feature = "reranker")]
 pub mod ort_impl {
     use super::*;
-    use ort::session::{Session, builder::GraphOptimizationLevel};
+    use ort::session::{builder::GraphOptimizationLevel, Session};
     use ort::value::Tensor;
     use std::time::Instant;
     use tokenizers::Tokenizer;
@@ -173,10 +173,16 @@ pub mod ort_impl {
                 .with_intra_threads(4)
                 .map_err(|e| anyhow::anyhow!("failed to set intra threads: {e}"))?
                 .commit_from_file(model_path)
-                .with_context(|| format!("failed to load ONNX model from {}", model_path.display()))?;
+                .with_context(|| {
+                    format!("failed to load ONNX model from {}", model_path.display())
+                })?;
 
-            let tokenizer = Tokenizer::from_file(tokenizer_path)
-                .map_err(|e| anyhow::anyhow!("failed to load tokenizer from {}: {e}", tokenizer_path.display()))?;
+            let tokenizer = Tokenizer::from_file(tokenizer_path).map_err(|e| {
+                anyhow::anyhow!(
+                    "failed to load tokenizer from {}: {e}",
+                    tokenizer_path.display()
+                )
+            })?;
 
             let load_ms = load_start.elapsed().as_secs_f64() * 1000.0;
             tracing::info!(
@@ -199,7 +205,11 @@ pub mod ort_impl {
         ///
         /// Returns relevance scores in [0.0, 1.0] via sigmoid over the model logits.
         /// Also returns timing breakdown.
-        pub fn score_pairs(&mut self, query: &str, documents: &[String]) -> Result<(Vec<f32>, RerankTiming)> {
+        pub fn score_pairs(
+            &mut self,
+            query: &str,
+            documents: &[String],
+        ) -> Result<(Vec<f32>, RerankTiming)> {
             let mut timing = RerankTiming {
                 candidate_count: documents.len(),
                 ..Default::default()
@@ -291,10 +301,8 @@ pub mod ort_impl {
                         token_type_ids_tensor.into(),
                     ])
                 } else {
-                    self.session.run([
-                        input_ids_tensor.into(),
-                        attention_mask_tensor.into(),
-                    ])
+                    self.session
+                        .run([input_ids_tensor.into(), attention_mask_tensor.into()])
                 }
                 .context("ONNX inference failed")?;
                 total_inference_ms += inference_start.elapsed().as_secs_f64() * 1000.0;
@@ -303,7 +311,8 @@ pub mod ort_impl {
                     .try_extract_tensor::<f32>()
                     .context("failed to extract logits tensor")?;
 
-                let expected_len = batch_size * shape.iter().product::<i64>() as usize / batch_size.max(1);
+                let expected_len =
+                    batch_size * shape.iter().product::<i64>() as usize / batch_size.max(1);
                 let logits_slice = &logits[..expected_len.min(logits.len())];
 
                 for &logit in logits_slice.iter().take(batch_size) {
@@ -381,7 +390,9 @@ pub mod ort_impl {
                             + (1.0 - alpha) * ((a.bi_encoder_score - min_bi) / bi_range);
                         let score_b = alpha * b.cross_encoder_score
                             + (1.0 - alpha) * ((b.bi_encoder_score - min_bi) / bi_range);
-                        score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+                        score_b
+                            .partial_cmp(&score_a)
+                            .unwrap_or(std::cmp::Ordering::Equal)
                     });
                 }
             }
@@ -530,7 +541,13 @@ pub fn load_reranker() -> Option<std::sync::Arc<std::sync::Mutex<CrossEncoderRer
         "loading cross-encoder reranker from disk"
     );
 
-    match CrossEncoderReranker::new(&model_path, &tokenizer_path, model_format, max_length, batch_size) {
+    match CrossEncoderReranker::new(
+        &model_path,
+        &tokenizer_path,
+        model_format,
+        max_length,
+        batch_size,
+    ) {
         Ok(reranker) => {
             tracing::info!(
                 format = %model_format.name(),
@@ -617,7 +634,8 @@ mod tests {
     #[cfg(not(feature = "reranker"))]
     #[test]
     fn test_stub_returns_error_when_feature_disabled() {
-        let result = CrossEncoderReranker::new("any.onnx", "any.json", RerankerModel::Bge, None, None);
+        let result =
+            CrossEncoderReranker::new("any.onnx", "any.json", RerankerModel::Bge, None, None);
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("reranker feature is not enabled"));
@@ -632,7 +650,8 @@ mod tests {
             content: "doc".into(),
             bi_encoder_score: 0.9,
         }];
-        let result = CrossEncoderReranker::rerank(&stub, "query", candidates, 5, RerankStrategy::default());
+        let result =
+            CrossEncoderReranker::rerank(&stub, "query", candidates, 5, RerankStrategy::default());
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not enabled"));
     }
@@ -661,7 +680,10 @@ mod tests {
     fn test_load_reranker_returns_none_when_model_missing() {
         // With garbage env vars pointing to non-existent files
         std::env::set_var("KNOWWHERE_RERANKER_MODEL_PATH", "/nonexistent/model.onnx");
-        std::env::set_var("KNOWWHERE_RERANKER_TOKENIZER_PATH", "/nonexistent/tokenizer.json");
+        std::env::set_var(
+            "KNOWWHERE_RERANKER_TOKENIZER_PATH",
+            "/nonexistent/tokenizer.json",
+        );
         let result = load_reranker();
         assert!(result.is_none());
     }
@@ -671,10 +693,22 @@ mod tests {
         assert_eq!(RerankerModel::from_str("bge"), Some(RerankerModel::Bge));
         assert_eq!(RerankerModel::from_str("bge-m3"), Some(RerankerModel::Bge));
         assert_eq!(RerankerModel::from_str("BGE"), Some(RerankerModel::Bge));
-        assert_eq!(RerankerModel::from_str("gte"), Some(RerankerModel::GteModernbert));
-        assert_eq!(RerankerModel::from_str("gte-modernbert"), Some(RerankerModel::GteModernbert));
-        assert_eq!(RerankerModel::from_str("minilm"), Some(RerankerModel::MiniLM));
-        assert_eq!(RerankerModel::from_str("ms-marco-minilm-l6-v2"), Some(RerankerModel::MiniLM));
+        assert_eq!(
+            RerankerModel::from_str("gte"),
+            Some(RerankerModel::GteModernbert)
+        );
+        assert_eq!(
+            RerankerModel::from_str("gte-modernbert"),
+            Some(RerankerModel::GteModernbert)
+        );
+        assert_eq!(
+            RerankerModel::from_str("minilm"),
+            Some(RerankerModel::MiniLM)
+        );
+        assert_eq!(
+            RerankerModel::from_str("ms-marco-minilm-l6-v2"),
+            Some(RerankerModel::MiniLM)
+        );
         assert_eq!(RerankerModel::from_str("nonexistent"), None);
     }
 

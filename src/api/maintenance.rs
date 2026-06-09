@@ -1,4 +1,3 @@
-
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::Json;
@@ -6,9 +5,9 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
+use super::store::StoreNodeResponse;
 use crate::api::auth::AuthContext;
 use crate::api::types::{clean_for_embedding, AppState};
-use super::store::StoreNodeResponse;
 use crate::embedding::embed_document;
 use crate::memory::dream::DreamStatus;
 use crate::memory::FractalNode;
@@ -126,11 +125,7 @@ pub async fn deduplicate_nodes(
     let mut by_eid: std::collections::HashMap<String, Vec<(Uuid, chrono::DateTime<chrono::Utc>)>> =
         std::collections::HashMap::new();
     for node in &all {
-        if let Some(eid) = node
-            .metadata
-            .get("external_id")
-            .and_then(|v| v.as_str())
-        {
+        if let Some(eid) = node.metadata.get("external_id").and_then(|v| v.as_str()) {
             by_eid
                 .entry(eid.to_string())
                 .or_default()

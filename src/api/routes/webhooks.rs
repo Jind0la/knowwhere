@@ -30,7 +30,9 @@ pub struct HomeAssistantWebhookPayload {
 impl HomeAssistantWebhookPayload {
     fn pointer(&self) -> String {
         match (&self.entity_id, &self.event_id) {
-            (Some(entity), Some(id)) => format!("homeassistant://entities/{}/events/{}", entity, id),
+            (Some(entity), Some(id)) => {
+                format!("homeassistant://entities/{}/events/{}", entity, id)
+            }
             (Some(entity), None) => format!("homeassistant://entities/{}/events/unknown", entity),
             (None, Some(id)) => format!("homeassistant://events/{}", id),
             (None, None) => "homeassistant://events/unknown".to_string(),
@@ -50,9 +52,10 @@ impl HomeAssistantWebhookPayload {
 
     fn to_external_event(self) -> ExternalEvent {
         let pointer = self.pointer();
-        let mut metadata = std::collections::HashMap::from([
-            ("source".to_string(), serde_json::json!("homeassistant")),
-        ]);
+        let mut metadata = std::collections::HashMap::from([(
+            "source".to_string(),
+            serde_json::json!("homeassistant"),
+        )]);
         if let Some(ref entity) = self.entity_id {
             metadata.insert("entity_id".to_string(), serde_json::json!(entity));
         }
@@ -112,7 +115,10 @@ pub async fn webhook_homeassistant(
         return Err((StatusCode::CONFLICT, "event already processed".into()));
     }
 
-    let event_id = payload.event_id.clone().unwrap_or_else(|| dedup_key.clone());
+    let event_id = payload
+        .event_id
+        .clone()
+        .unwrap_or_else(|| dedup_key.clone());
     let event = payload.to_external_event();
     match store_external_event(state.store.as_ref(), &state.embedding, event).await {
         Ok(id) => {
@@ -363,8 +369,14 @@ mod tests {
         };
         let event = payload.to_external_event();
         assert!(event.pointer.contains("switch.fan"));
-        assert_eq!(event.metadata.get("source").unwrap(), &json!("homeassistant"));
-        assert_eq!(event.metadata.get("entity_id").unwrap(), &json!("switch.fan"));
+        assert_eq!(
+            event.metadata.get("source").unwrap(),
+            &json!("homeassistant")
+        );
+        assert_eq!(
+            event.metadata.get("entity_id").unwrap(),
+            &json!("switch.fan")
+        );
         assert_eq!(event.metadata.get("service").unwrap(), &json!("toggle"));
         assert_eq!(event.metadata.get("state").unwrap(), &json!(true));
         assert!(event.multimodal.is_none());
@@ -400,10 +412,6 @@ mod tests {
 
     #[test]
     fn secret_mismatch_rejects() {
-        assert!(!check_webhook_secret(
-            Some("correct"),
-            Some("wrong"),
-            None
-        ));
+        assert!(!check_webhook_secret(Some("correct"), Some("wrong"), None));
     }
 }

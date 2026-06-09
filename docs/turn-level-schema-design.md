@@ -309,13 +309,13 @@ Existing `memories` entries with `session_id` metadata are wrapped:
 retrieve_compat(query_vector, top_k):
     # New turn-level results
     turns = retrieve_turns(...)
-    
-    # Legacy session-chunk results  
+
+    # Legacy session-chunk results
     legacy = store.hybrid_retrieve(HybridQuery {
         query_vector, top_k,
         session_id: None  # don't filter
     })
-    
+
     # Merge + RRF-fuse
     return rrf_fuse(turns, legacy)
 ```
@@ -350,10 +350,10 @@ For each row in `memories` where `metadata->>'session_id'` is not null:
 for memory in db.query("SELECT * FROM memories WHERE metadata->>'session_id' IS NOT NULL"):
     sid = memory["metadata"]["session_id"]
     turn_idx = memory["metadata"].get("turn_index", 0)
-    
+
     # Ensure session exists
     session = upsert_session(sid)
-    
+
     # Create turn record
     turn = insert_turn(
         session_id=session.id,
@@ -362,7 +362,7 @@ for memory in db.query("SELECT * FROM memories WHERE metadata->>'session_id' IS 
         content=memory["content"],
         embedding=memory["embedding"]
     )
-    
+
     # Link memory → turn
     db.execute("UPDATE memories SET turn_id = $1 WHERE id = $2", turn.id, memory["id"])
 ```

@@ -41,12 +41,12 @@ python longmemeval_eval.py \
 ## Evaluation Modes
 
 ### `percase` — Isolated (backward-compatible)
-Each case is evaluated independently: store its sessions, retrieve, score, delete. 
+Each case is evaluated independently: store its sessions, retrieve, score, delete.
 Same semantics as the existing Rust `longmemeval_retrieval_eval` binary.
 
 ### `multi` — Genuine cross-session (recommended)
 All sessions from all non-abstention cases are indexed ONCE into a shared haystack.
-Then all questions are queried against the full corpus. This is how LongMemEval 
+Then all questions are queried against the full corpus. This is how LongMemEval
 was designed — the retrieval system must find evidence among ALL sessions, not
 just one case's sessions.
 
@@ -116,9 +116,9 @@ The script auto-detects format. Turn-level metrics are only available with `has_
 
 ## Limitations
 
-- **Turn-level granularity**: KnowWhere stores entire sessions as single nodes. Turn-level 
-  evaluation maps session hits to all constituent turns, which is an approximation. 
+- **Turn-level granularity**: KnowWhere stores entire sessions as single nodes. Turn-level
+  evaluation maps session hits to all constituent turns, which is an approximation.
   True turn-level evaluation requires storing individual turns (the paper's "round-level"
   granularity).
-- **Embedding cost**: Each session requires an Ollama embedding call. 500 cases × 50 sessions 
+- **Embedding cost**: Each session requires an Ollama embedding call. 500 cases × 50 sessions
   = 25,000 embeddings in multi-session mode. ~8-10 hours for a full run.

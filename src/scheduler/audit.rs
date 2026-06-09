@@ -237,10 +237,7 @@ impl AuditScheduler {
             if let Some(status) = new_status {
                 let _ = self
                     .store
-                    .update(
-                        &node.id,
-                        UpdateOperation::SetStatus(status),
-                    )
+                    .update(&node.id, UpdateOperation::SetStatus(status))
                     .await;
                 updated += 1;
             }
@@ -316,13 +313,15 @@ impl AuditScheduler {
 
     #[cfg(feature = "postgres-storage")]
     async fn find_winner(&self, pool: &PgPool, memory_ids: &[Uuid]) -> Result<Option<Uuid>> {
-        let row: Option<(Uuid,)> = sqlx::query_as(r#"
+        let row: Option<(Uuid,)> = sqlx::query_as(
+            r#"
             SELECT id
             FROM memories
             WHERE id = ANY($1) AND status = 'active'
             ORDER BY confidence DESC
             LIMIT 1
-            "#)
+            "#,
+        )
         .bind(memory_ids)
         .fetch_optional(pool)
         .await?;

@@ -42,10 +42,7 @@ fn print_result(summary: &longmemeval_qa_eval::QaEvalSummary) {
         "longmemeval_qa_eval local_exact_match={:.4}",
         summary.local_exact_match
     );
-    println!(
-        "longmemeval_qa_eval hypotheses={}",
-        summary.hypotheses_path
-    );
+    println!("longmemeval_qa_eval hypotheses={}", summary.hypotheses_path);
     println!(
         "longmemeval_qa_eval official_eval_executed={}",
         summary.official_eval_executed

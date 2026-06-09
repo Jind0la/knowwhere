@@ -224,7 +224,13 @@ async fn auth_accepts_correct_token() {
     assert_eq!(resp.status(), StatusCode::OK);
     let body = body_string(resp.into_body()).await;
     // Provider field depends on which embedding backend is active
-    assert!(body.contains("\"provider\":") && (body.contains("openai") || body.contains("ollama") || body.contains("local-ollama") || body.contains("fixed-test")));
+    assert!(
+        body.contains("\"provider\":")
+            && (body.contains("openai")
+                || body.contains("ollama")
+                || body.contains("local-ollama")
+                || body.contains("fixed-test"))
+    );
 }
 
 #[tokio::test]
@@ -546,7 +552,11 @@ async fn full_fidelity_profile_surfaces_internal_assistant_artifacts() {
     assert_eq!(payload[0]["trust_tier"], "primary");
     // Under FullFidelity, multiplier == ebbinghaus only (~1.0 for fresh node)
     let mult = payload[0]["score_debug"]["multiplier"].as_f64().unwrap() as f32;
-    assert!((mult - 1.0).abs() < 0.1, "full-fidelity multiplier should be ~1.0 (ebbinghaus only), got {}", mult);
+    assert!(
+        (mult - 1.0).abs() < 0.1,
+        "full-fidelity multiplier should be ~1.0 (ebbinghaus only), got {}",
+        mult
+    );
 }
 
 #[tokio::test]

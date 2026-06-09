@@ -1,10 +1,10 @@
 # KnowWhere v0.6 — Benchmark-Report
 
-**Datum:** 2026-05-29  
-**Branch:** `rm-summarizer-matryoshka-zoom` (gemerged nach `main`)  
-**Server:** PostgreSQL, localhost:3738  
-**Embedding:** nomic-embed-text-v2-moe (Matryoshka 768d → 256d/64d Truncation)  
-**Architektur-Status:** Summarizer ENTFERNT (~4K LOC), Consolidation DEAKTIVIERT, Fractal Zoom auf Matryoshka umgestellt  
+**Datum:** 2026-05-29
+**Branch:** `rm-summarizer-matryoshka-zoom` (gemerged nach `main`)
+**Server:** PostgreSQL, localhost:3738
+**Embedding:** nomic-embed-text-v2-moe (Matryoshka 768d → 256d/64d Truncation)
+**Architektur-Status:** Summarizer ENTFERNT (~4K LOC), Consolidation DEAKTIVIERT, Fractal Zoom auf Matryoshka umgestellt
 
 ---
 
@@ -71,13 +71,13 @@
 
 #### Top-3 Hypothesen für den Gap
 
-1. **Matryoshka-Truncation kostet Precision (est. 5-10pp):**  
+1. **Matryoshka-Truncation kostet Precision (est. 5-10pp):**
    Der Fractal Zoom nutzt 64d für Breitensuche, 256d für Tiefensuche. Hindsight nutzt volle 768d-Embeddings. Die Dimensionsreduktion verliert semantische Nuance — besonders kritisch bei LongMemEval, wo Question und Answer-Session unterschiedliche Surface-Topics haben.
 
-2. **Fehlender Consolidation/Summarizer (est. 8-12pp):**  
+2. **Fehlender Consolidation/Summarizer (est. 8-12pp):**
    Hindsight komprimiert Sessions zu L1/L2-Summaries. Das erlaubt kontextreichere Retrieval-Ergebnisse. Ohne Summarizer muss KnowWhere die RAW-Sessions matchen — bei 53 Sessions pro Case ein Nadel-im-Heuhaufen-Problem.
 
-3. **Kein Reranker (est. 3-5pp):**  
+3. **Kein Reranker (est. 3-5pp):**
    Der bge-reranker-v2-m3 ONNX ist vorhanden aber nicht in der Pipeline. Ein Cross-Encoder reranked die Top-K Kandidaten und verbessert Precision signifikant.
 
 #### Was bereits gut läuft
@@ -119,7 +119,7 @@ PersonaMem testet **Reasoning-intensivere Tasks** die Compact Summaries BRAUCHEN
 | `recall_user_shared_facts` | Früher erwähnte Fakten abrufen | ✅ Ähnlich LongMemEval — reines Retrieval |
 | `provide_preference_aligned_recommendations` | Empfehlungen basierend auf Präferenzen | ❌ Braucht aggregiertes Präferenz-Profil |
 
-**LongMemEval testet primär Retrieval-Qualität** ("finde die richtige Session").  
+**LongMemEval testet primär Retrieval-Qualität** ("finde die richtige Session").
 **PersonaMem testet Retrieval + Reasoning** ("verstehe die Person und schlage etwas vor").
 
 Der 38.6pp-Gap ist die Summe aus:
@@ -140,16 +140,16 @@ Kimi K2.6 ist der Bottleneck bei Answer-Generierung (65-115s pro Query). Für sc
 
 ## 3. Nächste Optimierungen (priorisiert nach Impact)
 
-1. **Reranker aktivieren** (3-5pp, geringer Aufwand):  
+1. **Reranker aktivieren** (3-5pp, geringer Aufwand):
    `--features reranker` im Build, ONNX-Modell liegt bereit.
 
-2. **Matryoshka-Dimensionen tunen** (5-10pp, mittlerer Aufwand):  
+2. **Matryoshka-Dimensionen tunen** (5-10pp, mittlerer Aufwand):
    256d→768d für Primary Retrieval testen, 64d→128d für Zoom. Tradeoff: Latenz vs. Recall.
 
-3. **Query-Enrichment** (3-8pp, mittlerer Aufwand):  
+3. **Query-Enrichment** (3-8pp, mittlerer Aufwand):
    Named Entity Extraction + temporale Marker vor Retrieval-Query.
 
-4. **Consolidation wieder einbauen** (8-12pp, hoher Aufwand):  
+4. **Consolidation wieder einbauen** (8-12pp, hoher Aufwand):
    Neues, schlankeres Consolidation-System ohne den alten Summarizer-Bloat.
 
 ---

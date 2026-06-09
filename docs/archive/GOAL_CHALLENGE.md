@@ -43,9 +43,9 @@ metadata.turn_index with the correct sequential value. Run with:
 uv run python -m pytest test_turn_index.py -v. Fix until green.
 ```
 
-**Selbst-verifizierbar:** ✓ `pytest` exit code 0  
-**Bounded:** ✓ Nur knowwhere.py + ein Test-File  
-**Prozess-orientiert:** ✓ Der Agent kann `pytest` selbst ausführen  
+**Selbst-verifizierbar:** ✓ `pytest` exit code 0
+**Bounded:** ✓ Nur knowwhere.py + ein Test-File
+**Prozess-orientiert:** ✓ Der Agent kann `pytest` selbst ausführen
 **Judge-kompatibel:** ✓ Nach jedem Turn: "Ist der Test grün?" → klar messbar
 
 ### Goal 2: Timeline-Context-Template

@@ -9,20 +9,18 @@ use serde_json::Value;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::api::auth::AuthContext;
 use super::store::set_metadata_text;
+use crate::api::auth::AuthContext;
 use crate::api::subconscious_qa::{
-    is_multi_session_type, is_temporal_question, qa_answer, qa_context_limit,
-    source_context_block, source_timestamp,
+    is_multi_session_type, is_temporal_question, qa_answer, qa_context_limit, source_context_block,
+    source_timestamp,
 };
 use crate::api::types::{
     clean_for_embedding, score_debug_response, AppState, RetrievalScoreDebug, ScoredNode,
 };
 use crate::embedding::{embed_document, embed_query};
 use crate::memory::types::{ContextTier, MemorySource, MemoryStatus, MemoryType, Sensitivity};
-use crate::memory::{
-    FractalNode, GovernanceValidator,
-};
+use crate::memory::{FractalNode, GovernanceValidator};
 use crate::storage::{HybridQuery, RetrievalProfile};
 
 fn auth_context_or_full_access(auth: Option<Extension<AuthContext>>) -> AuthContext {
@@ -85,7 +83,12 @@ fn retrieval_result_allowed(
 }
 
 fn is_internal_meta_artifact(node: &ScoredNode) -> bool {
-    let content = node.content.as_deref().unwrap_or("").trim().to_ascii_lowercase();
+    let content = node
+        .content
+        .as_deref()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
     let derivation = node
         .metadata
         .get(FractalNode::DERIVATION_KEY)
@@ -110,7 +113,10 @@ fn scrub_response_nodes(nodes: Vec<ScoredNode>, allow_meta: bool) -> Vec<ScoredN
         .collect();
     let removed = before.saturating_sub(cleaned.len());
     if removed > 0 {
-        tracing::warn!(removed, "retrieve_fractal strict scrub removed internal artifacts");
+        tracing::warn!(
+            removed,
+            "retrieve_fractal strict scrub removed internal artifacts"
+        );
     }
     cleaned
 }
@@ -223,16 +229,10 @@ fn intent_metadata_multiplier(
     }
 }
 
-fn apply_intent_scoring_storage(
-    scored: &mut [crate::storage::ScoredNode],
-    intent: QueryIntent,
-) {
+fn apply_intent_scoring_storage(scored: &mut [crate::storage::ScoredNode], intent: QueryIntent) {
     for entry in scored {
-        entry.score *= intent_metadata_multiplier(
-            intent,
-            entry.node.memory_type,
-            &entry.node.metadata,
-        );
+        entry.score *=
+            intent_metadata_multiplier(intent, entry.node.memory_type, &entry.node.metadata);
     }
 }
 
@@ -263,12 +263,10 @@ fn evidence_pack_group_key(entry: &crate::storage::ScoredNode) -> String {
     format!("{parent}|{src0}|{session}|{ptr}")
 }
 
-fn evidence_dedupe_storage(mut scored: Vec<crate::storage::ScoredNode>) -> Vec<crate::storage::ScoredNode> {
-    scored.sort_by(|a, b| {
-        b.score
-            .partial_cmp(&a.score)
-            .unwrap_or(Ordering::Equal)
-    });
+fn evidence_dedupe_storage(
+    mut scored: Vec<crate::storage::ScoredNode>,
+) -> Vec<crate::storage::ScoredNode> {
+    scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(Ordering::Equal));
     let mut seen = HashSet::new();
     let mut out = Vec::new();
     for s in scored {
@@ -296,10 +294,9 @@ fn mmr_rel_score(entry: &crate::storage::ScoredNode, query_vector: &[f32]) -> f3
     // the full scoring pipeline: RRF fusion, profile multipliers, temporal
     // weighting, and session boosts.  Using entry.score preserves all of that.
     if !query_vector.is_empty() && !entry.node.vector.is_empty() {
-        let raw_cos = crate::memory::fractal_node::cosine_similarity(
-            &entry.node.vector, query_vector,
-        )
-        .clamp(0.0, 1.0);
+        let raw_cos =
+            crate::memory::fractal_node::cosine_similarity(&entry.node.vector, query_vector)
+                .clamp(0.0, 1.0);
         // Blend 50% composite score + 50% raw cosine similarity
         // so MMR diversity still has a signal to work with while
         // preserving temporal/session adjustments.
@@ -340,11 +337,7 @@ fn mmr_finalize_storage(
     if top_k == 0 {
         return vec![];
     }
-    candidates.sort_by(|a, b| {
-        b.score
-            .partial_cmp(&a.score)
-            .unwrap_or(Ordering::Equal)
-    });
+    candidates.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(Ordering::Equal));
     let pool_n = top_k.saturating_mul(10).max(top_k).min(candidates.len());
     let pool: Vec<_> = candidates.into_iter().take(pool_n).collect();
     if pool.len() <= top_k {
@@ -352,10 +345,8 @@ fn mmr_finalize_storage(
     }
 
     // Snapshot: what would pure-score ranking give?
-    let score_top_k_ids: std::collections::HashSet<String> = pool.iter()
-        .take(top_k)
-        .map(|c| c.id.to_string())
-        .collect();
+    let score_top_k_ids: std::collections::HashSet<String> =
+        pool.iter().take(top_k).map(|c| c.id.to_string()).collect();
 
     let max_rel = pool
         .iter()
@@ -378,9 +369,7 @@ fn mmr_finalize_storage(
                 let max_sim_j = mmr_max_sim_to_selected(&pool[j], &selected, query_vector);
                 let mmr_i = MMR_LAMBDA * rel[i] - (1.0 - MMR_LAMBDA) * max_sim_i;
                 let mmr_j = MMR_LAMBDA * rel[j] - (1.0 - MMR_LAMBDA) * max_sim_j;
-                mmr_i
-                    .partial_cmp(&mmr_j)
-                    .unwrap_or(Ordering::Equal)
+                mmr_i.partial_cmp(&mmr_j).unwrap_or(Ordering::Equal)
             })
             .expect("cand_idx non-empty");
 
@@ -389,18 +378,19 @@ fn mmr_finalize_storage(
     }
 
     // Diagnostic: MMR vs pure-score overlap
-    let mmr_top_k_ids: std::collections::HashSet<String> = selected.iter()
-        .map(|c| c.id.to_string())
-        .collect();
+    let mmr_top_k_ids: std::collections::HashSet<String> =
+        selected.iter().map(|c| c.id.to_string()).collect();
     let overlap: Vec<_> = score_top_k_ids.intersection(&mmr_top_k_ids).collect();
     let new_in_topk: Vec<_> = mmr_top_k_ids.difference(&score_top_k_ids).collect();
-    
+
     // Avg age of top-k
     let now = chrono::Utc::now();
-    let avg_age_days = selected.iter()
+    let avg_age_days = selected
+        .iter()
         .map(|c| (now - c.node.created_at).num_days() as f32)
-        .sum::<f32>() / selected.len() as f32;
-    
+        .sum::<f32>()
+        / selected.len() as f32;
+
     tracing::info!(
         pool_size = pool_n,
         top_k,
@@ -446,7 +436,8 @@ fn mmr_finalize_governed(
     let pool_n = top_k.saturating_mul(10).max(top_k).min(pool.len());
     pool.truncate(pool_n);
 
-    let pool_refs: Vec<crate::storage::ScoredNode> = pool.iter().map(|(s, _, _)| s.clone()).collect();
+    let pool_refs: Vec<crate::storage::ScoredNode> =
+        pool.iter().map(|(s, _, _)| s.clone()).collect();
 
     let max_rel = pool_refs
         .iter()
@@ -471,9 +462,7 @@ fn mmr_finalize_governed(
                 let max_sim_j = mmr_max_sim_to_selected(&pool[j].0, &sel_nodes, query_vector);
                 let mmr_i = MMR_LAMBDA * rel[i] - (1.0 - MMR_LAMBDA) * max_sim_i;
                 let mmr_j = MMR_LAMBDA * rel[j] - (1.0 - MMR_LAMBDA) * max_sim_j;
-                mmr_i
-                    .partial_cmp(&mmr_j)
-                    .unwrap_or(Ordering::Equal)
+                mmr_i.partial_cmp(&mmr_j).unwrap_or(Ordering::Equal)
             })
             .expect("cand_idx non-empty");
 
@@ -513,11 +502,7 @@ fn finalize_retrieval_storage(
     if !allow_meta {
         results.retain(|entry| entry.node.memory_type != MemoryType::Meta);
     }
-    results.sort_by(|a, b| {
-        b.score
-            .partial_cmp(&a.score)
-            .unwrap_or(Ordering::Equal)
-    });
+    results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(Ordering::Equal));
     let results = evidence_dedupe_storage(results);
     mmr_finalize_storage(results, query_vector, top_k)
 }
@@ -965,10 +950,12 @@ pub async fn retrieve_fractal(
                 }
                 let cleaned = clean_for_embedding(text);
                 tracing::info!(query_text = %text, cleaned_len = cleaned.len(), "embedding query text");
-                embed_query(&*state.embedding, &cleaned).await.map_err(|e| {
-                    tracing::error!("embedding failed: {}", e);
-                    (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
-                })?
+                embed_query(&*state.embedding, &cleaned)
+                    .await
+                    .map_err(|e| {
+                        tracing::error!("embedding failed: {}", e);
+                        (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+                    })?
             } else {
                 return Err((
                     StatusCode::BAD_REQUEST,
@@ -1021,10 +1008,12 @@ pub async fn retrieve_fractal(
                 query_vector.clone()
             } else {
                 let cleaned = clean_for_embedding(expanded_text);
-                embed_query(&*state.embedding, &cleaned).await.map_err(|e| {
-                    tracing::error!("embed query expansion {i} failed: {e}");
-                    (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
-                })?
+                embed_query(&*state.embedding, &cleaned)
+                    .await
+                    .map_err(|e| {
+                        tracing::error!("embed query expansion {i} failed: {e}");
+                        (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+                    })?
             };
 
             let q = HybridQuery {
@@ -1058,9 +1047,11 @@ pub async fn retrieve_fractal(
         let mut fused: Vec<(Uuid, f32)> = scores.into_iter().collect();
         fused.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
-        let all_nodes = state.store.list_all().await.map_err(|e| {
-            (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
-        })?;
+        let all_nodes = state
+            .store
+            .list_all()
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
         let by_id: std::collections::HashMap<Uuid, FractalNode> =
             all_nodes.into_iter().map(|n| (n.id, n)).collect();
         let mut seen = std::collections::HashSet::new();
@@ -1068,7 +1059,10 @@ pub async fn retrieve_fractal(
         for (id, score) in fused {
             if seen.insert(id) {
                 if let Some(node) = by_id.get(&id).cloned() {
-                    merged.push(req.retrieval_profile.score_node(score, node, source_type_weights));
+                    merged.push(
+                        req.retrieval_profile
+                            .score_node(score, node, source_type_weights),
+                    );
                 }
             }
         }
@@ -1138,7 +1132,15 @@ pub async fn retrieve_fractal(
                     None
                 };
 
-                match pg.retrieve_turns_internal(&query_vector_for_turns, req.top_k, None, session_uuid_filter).await {
+                match pg
+                    .retrieve_turns_internal(
+                        &query_vector_for_turns,
+                        req.top_k,
+                        None,
+                        session_uuid_filter,
+                    )
+                    .await
+                {
                     Ok(turn_rows) => {
                         if !turn_rows.is_empty() {
                             tracing::info!(
@@ -1153,20 +1155,30 @@ pub async fn retrieve_fractal(
                                     .as_ref()
                                     .and_then(|v| v.as_object())
                                     .map(|o| {
-                                        o.iter()
-                                            .map(|(k, v)| (k.clone(), v.clone()))
-                                            .collect()
+                                        o.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
                                     })
                                     .unwrap_or_default();
 
                                 // Turn identity markers — required for temporal ranking
                                 // and turn-level deduplication.
-                                metadata.insert("session_id".to_string(), Value::String(row.session_id.to_string()));
-                                metadata.insert("speaker_role".to_string(), Value::String(row.speaker_role.clone()));
-                                metadata.insert("turn_index".to_string(), Value::Number(serde_json::Number::from(row.turn_index)));
+                                metadata.insert(
+                                    "session_id".to_string(),
+                                    Value::String(row.session_id.to_string()),
+                                );
+                                metadata.insert(
+                                    "speaker_role".to_string(),
+                                    Value::String(row.speaker_role.clone()),
+                                );
+                                metadata.insert(
+                                    "turn_index".to_string(),
+                                    Value::Number(serde_json::Number::from(row.turn_index)),
+                                );
                                 metadata.insert("is_turn".to_string(), Value::Bool(true));
                                 if let Some(ref ext_id) = row.external_session_id {
-                                    metadata.insert("external_session_id".to_string(), Value::String(ext_id.clone()));
+                                    metadata.insert(
+                                        "external_session_id".to_string(),
+                                        Value::String(ext_id.clone()),
+                                    );
                                 }
 
                                 // Carry the turn embedding vector for downstream ranking
@@ -1236,7 +1248,10 @@ pub async fn retrieve_fractal(
             // Lock, rerank synchronously, then DROP the guard before any .await
             let reranked_result = {
                 let mut reranker = reranker_arc.lock().map_err(|e| {
-                    (StatusCode::INTERNAL_SERVER_ERROR, format!("Reranker lock poisoned: {}", e))
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("Reranker lock poisoned: {}", e),
+                    )
                 })?;
                 reranker.rerank(
                     query_text,
@@ -1298,10 +1313,14 @@ pub async fn retrieve_fractal(
                         query_type_routing: false,
                         source_type_weights,
                     };
-                    let r = state.store.hybrid_retrieve(&fallback_query).await.map_err(|e| {
-                        tracing::error!("fallback hybrid_retrieve after rerank failure: {}", e);
-                        (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
-                    })?;
+                    let r = state
+                        .store
+                        .hybrid_retrieve(&fallback_query)
+                        .await
+                        .map_err(|e| {
+                            tracing::error!("fallback hybrid_retrieve after rerank failure: {}", e);
+                            (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+                        })?;
                     (r, None)
                 }
             }
@@ -1343,8 +1362,14 @@ pub async fn retrieve_fractal(
         }
         let pre_len = final_results.len();
         if final_results.len() > req.top_k {
-            final_results = apply_temporal_diversity(final_results, req.top_k, None, state.embedding.as_ref()).await;
-            tracing::info!(pre = pre_len, post = final_results.len(), "diversity applied");
+            final_results =
+                apply_temporal_diversity(final_results, req.top_k, None, state.embedding.as_ref())
+                    .await;
+            tracing::info!(
+                pre = pre_len,
+                post = final_results.len(),
+                "diversity applied"
+            );
         }
     }
 
@@ -1374,12 +1399,16 @@ pub async fn retrieve_fractal(
         if !results.is_empty() {
             let now = chrono::Utc::now();
             let top_n = req.top_k.min(results.len());
-            let avg_score = results.iter().take(top_n)
-                .map(|s| s.score).sum::<f32>() / top_n as f32;
-            let avg_age = results.iter().take(top_n)
+            let avg_score = results.iter().take(top_n).map(|s| s.score).sum::<f32>() / top_n as f32;
+            let avg_age = results
+                .iter()
+                .take(top_n)
                 .map(|s| (now - s.node.created_at).num_days() as f32)
-                .sum::<f32>() / top_n as f32;
-            let newest_age = results.iter().take(top_n)
+                .sum::<f32>()
+                / top_n as f32;
+            let newest_age = results
+                .iter()
+                .take(top_n)
                 .map(|s| (now - s.node.created_at).num_days() as f32)
                 .fold(f32::INFINITY, f32::min);
             tracing::info!(
@@ -1395,9 +1424,15 @@ pub async fn retrieve_fractal(
             // FullFidelity: no deduplication, no MMR diversity — pure core scores.
             // Rationale: FullFidelity is the raw retrieval signal. Dedupe and MMR
             // are policy decisions (Reduce-to-Core Phase 2).
-            results  // pure core — no intent multiplication, no MMR
+            results // pure core — no intent multiplication, no MMR
         } else {
-            finalize_retrieval_storage(results, query_intent, &query_vector_for_expand, req.top_k, allow_meta)
+            finalize_retrieval_storage(
+                results,
+                query_intent,
+                &query_vector_for_expand,
+                req.top_k,
+                allow_meta,
+            )
         };
         let scored: Vec<ScoredNode> = results
             .into_iter()
@@ -1429,11 +1464,7 @@ pub async fn retrieve_fractal(
                 return None;
             }
 
-            Some((
-                s,
-                validation.passed,
-                validation.issues,
-            ))
+            Some((s, validation.passed, validation.issues))
         })
         .collect();
 
@@ -1451,7 +1482,9 @@ pub async fn retrieve_fractal(
     let governed = if req.retrieval_profile == RetrievalProfile::FullFidelity {
         // Pure core — no governance multiplier, no MMR
         governed.sort_by(|(a, _, _), (b, _, _)| {
-            b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal)
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
         governed.truncate(req.top_k);
         governed
@@ -1556,7 +1589,8 @@ pub async fn retrieve_fractal(
                     };
 
                     reflector.reflect_on_chunks(&chunks, query).await
-                }; match res {
+                };
+                match res {
                     Ok(reflection) if !reflection.is_empty() => {
                         // Prepend synthetic reflection node with max score
                         let reflection_node = ScoredNode {
@@ -1634,7 +1668,10 @@ pub async fn retrieve_fractal(
 
     tracing::info!(
         response_len = scored.len(),
-        response_meta = scored.iter().filter(|n| n.memory_type == MemoryType::Meta).count(),
+        response_meta = scored
+            .iter()
+            .filter(|n| n.memory_type == MemoryType::Meta)
+            .count(),
         recency_boost = req.recency_boost.map(|r| format!("{:.2}", r)),
         "retrieve_fractal response stats"
     );
@@ -1718,11 +1755,8 @@ async fn apply_temporal_diversity(
     middle.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
     late.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
 
-    let groups: Vec<(&[(f32, usize)], &str)> = vec![
-        (&early, "early"),
-        (&middle, "middle"),
-        (&late, "late"),
-    ];
+    let groups: Vec<(&[(f32, usize)], &str)> =
+        vec![(&early, "early"), (&middle, "middle"), (&late, "late")];
 
     // Count non-empty groups for proportional allocation
     let active_groups: Vec<_> = groups.iter().filter(|(g, _)| !g.is_empty()).collect();

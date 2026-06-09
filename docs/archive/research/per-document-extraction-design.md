@@ -58,8 +58,8 @@ Add two new methods:
 
 New prompt for `summarize_single`:
 ```
-System: You are a personal memory extractor. Extract what the user said, 
-what preferences they expressed, what facts they shared, and what changed 
+System: You are a personal memory extractor. Extract what the user said,
+what preferences they expressed, what facts they shared, and what changed
 from previous statements. Focus on personal, actionable information.
 
 User: Analyze this conversation and extract:

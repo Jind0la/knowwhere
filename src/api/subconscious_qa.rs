@@ -24,8 +24,8 @@ fn normalize_token(raw: &str) -> Option<String> {
     }
     let stopwords = [
         "what", "when", "where", "which", "who", "how", "did", "does", "have", "with", "from",
-        "that", "this", "your", "about", "after", "before", "into", "been", "were", "them",
-        "they", "then", "than", "just", "want", "need", "some", "also", "there", "their", "first",
+        "that", "this", "your", "about", "after", "before", "into", "been", "were", "them", "they",
+        "then", "than", "just", "want", "need", "some", "also", "there", "their", "first",
     ];
     (!stopwords.contains(&token.as_str())).then_some(token)
 }
@@ -146,7 +146,9 @@ fn line_score(line: &str, keywords: &[String], temporal: bool) -> usize {
             "saturday",
             "sunday",
         ];
-        if temporal_markers.iter().any(|m| lower.contains(m)) || line.chars().any(|c| c.is_ascii_digit()) {
+        if temporal_markers.iter().any(|m| lower.contains(m))
+            || line.chars().any(|c| c.is_ascii_digit())
+        {
             score += 2;
         }
     }
@@ -163,7 +165,11 @@ fn relevant_lines(question: &str, content: &str, temporal: bool, max_take: usize
             if trimmed.is_empty() {
                 return None;
             }
-            Some((idx, line_score(trimmed, &keywords, temporal), trimmed.to_string()))
+            Some((
+                idx,
+                line_score(trimmed, &keywords, temporal),
+                trimmed.to_string(),
+            ))
         })
         .collect();
     scored.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
@@ -269,7 +275,9 @@ fn qa_prompt(
     let aggregation = is_aggregation_question(question, question_type);
     let mut prompt = String::new();
     prompt.push_str("Answer the user question using only the provided memory context.\n");
-    prompt.push_str("CRITICAL: Do NOT show your reasoning or thinking process. Output ONLY the final answer.\n");
+    prompt.push_str(
+        "CRITICAL: Do NOT show your reasoning or thinking process. Output ONLY the final answer.\n",
+    );
     prompt.push_str("Rules:\n");
     prompt.push_str("- Return only the final answer, no bullets and no source list.\n");
     if !preference {
@@ -280,19 +288,25 @@ fn qa_prompt(
         prompt.push_str("- The visible question asks for recommendations, but you must answer with the user's implied preferences and constraints.\n");
         prompt.push_str("- Base your answer only on user statements; summarize what to prefer and what to avoid in one or two sentences.\n");
         prompt.push_str("- Do not answer I don't know if the sessions contain any user statements about likes, dislikes, habits, brands, topics, or constraints relevant to the question; synthesize them.\n");
-        prompt.push_str("- Use I don't know only when those sessions truly contain no such user statements.\n");
+        prompt.push_str(
+            "- Use I don't know only when those sessions truly contain no such user statements.\n",
+        );
     }
     if aggregation {
         prompt.push_str("- Combine evidence across all provided sessions.\n");
-        prompt.push_str("- For counts, count only explicit items or events in scope; avoid double-counting.\n");
+        prompt.push_str(
+            "- For counts, count only explicit items or events in scope; avoid double-counting.\n",
+        );
         prompt.push_str("- For money or time totals, sum only amounts that match the question.\n");
     }
     if temporal {
         prompt.push_str("- This is a temporal reasoning task.\n");
         prompt.push_str("- Use session dates and dates mentioned in the text to compare events.\n");
         prompt.push_str("- Prefer deriving the answer from the dated evidence over abstaining.\n");
-        prompt.push_str("- For duration questions, compute the time difference from the evidence.\n");
-        prompt.push_str("- For ordering questions, choose the earlier or later event explicitly.\n");
+        prompt
+            .push_str("- For duration questions, compute the time difference from the evidence.\n");
+        prompt
+            .push_str("- For ordering questions, choose the earlier or later event explicitly.\n");
     }
     prompt.push('\n');
     if let Some(qtype) = question_type {
@@ -325,7 +339,9 @@ pub(crate) async fn qa_answer(
         .to_ascii_lowercase();
 
     match provider.as_str() {
-        "kimi" | "moonshot" => qa_answer_kimi(message, question_type, question_date, contexts).await,
+        "kimi" | "moonshot" => {
+            qa_answer_kimi(message, question_type, question_date, contexts).await
+        }
         "openai" => qa_answer_openai(message, question_type, question_date, contexts).await,
         other => {
             tracing::warn!(
@@ -411,9 +427,7 @@ async fn qa_answer_kimi(
 }
 
 fn extract_answer_content(response: &serde_json::Value) -> String {
-    let choice = response
-        .get("choices")
-        .and_then(|v| v.get(0));
+    let choice = response.get("choices").and_then(|v| v.get(0));
 
     // Try content first, then reasoning_content (Kimi K2.6 puts thinking there)
     let content = choice
@@ -444,21 +458,32 @@ fn extract_answer_content(response: &serde_json::Value) -> String {
             }
         }
         // Take last 200 chars as fallback
-        reasoning[reasoning.len().saturating_sub(200)..].trim().to_string()
+        reasoning[reasoning.len().saturating_sub(200)..]
+            .trim()
+            .to_string()
     } else {
         reasoning.to_string()
     }
 }
 
 #[cfg(test)]
-#[allow(deprecated, reason = "tests intentionally exercise legacy FractalNode::new_session constructor")]
+#[allow(
+    deprecated,
+    reason = "tests intentionally exercise legacy FractalNode::new_session constructor"
+)]
 mod qa_tests {
     use super::*;
 
     #[test]
     fn is_temporal_question_detects_temporal_type() {
-        assert!(is_temporal_question("What happened first?", Some("temporal-reasoning")));
-        assert!(!is_temporal_question("What is your name?", Some("single-session")));
+        assert!(is_temporal_question(
+            "What happened first?",
+            Some("temporal-reasoning")
+        ));
+        assert!(!is_temporal_question(
+            "What is your name?",
+            Some("single-session")
+        ));
     }
 
     #[test]
@@ -478,22 +503,34 @@ mod qa_tests {
 
     #[test]
     fn qa_context_limit_for_preference() {
-        assert_eq!(qa_context_limit(5, "What do I prefer?", Some("single-session-preference")), 8);
+        assert_eq!(
+            qa_context_limit(5, "What do I prefer?", Some("single-session-preference")),
+            8
+        );
     }
 
     #[test]
     fn qa_context_limit_for_aggregation() {
-        assert_eq!(qa_context_limit(5, "How many total?", Some("multi-session")), 16);
+        assert_eq!(
+            qa_context_limit(5, "How many total?", Some("multi-session")),
+            16
+        );
     }
 
     #[test]
     fn qa_context_limit_for_temporal() {
-        assert_eq!(qa_context_limit(5, "What happened first?", Some("temporal-reasoning")), 8);
+        assert_eq!(
+            qa_context_limit(5, "What happened first?", Some("temporal-reasoning")),
+            8
+        );
     }
 
     #[test]
     fn qa_context_limit_default() {
-        assert_eq!(qa_context_limit(5, "What is this?", Some("single-session")), 5);
+        assert_eq!(
+            qa_context_limit(5, "What is this?", Some("single-session")),
+            5
+        );
     }
 
     #[test]
@@ -503,7 +540,7 @@ mod qa_tests {
         assert!(keywords.contains(&"language".to_string()));
         assert!(keywords.contains(&"prefer".to_string()));
         assert!(!keywords.contains(&"what".to_string())); // stopword
-        assert!(!keywords.contains(&"do".to_string()));   // stopword
+        assert!(!keywords.contains(&"do".to_string())); // stopword
     }
 
     #[test]
@@ -521,31 +558,37 @@ mod qa_tests {
 
     #[test]
     fn source_timestamp_reads_benchmark_date() {
-        use std::collections::HashMap;
         use crate::memory::FractalNode;
-        
+        use std::collections::HashMap;
+
         let mut metadata = HashMap::new();
-        metadata.insert("benchmark_session_date".to_string(), serde_json::json!("2024-01-15"));
+        metadata.insert(
+            "benchmark_session_date".to_string(),
+            serde_json::json!("2024-01-15"),
+        );
         let node = FractalNode::new_session("test".to_string(), vec![], metadata);
         assert_eq!(source_timestamp(&node), Some("2024-01-15".to_string()));
     }
 
     #[test]
     fn source_timestamp_fallback_to_source_timestamp() {
-        use std::collections::HashMap;
         use crate::memory::FractalNode;
-        
+        use std::collections::HashMap;
+
         let mut metadata = HashMap::new();
-        metadata.insert("source_timestamp".to_string(), serde_json::json!("2024-02-20"));
+        metadata.insert(
+            "source_timestamp".to_string(),
+            serde_json::json!("2024-02-20"),
+        );
         let node = FractalNode::new_session("test".to_string(), vec![], metadata);
         assert_eq!(source_timestamp(&node), Some("2024-02-20".to_string()));
     }
 
     #[test]
     fn source_session_id_reads_metadata() {
-        use std::collections::HashMap;
         use crate::memory::FractalNode;
-        
+        use std::collections::HashMap;
+
         let mut metadata = HashMap::new();
         metadata.insert("session_id".to_string(), serde_json::json!("sess_123"));
         let node = FractalNode::new_session("test".to_string(), vec![], metadata);
@@ -638,12 +681,18 @@ mod qa_tests {
 
     #[test]
     fn qa_max_output_tokens_preference() {
-        assert_eq!(qa_max_output_tokens("What do I prefer?", Some("single-session-preference")), 320);
+        assert_eq!(
+            qa_max_output_tokens("What do I prefer?", Some("single-session-preference")),
+            320
+        );
     }
 
     #[test]
     fn qa_max_output_tokens_aggregation() {
-        assert_eq!(qa_max_output_tokens("How many?", Some("multi-session")), 120);
+        assert_eq!(
+            qa_max_output_tokens("How many?", Some("multi-session")),
+            120
+        );
     }
 
     #[test]

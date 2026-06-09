@@ -1,10 +1,10 @@
 # H-Mem: Hybrid Memory Architecture — Paper Analysis
 
-**Paper:** [arXiv:2605.15701v1](https://arxiv.org/html/2605.15701v1)  
-**Title:** *H-Mem: A Novel Memory Mechanism for Evolving and Retrieving Agent Memory via a Hybrid Structure*  
-**Authors:** Jiawei Yu, Yixiang Fang (CUHK Shenzhen); Xilin Liu, Yuchi Ma (Huawei Cloud)  
-**Date:** May 15, 2026  
-**YouTube Walkthrough:** https://youtu.be/LWmo_O10mag  
+**Paper:** [arXiv:2605.15701v1](https://arxiv.org/html/2605.15701v1)
+**Title:** *H-Mem: A Novel Memory Mechanism for Evolving and Retrieving Agent Memory via a Hybrid Structure*
+**Authors:** Jiawei Yu, Yixiang Fang (CUHK Shenzhen); Xilin Liu, Yuchi Ma (Huawei Cloud)
+**Date:** May 15, 2026
+**YouTube Walkthrough:** https://youtu.be/LWmo_O10mag
 **Analyzed:** May 20, 2026
 
 ---

@@ -154,18 +154,15 @@ pub async fn upload_voice(
         }
 
         // Read the field body into memory
-        let data = field
-            .bytes()
-            .await
-            .map_err(|e| {
-                (
-                    StatusCode::BAD_REQUEST,
-                    Json(VoiceUploadError {
-                        error: "read_error".into(),
-                        detail: format!("Failed to read upload data: {e}"),
-                    }),
-                )
-            })?;
+        let data = field.bytes().await.map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(VoiceUploadError {
+                    error: "read_error".into(),
+                    detail: format!("Failed to read upload data: {e}"),
+                }),
+            )
+        })?;
 
         // Validate file size
         if data.len() > max_size {
@@ -335,14 +332,13 @@ mod tests {
 
     /// Helper to build a test AppState with in-memory store.
     async fn test_state() -> crate::api::types::AppState {
+        use crate::memory::events::InMemoryEventStore;
         use crate::memory::DreamMode;
         use crate::memory::GovernancePolicy;
-        use crate::memory::events::InMemoryEventStore;
         use crate::storage::MemoryStore;
         use tokio::sync::RwLock;
 
-        let store: Arc<dyn crate::storage::StorageBackend> =
-            Arc::new(MemoryStore::new());
+        let store: Arc<dyn crate::storage::StorageBackend> = Arc::new(MemoryStore::new());
         let dream = DreamMode::new(store.clone());
         let embedding = Arc::new(MockEmbeddingProvider);
 
@@ -369,21 +365,14 @@ mod tests {
         }
     }
 
-    fn build_router(
-        state: crate::api::types::AppState,
-    ) -> axum::Router {
+    fn build_router(state: crate::api::types::AppState) -> axum::Router {
         axum::Router::new()
             .route("/voice/upload", axum::routing::post(upload_voice))
             .with_state(state)
     }
 
     /// Build a multipart request body.
-    fn multipart_body(
-        field_name: &str,
-        filename: &str,
-        mime_type: &str,
-        data: &[u8],
-    ) -> Vec<u8> {
+    fn multipart_body(field_name: &str, filename: &str, mime_type: &str, data: &[u8]) -> Vec<u8> {
         let boundary = "testboundary";
         let mut body = Vec::new();
         body.extend_from_slice(
@@ -425,9 +414,12 @@ mod tests {
         let resp = router.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::CREATED);
 
-        let resp_body: serde_json::Value =
-            serde_json::from_slice(&axum::body::to_bytes(resp.into_body(), 1024 * 1024).await.unwrap())
-                .unwrap();
+        let resp_body: serde_json::Value = serde_json::from_slice(
+            &axum::body::to_bytes(resp.into_body(), 1024 * 1024)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
 
         assert!(resp_body["id"].as_str().is_some(), "no id returned");
         assert_eq!(resp_body["mime_type"], "audio/ogg");
@@ -595,9 +587,12 @@ mod tests {
         let resp = router.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::CREATED);
 
-        let resp_body: serde_json::Value =
-            serde_json::from_slice(&axum::body::to_bytes(resp.into_body(), 1024 * 1024).await.unwrap())
-                .unwrap();
+        let resp_body: serde_json::Value = serde_json::from_slice(
+            &axum::body::to_bytes(resp.into_body(), 1024 * 1024)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
 
         assert_eq!(resp_body["mime_type"], "audio/mpeg");
         assert!(resp_body["path"].as_str().unwrap().ends_with(".mp3"));
@@ -630,9 +625,12 @@ mod tests {
         let resp = router.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::CREATED);
 
-        let resp_body: serde_json::Value =
-            serde_json::from_slice(&axum::body::to_bytes(resp.into_body(), 1024 * 1024).await.unwrap())
-                .unwrap();
+        let resp_body: serde_json::Value = serde_json::from_slice(
+            &axum::body::to_bytes(resp.into_body(), 1024 * 1024)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
 
         assert_eq!(resp_body["mime_type"], "audio/webm");
         assert!(resp_body["path"].as_str().unwrap().ends_with(".webm"));
@@ -665,9 +663,12 @@ mod tests {
         let resp = router.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::CREATED);
 
-        let resp_body: serde_json::Value =
-            serde_json::from_slice(&axum::body::to_bytes(resp.into_body(), 1024 * 1024).await.unwrap())
-                .unwrap();
+        let resp_body: serde_json::Value = serde_json::from_slice(
+            &axum::body::to_bytes(resp.into_body(), 1024 * 1024)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
 
         assert_eq!(resp_body["mime_type"], "audio/wav");
         assert!(resp_body["path"].as_str().unwrap().ends_with(".wav"));
@@ -729,9 +730,7 @@ mod tests {
         body.extend_from_slice(b"ACTUAL_AUDIO_DATA_FOR_TESTING_12345");
         body.extend_from_slice(format!("\r\n--{boundary}\r\n").as_bytes());
         body.extend_from_slice(
-            format!(
-                "Content-Disposition: form-data; name=\"extra\"\r\n\r\nignored\r\n"
-            ).as_bytes(),
+            format!("Content-Disposition: form-data; name=\"extra\"\r\n\r\nignored\r\n").as_bytes(),
         );
         body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
 
@@ -748,9 +747,12 @@ mod tests {
         let resp = router.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::CREATED);
 
-        let resp_body: serde_json::Value =
-            serde_json::from_slice(&axum::body::to_bytes(resp.into_body(), 1024 * 1024).await.unwrap())
-                .unwrap();
+        let resp_body: serde_json::Value = serde_json::from_slice(
+            &axum::body::to_bytes(resp.into_body(), 1024 * 1024)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
 
         assert_eq!(resp_body["mime_type"], "audio/ogg");
 

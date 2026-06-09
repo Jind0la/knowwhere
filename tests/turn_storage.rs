@@ -15,12 +15,13 @@ use chrono::Utc;
 use serde_json::json;
 use uuid::Uuid;
 
-use knowwhere_server::memory::conversation::{
-    ConversationSession, ConversationTurn, EmbeddingInfo, ScoredTurn, SessionRow, SpeakerRole, TurnRow,
-};
 use knowwhere_server::api::turns::{
-    PaginatedSessionTurns, SessionTurn, StoreTurnRequest, StoreTurnResponse,
-    StoreTurnsRequest, UpdateTurnRequest,
+    PaginatedSessionTurns, SessionTurn, StoreTurnRequest, StoreTurnResponse, StoreTurnsRequest,
+    UpdateTurnRequest,
+};
+use knowwhere_server::memory::conversation::{
+    ConversationSession, ConversationTurn, EmbeddingInfo, ScoredTurn, SessionRow, SpeakerRole,
+    TurnRow,
 };
 use knowwhere_server::storage::PostgresStore;
 
@@ -31,7 +32,10 @@ use knowwhere_server::storage::PostgresStore;
 #[test]
 fn speaker_role_parse_all_variants() {
     assert_eq!(SpeakerRole::parse("user"), Some(SpeakerRole::User));
-    assert_eq!(SpeakerRole::parse("assistant"), Some(SpeakerRole::Assistant));
+    assert_eq!(
+        SpeakerRole::parse("assistant"),
+        Some(SpeakerRole::Assistant)
+    );
     assert_eq!(SpeakerRole::parse("system"), Some(SpeakerRole::System));
     assert_eq!(SpeakerRole::parse("tool"), Some(SpeakerRole::Tool));
 }
@@ -328,10 +332,20 @@ fn session_external_id_format() {
 /// Pattern B (single-turn): metadata.turn_index exists
 /// Returns None for non-turn records.
 fn get_turn_index(metadata: &serde_json::Value) -> Option<i32> {
-    if metadata.get("is_chunk").and_then(|v| v.as_bool()).unwrap_or(false) {
-        return metadata.get("chunk_index").and_then(|v| v.as_i64()).map(|v| v as i32);
+    if metadata
+        .get("is_chunk")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
+        return metadata
+            .get("chunk_index")
+            .and_then(|v| v.as_i64())
+            .map(|v| v as i32);
     }
-    metadata.get("turn_index").and_then(|v| v.as_i64()).map(|v| v as i32)
+    metadata
+        .get("turn_index")
+        .and_then(|v| v.as_i64())
+        .map(|v| v as i32)
 }
 
 /// Replicate SQL `is_eligible_for_turn_migration(metadata, turn_id)`.
@@ -345,7 +359,11 @@ fn is_eligible_for_migration(metadata: &serde_json::Value, turn_id: Option<Uuid>
         return false;
     }
     // Skip raw full-content nodes
-    if metadata.get("is_full_content").and_then(|v| v.as_bool()).unwrap_or(false) {
+    if metadata
+        .get("is_full_content")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
         return false;
     }
     // Must have determinable turn_index
@@ -501,7 +519,8 @@ fn api_store_turn_request_serde() {
 #[test]
 fn api_store_turn_request_default_metadata() {
     // metadata should default to None when absent
-    let json_str = r#"{"session_id":"s1","turn_index":5,"speaker_role":"assistant","content":"hi"}"#;
+    let json_str =
+        r#"{"session_id":"s1","turn_index":5,"speaker_role":"assistant","content":"hi"}"#;
     let req: StoreTurnRequest = serde_json::from_str(json_str).unwrap();
     assert_eq!(req.turn_index, 5);
     assert!(req.metadata.is_none());
@@ -522,7 +541,8 @@ fn api_update_turn_request_partial_fields() {
 
 #[test]
 fn api_update_turn_request_all_fields() {
-    let json_str = r#"{"content":"new","metadata":{"k":"v"},"embedding":[0.1,0.2],"speaker_role":"tool"}"#;
+    let json_str =
+        r#"{"content":"new","metadata":{"k":"v"},"embedding":[0.1,0.2],"speaker_role":"tool"}"#;
     let req: UpdateTurnRequest = serde_json::from_str(json_str).unwrap();
     assert_eq!(req.content, Some("new".into()));
     assert!(req.metadata.is_some());
@@ -698,10 +718,16 @@ async fn pg_store_and_retrieve_turn() {
     assert_eq!(response.turns[0].speaker_role, "user");
     assert_eq!(response.turns[0].turn_index, 0);
     // Verify per-turn embedding metadata is returned
-    let emb_info = response.turns[0].embedding_info.as_ref().expect("embedding_info should be present");
+    let emb_info = response.turns[0]
+        .embedding_info
+        .as_ref()
+        .expect("embedding_info should be present");
     assert_eq!(emb_info.provider, "local_ollama");
     assert_eq!(emb_info.dimension, 1024);
-    assert!(emb_info.vector.is_empty(), "vector should be excluded from read response");
+    assert!(
+        emb_info.vector.is_empty(),
+        "vector should be excluded from read response"
+    );
 }
 
 #[tokio::test]
@@ -723,9 +749,18 @@ async fn pg_store_multiple_turns_session_order() {
     ];
 
     for (idx, role, content) in &turns_data {
-        pg.store_turn(&ext_id, *idx, role, content, vec![0.2; 1024], None, "local_ollama", 1024)
-            .await
-            .unwrap();
+        pg.store_turn(
+            &ext_id,
+            *idx,
+            role,
+            content,
+            vec![0.2; 1024],
+            None,
+            "local_ollama",
+            1024,
+        )
+        .await
+        .unwrap();
     }
 
     let session_id = pg.find_or_create_session(&ext_id).await.unwrap();
@@ -751,9 +786,18 @@ async fn pg_retrieve_turns_vector_search() {
     let ext_id = format!("test-retrieve-{}", Uuid::new_v4());
 
     // Store turns with different "topics" via embeddings
-    pg.store_turn(&ext_id, 0, "user", "deploy to production", vec![1.0; 1024], None, "local_ollama", 1024)
-        .await
-        .unwrap();
+    pg.store_turn(
+        &ext_id,
+        0,
+        "user",
+        "deploy to production",
+        vec![1.0; 1024],
+        None,
+        "local_ollama",
+        1024,
+    )
+    .await
+    .unwrap();
     pg.store_turn(
         &ext_id,
         1,
@@ -839,11 +883,29 @@ async fn pg_turn_on_conflict_idempotent() {
 
     // Store same turn twice
     let id1 = pg
-        .store_turn(&ext_id, 0, "user", "original", vec![0.1; 1024], None, "local_ollama", 1024)
+        .store_turn(
+            &ext_id,
+            0,
+            "user",
+            "original",
+            vec![0.1; 1024],
+            None,
+            "local_ollama",
+            1024,
+        )
         .await
         .unwrap();
     let id2 = pg
-        .store_turn(&ext_id, 0, "user", "updated", vec![0.2; 1024], None, "local_ollama", 1024)
+        .store_turn(
+            &ext_id,
+            0,
+            "user",
+            "updated",
+            vec![0.2; 1024],
+            None,
+            "local_ollama",
+            1024,
+        )
         .await
         .unwrap();
 
@@ -865,15 +927,37 @@ async fn pg_turn_on_conflict_idempotent() {
 async fn pg_update_turn_content_only() {
     let pg = match get_pg().await {
         Some(p) => p,
-        None => { eprintln!("SKIP: DATABASE_URL not set or PG unreachable"); return; }
+        None => {
+            eprintln!("SKIP: DATABASE_URL not set or PG unreachable");
+            return;
+        }
     };
     let ext_id = format!("test-update-content-{}", Uuid::new_v4());
-    let turn_id = pg.store_turn(&ext_id, 0, "user", "original", vec![0.1; 1024], None, "local_ollama", 1024).await.unwrap();
+    let turn_id = pg
+        .store_turn(
+            &ext_id,
+            0,
+            "user",
+            "original",
+            vec![0.1; 1024],
+            None,
+            "local_ollama",
+            1024,
+        )
+        .await
+        .unwrap();
 
-    let updated = pg.update_turn(turn_id, Some("revised"), None, None, None, None, None).await.unwrap();
+    let updated = pg
+        .update_turn(turn_id, Some("revised"), None, None, None, None, None)
+        .await
+        .unwrap();
     assert!(updated, "update should affect one row");
 
-    let row = pg.get_turn(turn_id).await.unwrap().expect("turn should exist");
+    let row = pg
+        .get_turn(turn_id)
+        .await
+        .unwrap()
+        .expect("turn should exist");
     assert_eq!(row.content, "revised");
     assert_eq!(row.speaker_role, "user"); // unchanged
 }
@@ -882,12 +966,30 @@ async fn pg_update_turn_content_only() {
 async fn pg_update_turn_speaker_role_only() {
     let pg = match get_pg().await {
         Some(p) => p,
-        None => { eprintln!("SKIP: DATABASE_URL not set or PG unreachable"); return; }
+        None => {
+            eprintln!("SKIP: DATABASE_URL not set or PG unreachable");
+            return;
+        }
     };
     let ext_id = format!("test-update-role-{}", Uuid::new_v4());
-    let turn_id = pg.store_turn(&ext_id, 0, "user", "text", vec![0.1; 1024], None, "local_ollama", 1024).await.unwrap();
+    let turn_id = pg
+        .store_turn(
+            &ext_id,
+            0,
+            "user",
+            "text",
+            vec![0.1; 1024],
+            None,
+            "local_ollama",
+            1024,
+        )
+        .await
+        .unwrap();
 
-    let updated = pg.update_turn(turn_id, None, None, None, None, None, Some("assistant")).await.unwrap();
+    let updated = pg
+        .update_turn(turn_id, None, None, None, None, None, Some("assistant"))
+        .await
+        .unwrap();
     assert!(updated);
 
     let row = pg.get_turn(turn_id).await.unwrap().unwrap();
@@ -899,14 +1001,40 @@ async fn pg_update_turn_speaker_role_only() {
 async fn pg_update_turn_embedding_only() {
     let pg = match get_pg().await {
         Some(p) => p,
-        None => { eprintln!("SKIP: DATABASE_URL not set or PG unreachable"); return; }
+        None => {
+            eprintln!("SKIP: DATABASE_URL not set or PG unreachable");
+            return;
+        }
     };
     let ext_id = format!("test-update-emb-{}", Uuid::new_v4());
-    let turn_id = pg.store_turn(&ext_id, 0, "user", "text", vec![0.1; 1024], None, "local_ollama", 1024).await.unwrap();
+    let turn_id = pg
+        .store_turn(
+            &ext_id,
+            0,
+            "user",
+            "text",
+            vec![0.1; 1024],
+            None,
+            "local_ollama",
+            1024,
+        )
+        .await
+        .unwrap();
 
     let new_emb = vec![0.9; 768];
     // Store with 1024-dim local_ollama, then update to 768-dim openai
-    let updated = pg.update_turn(turn_id, None, None, Some(new_emb.clone()), Some("openai"), Some(768), None).await.unwrap();
+    let updated = pg
+        .update_turn(
+            turn_id,
+            None,
+            None,
+            Some(new_emb.clone()),
+            Some("openai"),
+            Some(768),
+            None,
+        )
+        .await
+        .unwrap();
     assert!(updated);
 
     let row = pg.get_turn(turn_id).await.unwrap().unwrap();
@@ -919,12 +1047,38 @@ async fn pg_update_turn_embedding_only() {
 async fn pg_update_turn_metadata_only() {
     let pg = match get_pg().await {
         Some(p) => p,
-        None => { eprintln!("SKIP: DATABASE_URL not set or PG unreachable"); return; }
+        None => {
+            eprintln!("SKIP: DATABASE_URL not set or PG unreachable");
+            return;
+        }
     };
     let ext_id = format!("test-update-meta-{}", Uuid::new_v4());
-    let turn_id = pg.store_turn(&ext_id, 0, "user", "text", vec![0.1; 1024], Some(json!({"v":1})), "local_ollama", 1024).await.unwrap();
+    let turn_id = pg
+        .store_turn(
+            &ext_id,
+            0,
+            "user",
+            "text",
+            vec![0.1; 1024],
+            Some(json!({"v":1})),
+            "local_ollama",
+            1024,
+        )
+        .await
+        .unwrap();
 
-    let updated = pg.update_turn(turn_id, None, Some(json!({"v":2,"extra":"data"})), None, None, None, None).await.unwrap();
+    let updated = pg
+        .update_turn(
+            turn_id,
+            None,
+            Some(json!({"v":2,"extra":"data"})),
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
     assert!(updated);
 
     let row = pg.get_turn(turn_id).await.unwrap().unwrap();
@@ -936,20 +1090,38 @@ async fn pg_update_turn_metadata_only() {
 async fn pg_update_turn_all_fields() {
     let pg = match get_pg().await {
         Some(p) => p,
-        None => { eprintln!("SKIP: DATABASE_URL not set or PG unreachable"); return; }
+        None => {
+            eprintln!("SKIP: DATABASE_URL not set or PG unreachable");
+            return;
+        }
     };
     let ext_id = format!("test-update-all-{}", Uuid::new_v4());
-    let turn_id = pg.store_turn(&ext_id, 0, "user", "old", vec![0.3; 1024], Some(json!({"old":true})), "local_ollama", 1024).await.unwrap();
+    let turn_id = pg
+        .store_turn(
+            &ext_id,
+            0,
+            "user",
+            "old",
+            vec![0.3; 1024],
+            Some(json!({"old":true})),
+            "local_ollama",
+            1024,
+        )
+        .await
+        .unwrap();
 
-    let updated = pg.update_turn(
-        turn_id,
-        Some("completely new"),
-        Some(json!({"new":true})),
-        Some(vec![0.7; 768]),
-        Some("openai"),
-        Some(768),
-        Some("tool"),
-    ).await.unwrap();
+    let updated = pg
+        .update_turn(
+            turn_id,
+            Some("completely new"),
+            Some(json!({"new":true})),
+            Some(vec![0.7; 768]),
+            Some("openai"),
+            Some(768),
+            Some("tool"),
+        )
+        .await
+        .unwrap();
     assert!(updated);
 
     let row = pg.get_turn(turn_id).await.unwrap().unwrap();
@@ -964,10 +1136,16 @@ async fn pg_update_turn_all_fields() {
 async fn pg_update_turn_nonexistent() {
     let pg = match get_pg().await {
         Some(p) => p,
-        None => { eprintln!("SKIP: DATABASE_URL not set or PG unreachable"); return; }
+        None => {
+            eprintln!("SKIP: DATABASE_URL not set or PG unreachable");
+            return;
+        }
     };
     let fake_id = Uuid::new_v4();
-    let updated = pg.update_turn(fake_id, Some("ghost"), None, None, None, None, None).await.unwrap();
+    let updated = pg
+        .update_turn(fake_id, Some("ghost"), None, None, None, None, None)
+        .await
+        .unwrap();
     assert!(!updated, "nonexistent turn should not update");
 }
 
@@ -975,13 +1153,31 @@ async fn pg_update_turn_nonexistent() {
 async fn pg_update_turn_empty_update() {
     let pg = match get_pg().await {
         Some(p) => p,
-        None => { eprintln!("SKIP: DATABASE_URL not set or PG unreachable"); return; }
+        None => {
+            eprintln!("SKIP: DATABASE_URL not set or PG unreachable");
+            return;
+        }
     };
     let ext_id = format!("test-update-empty-{}", Uuid::new_v4());
-    let turn_id = pg.store_turn(&ext_id, 0, "user", "text", vec![0.1; 1024], None, "local_ollama", 1024).await.unwrap();
+    let turn_id = pg
+        .store_turn(
+            &ext_id,
+            0,
+            "user",
+            "text",
+            vec![0.1; 1024],
+            None,
+            "local_ollama",
+            1024,
+        )
+        .await
+        .unwrap();
 
     // All Nones → no SET clause → returns false
-    let updated = pg.update_turn(turn_id, None, None, None, None, None, None).await.unwrap();
+    let updated = pg
+        .update_turn(turn_id, None, None, None, None, None, None)
+        .await
+        .unwrap();
     assert!(!updated, "empty update should return false");
 }
 
@@ -989,10 +1185,25 @@ async fn pg_update_turn_empty_update() {
 async fn pg_delete_turn_removes_row() {
     let pg = match get_pg().await {
         Some(p) => p,
-        None => { eprintln!("SKIP: DATABASE_URL not set or PG unreachable"); return; }
+        None => {
+            eprintln!("SKIP: DATABASE_URL not set or PG unreachable");
+            return;
+        }
     };
     let ext_id = format!("test-delete-{}", Uuid::new_v4());
-    let turn_id = pg.store_turn(&ext_id, 0, "user", "delete me", vec![0.1; 1024], None, "local_ollama", 1024).await.unwrap();
+    let turn_id = pg
+        .store_turn(
+            &ext_id,
+            0,
+            "user",
+            "delete me",
+            vec![0.1; 1024],
+            None,
+            "local_ollama",
+            1024,
+        )
+        .await
+        .unwrap();
 
     let deleted = pg.delete_turn(turn_id).await.unwrap();
     assert!(deleted);
@@ -1005,7 +1216,10 @@ async fn pg_delete_turn_removes_row() {
 async fn pg_delete_turn_nonexistent() {
     let pg = match get_pg().await {
         Some(p) => p,
-        None => { eprintln!("SKIP: DATABASE_URL not set or PG unreachable"); return; }
+        None => {
+            eprintln!("SKIP: DATABASE_URL not set or PG unreachable");
+            return;
+        }
     };
     let deleted = pg.delete_turn(Uuid::new_v4()).await.unwrap();
     assert!(!deleted, "deleting nonexistent turn should return false");
@@ -1015,11 +1229,38 @@ async fn pg_delete_turn_nonexistent() {
 async fn pg_delete_turn_updates_session_turn_count() {
     let pg = match get_pg().await {
         Some(p) => p,
-        None => { eprintln!("SKIP: DATABASE_URL not set or PG unreachable"); return; }
+        None => {
+            eprintln!("SKIP: DATABASE_URL not set or PG unreachable");
+            return;
+        }
     };
     let ext_id = format!("test-delete-count-{}", Uuid::new_v4());
-    let t1 = pg.store_turn(&ext_id, 0, "user", "one", vec![0.1; 1024], None, "local_ollama", 1024).await.unwrap();
-    let t2 = pg.store_turn(&ext_id, 1, "assistant", "two", vec![0.2; 1024], None, "local_ollama", 1024).await.unwrap();
+    let t1 = pg
+        .store_turn(
+            &ext_id,
+            0,
+            "user",
+            "one",
+            vec![0.1; 1024],
+            None,
+            "local_ollama",
+            1024,
+        )
+        .await
+        .unwrap();
+    let t2 = pg
+        .store_turn(
+            &ext_id,
+            1,
+            "assistant",
+            "two",
+            vec![0.2; 1024],
+            None,
+            "local_ollama",
+            1024,
+        )
+        .await
+        .unwrap();
 
     let session_id = pg.find_or_create_session(&ext_id).await.unwrap();
 
@@ -1037,18 +1278,40 @@ async fn pg_delete_turn_updates_session_turn_count() {
 async fn pg_get_turn_existing() {
     let pg = match get_pg().await {
         Some(p) => p,
-        None => { eprintln!("SKIP: DATABASE_URL not set or PG unreachable"); return; }
+        None => {
+            eprintln!("SKIP: DATABASE_URL not set or PG unreachable");
+            return;
+        }
     };
     let ext_id = format!("test-get-{}", Uuid::new_v4());
-    let turn_id = pg.store_turn(&ext_id, 5, "system", "system msg", vec![0.5; 1024], Some(json!({"type":"init"})), "local_ollama", 1024).await.unwrap();
+    let turn_id = pg
+        .store_turn(
+            &ext_id,
+            5,
+            "system",
+            "system msg",
+            vec![0.5; 1024],
+            Some(json!({"type":"init"})),
+            "local_ollama",
+            1024,
+        )
+        .await
+        .unwrap();
 
-    let row = pg.get_turn(turn_id).await.unwrap().expect("turn should exist");
+    let row = pg
+        .get_turn(turn_id)
+        .await
+        .unwrap()
+        .expect("turn should exist");
     assert_eq!(row.turn_index, 5);
     assert_eq!(row.speaker_role, "system");
     assert_eq!(row.content, "system msg");
     assert_eq!(row.metadata["type"].as_str(), Some("init"));
     // Verify per-turn embedding is present with correct metadata
-    assert!(row.embedding.is_some(), "get_turn should return the full embedding vector");
+    assert!(
+        row.embedding.is_some(),
+        "get_turn should return the full embedding vector"
+    );
     assert_eq!(row.embedding_type.as_deref(), Some("local_ollama"));
     assert_eq!(row.embedding_dim, Some(1024));
 }
@@ -1057,7 +1320,10 @@ async fn pg_get_turn_existing() {
 async fn pg_get_turn_nonexistent() {
     let pg = match get_pg().await {
         Some(p) => p,
-        None => { eprintln!("SKIP: DATABASE_URL not set or PG unreachable"); return; }
+        None => {
+            eprintln!("SKIP: DATABASE_URL not set or PG unreachable");
+            return;
+        }
     };
     let row = pg.get_turn(Uuid::new_v4()).await.unwrap();
     assert!(row.is_none());
@@ -1071,23 +1337,43 @@ async fn pg_get_turn_nonexistent() {
 async fn pg_list_turns_pagination_basic() {
     let pg = match get_pg().await {
         Some(p) => p,
-        None => { eprintln!("SKIP: DATABASE_URL not set or PG unreachable"); return; }
+        None => {
+            eprintln!("SKIP: DATABASE_URL not set or PG unreachable");
+            return;
+        }
     };
     let ext_id = format!("test-paginate-{}", Uuid::new_v4());
     for i in 0..10 {
-        pg.store_turn(&ext_id, i, "user", &format!("msg {i}"), vec![0.1; 1024], None, "local_ollama", 1024).await.unwrap();
+        pg.store_turn(
+            &ext_id,
+            i,
+            "user",
+            &format!("msg {i}"),
+            vec![0.1; 1024],
+            None,
+            "local_ollama",
+            1024,
+        )
+        .await
+        .unwrap();
     }
     let session_id = pg.find_or_create_session(&ext_id).await.unwrap();
 
     // Page 1: offset=0, limit=3
-    let (turns, total) = pg.list_turns_by_session(session_id, 0, 3, false).await.unwrap();
+    let (turns, total) = pg
+        .list_turns_by_session(session_id, 0, 3, false)
+        .await
+        .unwrap();
     assert_eq!(total, 10);
     assert_eq!(turns.len(), 3);
     assert_eq!(turns[0].content, "msg 0");
     assert_eq!(turns[2].content, "msg 2");
 
     // Page 2: offset=3, limit=3
-    let (turns, total) = pg.list_turns_by_session(session_id, 3, 3, false).await.unwrap();
+    let (turns, total) = pg
+        .list_turns_by_session(session_id, 3, 3, false)
+        .await
+        .unwrap();
     assert_eq!(total, 10);
     assert_eq!(turns.len(), 3);
     assert_eq!(turns[0].content, "msg 3");
@@ -1097,15 +1383,32 @@ async fn pg_list_turns_pagination_basic() {
 async fn pg_list_turns_pagination_desc() {
     let pg = match get_pg().await {
         Some(p) => p,
-        None => { eprintln!("SKIP: DATABASE_URL not set or PG unreachable"); return; }
+        None => {
+            eprintln!("SKIP: DATABASE_URL not set or PG unreachable");
+            return;
+        }
     };
     let ext_id = format!("test-paginate-desc-{}", Uuid::new_v4());
     for i in 0..5 {
-        pg.store_turn(&ext_id, i, "user", &format!("msg {i}"), vec![0.1; 1024], None, "local_ollama", 1024).await.unwrap();
+        pg.store_turn(
+            &ext_id,
+            i,
+            "user",
+            &format!("msg {i}"),
+            vec![0.1; 1024],
+            None,
+            "local_ollama",
+            1024,
+        )
+        .await
+        .unwrap();
     }
     let session_id = pg.find_or_create_session(&ext_id).await.unwrap();
 
-    let (turns, total) = pg.list_turns_by_session(session_id, 0, 5, true).await.unwrap();
+    let (turns, total) = pg
+        .list_turns_by_session(session_id, 0, 5, true)
+        .await
+        .unwrap();
     assert_eq!(total, 5);
     assert_eq!(turns.len(), 5);
     assert_eq!(turns[0].content, "msg 4"); // newest first in desc
@@ -1116,16 +1419,33 @@ async fn pg_list_turns_pagination_desc() {
 async fn pg_list_turns_pagination_near_end() {
     let pg = match get_pg().await {
         Some(p) => p,
-        None => { eprintln!("SKIP: DATABASE_URL not set or PG unreachable"); return; }
+        None => {
+            eprintln!("SKIP: DATABASE_URL not set or PG unreachable");
+            return;
+        }
     };
     let ext_id = format!("test-paginate-end-{}", Uuid::new_v4());
     for i in 0..7 {
-        pg.store_turn(&ext_id, i, "user", &format!("msg {i}"), vec![0.1; 1024], None, "local_ollama", 1024).await.unwrap();
+        pg.store_turn(
+            &ext_id,
+            i,
+            "user",
+            &format!("msg {i}"),
+            vec![0.1; 1024],
+            None,
+            "local_ollama",
+            1024,
+        )
+        .await
+        .unwrap();
     }
     let session_id = pg.find_or_create_session(&ext_id).await.unwrap();
 
     // offset=5, limit=5 → only 2 remaining
-    let (turns, total) = pg.list_turns_by_session(session_id, 5, 5, false).await.unwrap();
+    let (turns, total) = pg
+        .list_turns_by_session(session_id, 5, 5, false)
+        .await
+        .unwrap();
     assert_eq!(total, 7);
     assert_eq!(turns.len(), 2);
     assert_eq!(turns[0].content, "msg 5");
@@ -1136,15 +1456,32 @@ async fn pg_list_turns_pagination_near_end() {
 async fn pg_list_turns_pagination_beyond_end() {
     let pg = match get_pg().await {
         Some(p) => p,
-        None => { eprintln!("SKIP: DATABASE_URL not set or PG unreachable"); return; }
+        None => {
+            eprintln!("SKIP: DATABASE_URL not set or PG unreachable");
+            return;
+        }
     };
     let ext_id = format!("test-paginate-beyond-{}", Uuid::new_v4());
     for i in 0..3 {
-        pg.store_turn(&ext_id, i, "user", &format!("msg {i}"), vec![0.1; 1024], None, "local_ollama", 1024).await.unwrap();
+        pg.store_turn(
+            &ext_id,
+            i,
+            "user",
+            &format!("msg {i}"),
+            vec![0.1; 1024],
+            None,
+            "local_ollama",
+            1024,
+        )
+        .await
+        .unwrap();
     }
     let session_id = pg.find_or_create_session(&ext_id).await.unwrap();
 
-    let (turns, total) = pg.list_turns_by_session(session_id, 100, 10, false).await.unwrap();
+    let (turns, total) = pg
+        .list_turns_by_session(session_id, 100, 10, false)
+        .await
+        .unwrap();
     assert_eq!(total, 3);
     assert!(turns.is_empty(), "offset beyond total should return empty");
 }
@@ -1153,12 +1490,18 @@ async fn pg_list_turns_pagination_beyond_end() {
 async fn pg_list_turns_empty_session() {
     let pg = match get_pg().await {
         Some(p) => p,
-        None => { eprintln!("SKIP: DATABASE_URL not set or PG unreachable"); return; }
+        None => {
+            eprintln!("SKIP: DATABASE_URL not set or PG unreachable");
+            return;
+        }
     };
     let ext_id = format!("test-paginate-empty-{}", Uuid::new_v4());
     let session_id = pg.find_or_create_session(&ext_id).await.unwrap();
 
-    let (turns, total) = pg.list_turns_by_session(session_id, 0, 10, false).await.unwrap();
+    let (turns, total) = pg
+        .list_turns_by_session(session_id, 0, 10, false)
+        .await
+        .unwrap();
     assert_eq!(total, 0);
     assert!(turns.is_empty());
 }
@@ -1171,18 +1514,60 @@ async fn pg_list_turns_empty_session() {
 async fn pg_retrieve_turns_speaker_filter() {
     let pg = match get_pg().await {
         Some(p) => p,
-        None => { eprintln!("SKIP: DATABASE_URL not set or PG unreachable"); return; }
+        None => {
+            eprintln!("SKIP: DATABASE_URL not set or PG unreachable");
+            return;
+        }
     };
     let ext_id = format!("test-retrieve-filter-{}", Uuid::new_v4());
-    pg.store_turn(&ext_id, 0, "user", "deploy to prod", vec![1.0; 1024], None, "local_ollama", 1024).await.unwrap();
-    pg.store_turn(&ext_id, 1, "assistant", "here is deploy guide", vec![1.0; 1024], None, "local_ollama", 1024).await.unwrap();
-    pg.store_turn(&ext_id, 2, "user", "lunch plans", vec![0.3; 1024], None, "local_ollama", 1024).await.unwrap();
+    pg.store_turn(
+        &ext_id,
+        0,
+        "user",
+        "deploy to prod",
+        vec![1.0; 1024],
+        None,
+        "local_ollama",
+        1024,
+    )
+    .await
+    .unwrap();
+    pg.store_turn(
+        &ext_id,
+        1,
+        "assistant",
+        "here is deploy guide",
+        vec![1.0; 1024],
+        None,
+        "local_ollama",
+        1024,
+    )
+    .await
+    .unwrap();
+    pg.store_turn(
+        &ext_id,
+        2,
+        "user",
+        "lunch plans",
+        vec![0.3; 1024],
+        None,
+        "local_ollama",
+        1024,
+    )
+    .await
+    .unwrap();
 
     // Filter to user only
-    let results = pg.retrieve_turns(&vec![0.9; 1024], 10, Some("user"), None).await.unwrap();
+    let results = pg
+        .retrieve_turns(&vec![0.9; 1024], 10, Some("user"), None)
+        .await
+        .unwrap();
     assert!(!results.is_empty());
     for r in &results {
-        assert_eq!(r.speaker_role, "user", "speaker filter should exclude non-user");
+        assert_eq!(
+            r.speaker_role, "user",
+            "speaker filter should exclude non-user"
+        );
     }
 }
 
@@ -1190,18 +1575,49 @@ async fn pg_retrieve_turns_speaker_filter() {
 async fn pg_retrieve_turns_session_filter() {
     let pg = match get_pg().await {
         Some(p) => p,
-        None => { eprintln!("SKIP: DATABASE_URL not set or PG unreachable"); return; }
+        None => {
+            eprintln!("SKIP: DATABASE_URL not set or PG unreachable");
+            return;
+        }
     };
     let ext_a = format!("test-retrieve-session-a-{}", Uuid::new_v4());
     let ext_b = format!("test-retrieve-session-b-{}", Uuid::new_v4());
-    pg.store_turn(&ext_a, 0, "user", "topic alpha", vec![0.9; 1024], None, "local_ollama", 1024).await.unwrap();
-    pg.store_turn(&ext_b, 0, "user", "topic beta", vec![0.1; 1024], None, "local_ollama", 1024).await.unwrap();
+    pg.store_turn(
+        &ext_a,
+        0,
+        "user",
+        "topic alpha",
+        vec![0.9; 1024],
+        None,
+        "local_ollama",
+        1024,
+    )
+    .await
+    .unwrap();
+    pg.store_turn(
+        &ext_b,
+        0,
+        "user",
+        "topic beta",
+        vec![0.1; 1024],
+        None,
+        "local_ollama",
+        1024,
+    )
+    .await
+    .unwrap();
     let session_a = pg.find_or_create_session(&ext_a).await.unwrap();
 
-    let results = pg.retrieve_turns(&vec![0.9; 1024], 5, None, Some(session_a)).await.unwrap();
+    let results = pg
+        .retrieve_turns(&vec![0.9; 1024], 5, None, Some(session_a))
+        .await
+        .unwrap();
     assert!(!results.is_empty());
     for r in &results {
-        assert_eq!(r.session_id, session_a, "session filter should constrain results");
+        assert_eq!(
+            r.session_id, session_a,
+            "session filter should constrain results"
+        );
     }
 }
 
@@ -1209,14 +1625,42 @@ async fn pg_retrieve_turns_session_filter() {
 async fn pg_retrieve_turns_combined_filters() {
     let pg = match get_pg().await {
         Some(p) => p,
-        None => { eprintln!("SKIP: DATABASE_URL not set or PG unreachable"); return; }
+        None => {
+            eprintln!("SKIP: DATABASE_URL not set or PG unreachable");
+            return;
+        }
     };
     let ext_id = format!("test-retrieve-combined-{}", Uuid::new_v4());
-    pg.store_turn(&ext_id, 0, "user", "deployment", vec![0.8; 1024], None, "local_ollama", 1024).await.unwrap();
-    pg.store_turn(&ext_id, 1, "assistant", "deploy response", vec![0.7; 1024], None, "local_ollama", 1024).await.unwrap();
+    pg.store_turn(
+        &ext_id,
+        0,
+        "user",
+        "deployment",
+        vec![0.8; 1024],
+        None,
+        "local_ollama",
+        1024,
+    )
+    .await
+    .unwrap();
+    pg.store_turn(
+        &ext_id,
+        1,
+        "assistant",
+        "deploy response",
+        vec![0.7; 1024],
+        None,
+        "local_ollama",
+        1024,
+    )
+    .await
+    .unwrap();
     let session_id = pg.find_or_create_session(&ext_id).await.unwrap();
 
-    let results = pg.retrieve_turns(&vec![0.9; 1024], 10, Some("user"), Some(session_id)).await.unwrap();
+    let results = pg
+        .retrieve_turns(&vec![0.9; 1024], 10, Some("user"), Some(session_id))
+        .await
+        .unwrap();
     assert!(!results.is_empty());
     for r in &results {
         assert_eq!(r.speaker_role, "user");
@@ -1228,23 +1672,46 @@ async fn pg_retrieve_turns_combined_filters() {
 async fn pg_retrieve_turns_empty_query_vector() {
     let pg = match get_pg().await {
         Some(p) => p,
-        None => { eprintln!("SKIP: DATABASE_URL not set or PG unreachable"); return; }
+        None => {
+            eprintln!("SKIP: DATABASE_URL not set or PG unreachable");
+            return;
+        }
     };
     let results = pg.retrieve_turns(&[], 10, None, None).await.unwrap();
-    assert!(results.is_empty(), "empty query vector should return empty results");
+    assert!(
+        results.is_empty(),
+        "empty query vector should return empty results"
+    );
 }
 
 #[tokio::test]
 async fn pg_retrieve_turns_top_k_limits() {
     let pg = match get_pg().await {
         Some(p) => p,
-        None => { eprintln!("SKIP: DATABASE_URL not set or PG unreachable"); return; }
+        None => {
+            eprintln!("SKIP: DATABASE_URL not set or PG unreachable");
+            return;
+        }
     };
     let ext_id = format!("test-retrieve-topk-{}", Uuid::new_v4());
     for i in 0..5 {
-        pg.store_turn(&ext_id, i, "user", &format!("msg {i}"), vec![0.5; 1024], None, "local_ollama", 1024).await.unwrap();
+        pg.store_turn(
+            &ext_id,
+            i,
+            "user",
+            &format!("msg {i}"),
+            vec![0.5; 1024],
+            None,
+            "local_ollama",
+            1024,
+        )
+        .await
+        .unwrap();
     }
 
-    let results = pg.retrieve_turns(&vec![0.5; 1024], 2, None, None).await.unwrap();
+    let results = pg
+        .retrieve_turns(&vec![0.5; 1024], 2, None, None)
+        .await
+        .unwrap();
     assert!(results.len() <= 2, "top_k should limit results");
 }

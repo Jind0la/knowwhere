@@ -78,13 +78,13 @@ mod conditional_schemas {
 mod conditional_schemas {
     use super::*;
     // Submodules referenced directly for utoipa __path_* type resolution
-    use crate::api::routes::trajectory;
     use crate::api::routes::conflicts;
-    use crate::api::routes::energy;
     use crate::api::routes::dedup;
+    use crate::api::routes::energy;
     use crate::api::routes::healing;
     use crate::api::routes::namespaces;
     use crate::api::routes::skills_routes;
+    use crate::api::routes::trajectory;
     use crate::api::routes::turn_handlers;
 
     #[derive(OpenApi)]

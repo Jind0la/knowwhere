@@ -1,9 +1,9 @@
 use anyhow::{anyhow, Result};
+use futures::future::join_all;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::path::Path;
-use futures::future::join_all;
 use uuid::Uuid;
 
 use crate::shared_metrics::{EvalCounters, EvalMetrics};
@@ -28,13 +28,14 @@ pub struct RunnerConfig {
 pub fn load_cases(path: &str, max_cases: usize) -> Result<Vec<LongMemEvalCase>> {
     let file = std::fs::File::open(Path::new(path))?;
     let reader = std::io::BufReader::with_capacity(64 * 1024, file);
-    let stream = serde_json::Deserializer::from_reader(reader)
-        .into_iter::<LongMemEvalCase>();
+    let stream = serde_json::Deserializer::from_reader(reader).into_iter::<LongMemEvalCase>();
     let mut cases = Vec::with_capacity(max_cases.min(500));
     for result in stream {
         let case = result?;
         cases.push(case);
-        if cases.len() >= max_cases { break; }
+        if cases.len() >= max_cases {
+            break;
+        }
     }
     if cases.is_empty() {
         return Err(anyhow!("no LongMemEval canary cases found"));
@@ -73,9 +74,11 @@ fn evidence_rank(items: &[Value], case: &LongMemEvalCase) -> Option<usize> {
 }
 
 fn exact_hit(items: &[Value], case: &LongMemEvalCase) -> bool {
-    items.first().and_then(|v| v.get("content")).and_then(Value::as_str).is_some_and(
-        |content| contains_norm(content, &case.gold_answer),
-    )
+    items
+        .first()
+        .and_then(|v| v.get("content"))
+        .and_then(Value::as_str)
+        .is_some_and(|content| contains_norm(content, &case.gold_answer))
 }
 
 async fn store_session(
@@ -114,7 +117,10 @@ async fn store_session(
         return Err(anyhow!("store_session failed with status {}", res.status()));
     }
     let body: Value = res.json().await?;
-    let id_str = body.get("id").and_then(Value::as_str).ok_or_else(|| anyhow!("missing id"))?;
+    let id_str = body
+        .get("id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow!("missing id"))?;
     Ok(Uuid::parse_str(id_str)?)
 }
 
@@ -141,7 +147,10 @@ async fn retrieve(
         .send()
         .await?;
     if !res.status().is_success() {
-        return Err(anyhow!("retrieve_fractal failed with status {}", res.status()));
+        return Err(anyhow!(
+            "retrieve_fractal failed with status {}",
+            res.status()
+        ));
     }
     Ok(res.json().await?)
 }
@@ -161,7 +170,12 @@ fn clone_hits(values: Vec<&Value>) -> Vec<Value> {
     values.into_iter().cloned().collect()
 }
 
-fn mark_metrics(_cfg: &RunnerConfig, counters: &mut EvalCounters, case: &LongMemEvalCase, hits: &[Value]) {
+fn mark_metrics(
+    _cfg: &RunnerConfig,
+    counters: &mut EvalCounters,
+    case: &LongMemEvalCase,
+    hits: &[Value],
+) {
     if case.is_abstention {
         let abstained = evidence_rank(hits, case).is_none();
         counters.register_exact(abstained);
@@ -183,18 +197,21 @@ pub async fn evaluate_live(cfg: &RunnerConfig, cases: &[LongMemEvalCase]) -> Res
 
         // Store all sessions in parallel — Ollama embedding calls overlap.
         // async move owns content/run_id so they outlive the future.
-        let store_futures: Vec<_> = case.sessions.iter().map(|session| {
-            let content = format!("[{run_id}] {}", session);
-            let run_id = run_id.clone();
-            let client = &client;
-            let cfg = cfg;
-            let case = case;
-            async move {
-                store_session(client, cfg, &run_id, case, &content).await
-            }
-        }).collect();
+        let store_futures: Vec<_> = case
+            .sessions
+            .iter()
+            .map(|session| {
+                let content = format!("[{run_id}] {}", session);
+                let run_id = run_id.clone();
+                let client = &client;
+                let cfg = cfg;
+                let case = case;
+                async move { store_session(client, cfg, &run_id, case, &content).await }
+            })
+            .collect();
 
-        join_all(store_futures).await
+        join_all(store_futures)
+            .await
             .into_iter()
             .collect::<Result<Vec<_>>>()?;
         let hits = retrieve(&client, cfg, &run_id, case).await?;

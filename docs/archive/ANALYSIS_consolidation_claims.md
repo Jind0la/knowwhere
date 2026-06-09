@@ -1,6 +1,6 @@
 # Consolidation + Pointer-Resolution: Minimaler Änderungspfad
 
-> **Erstellt:** 2026-05-04 für Task `t_37ed8154`  
+> **Erstellt:** 2026-05-04 für Task `t_37ed8154`
 > **Repo-Commit:** `54265a4` — `feat: MemoryType::Decision — structured decision retrieval`
 
 ---
@@ -197,7 +197,7 @@ async fn expand_pointers(
                 let mut filter = HashMap::new();
                 filter.insert("session_id".into(), session_id);
                 filter.insert("turn_index".into(), turn_idx.to_string());
-                
+
                 if let Ok(sources) = store.find_by_metadata(&filter).await {
                     if let Some(source_node) = sources.first() {
                         node.source_content = source_node.content.clone();
@@ -227,7 +227,7 @@ expand_pointers(state.store.as_ref(), &mut results).await
 
 **LOCs: ~50–60 Zeilen**
 - `find_by_metadata` Trait-Methode + Default-Impl: ~15 Zeilen
-- `find_by_metadata` für MemoryStore (in_memory.rs): ~10 Zeilen  
+- `find_by_metadata` für MemoryStore (in_memory.rs): ~10 Zeilen
 - `find_by_metadata` für PostgresStore (postgres_store.rs): ~15 Zeilen (SQL WHERE jsonb)
 - `expand_pointers` Utility: ~20 Zeilen
 

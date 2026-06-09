@@ -7,7 +7,7 @@
 
 ## Executive Summary
 
-**AVX-512FP16 ist KEIN Distribution-Problem!** 
+**AVX-512FP16 ist KEIN Distribution-Problem!**
 
 Die Befürchtung war, dass das Binary nur auf CPUs mit AVX-512FP16 läuft. Das ist **falsch**.
 

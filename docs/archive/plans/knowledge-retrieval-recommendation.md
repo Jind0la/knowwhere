@@ -101,7 +101,7 @@ Schritt 3.3: Test (30 min)
 
 ## 4. Go/No-Go
 
-**GO.** 
+**GO.**
 
 Begründung:
 1. Das Problem ist real und gemessen (0% Recall für spezifische Warum-Fragen)

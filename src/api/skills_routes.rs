@@ -13,9 +13,9 @@ use uuid::Uuid;
 
 use crate::api::types::*;
 use crate::embedding::{embed_document, embed_document_batch, embed_query};
-use crate::memory::FractalNode;
 #[cfg(feature = "postgres-storage")]
 use crate::memory::skills::CreateSkillResponse;
+use crate::memory::FractalNode;
 
 use crate::storage::RetrievalProfile;
 
@@ -371,7 +371,12 @@ pub async fn entity_search(
 
     let pool = match &state.trajectory_pool {
         Some(p) => p.clone(),
-        None => return Err((StatusCode::SERVICE_UNAVAILABLE, "PostgreSQL not configured".into())),
+        None => {
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "PostgreSQL not configured".into(),
+            ))
+        }
     };
 
     let query = if let Some(ref entity_type) = params.entity_type {
@@ -387,24 +392,40 @@ pub async fn entity_search(
     let limit = params.limit.unwrap_or(50).min(200) as i64;
     let rows: Vec<sqlx::postgres::PgRow> = if let Some(ref entity_type) = params.entity_type {
         if let Some(ref relation) = params.relation {
-            sqlx::query(query).bind(entity_type).bind(relation).bind(limit).fetch_all(pool.as_ref()).await
+            sqlx::query(query)
+                .bind(entity_type)
+                .bind(relation)
+                .bind(limit)
+                .fetch_all(pool.as_ref())
+                .await
         } else {
-            sqlx::query(query).bind(entity_type).bind(limit).fetch_all(pool.as_ref()).await
+            sqlx::query(query)
+                .bind(entity_type)
+                .bind(limit)
+                .fetch_all(pool.as_ref())
+                .await
         }
     } else {
-        sqlx::query(query).bind(limit).fetch_all(pool.as_ref()).await
-    }.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        sqlx::query(query)
+            .bind(limit)
+            .fetch_all(pool.as_ref())
+            .await
+    }
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    let edges: Vec<EntityEdge> = rows.iter().map(|row| EntityEdge {
-        id: row.get("id"),
-        source_node_id: row.get("source_node_id"),
-        target_node_id: row.get("target_node_id"),
-        entity_type: row.get("entity_type"),
-        entity_name: row.get("entity_name"),
-        relation_type: row.get("relation_type"),
-        confidence: row.get("confidence"),
-        extracted_at: row.get("extracted_at"),
-    }).collect();
+    let edges: Vec<EntityEdge> = rows
+        .iter()
+        .map(|row| EntityEdge {
+            id: row.get("id"),
+            source_node_id: row.get("source_node_id"),
+            target_node_id: row.get("target_node_id"),
+            entity_type: row.get("entity_type"),
+            entity_name: row.get("entity_name"),
+            relation_type: row.get("relation_type"),
+            confidence: row.get("confidence"),
+            extracted_at: row.get("extracted_at"),
+        })
+        .collect();
 
     Ok(Json(edges))
 }

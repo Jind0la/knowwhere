@@ -47,7 +47,7 @@ Mit k=60 und top_k=5:
 | 9 | 1/70 = 0.01429 | — |
 | 49 | 1/110 = 0.00909 | — |
 
-**Score-Range für Top-5-Ergebnisse:** 0.0143–0.0328  
+**Score-Range für Top-5-Ergebnisse:** 0.0143–0.0328
 **Differenz Rank 0 → Rank 5:** 0.01639 → 0.01515 = **7.5% Abfall**
 
 Vergleich: Raw Cosine Similarity hätte eine Range von ~0.45–0.85, Differenz Rank 0 → Rank 5 typischerweise 30–50%.
@@ -99,7 +99,7 @@ Das ist was wir live gemessen haben. Keine Überraschung — die Mathematik prod
 
 ## Live-Messungen (2026-05-12)
 
-Query: "What database does KnowWhere use?"  
+Query: "What database does KnowWhere use?"
 Server: 14.979 Nodes, MemoryStore (JSON)
 
 ```
@@ -143,7 +143,7 @@ Mit KLARER Separation zwischen relevant (>0.6) und irrelevant (<0.3).
 **Die Pipeline wurde designed für Metasearch mit k=60, aber betrieben als Top-5-Retrieval mit nur 2 Quellen. Das ist der architektonische Bruch: der Algorithmus passt nicht zum Use Case.**
 
 ✅ docs/SIGNAL-TRACE.md — exakte Messungen pro Pipeline-Stage
-✅ docs/ARCHITECTURE-ANALYSIS.md — erweitert mit allen Ergebnissen  
+✅ docs/ARCHITECTURE-ANALYSIS.md — erweitert mit allen Ergebnissen
 ✅ AMB-Benchmark-Rerun (Reduce-to-Core) Score
 ✅ Document-Chunk Precision@3 Messung
 ✅ Conversation-Turn Precision@3 Messung
@@ -188,7 +188,7 @@ Mit KLARER Separation zwischen relevant (>0.6) und irrelevant (<0.3).
 ## Empfehlung
 
 ### SOFORT (1 Zeile, bewiesen)
-**RRF k=60 → k=5 in `src/storage/in_memory.rs:958`.** 
+**RRF k=60 → k=5 in `src/storage/in_memory.rs:958`.**
 → 7.6× bessere Score-Separation. Kein Rebuild nötig (Debug-Binary existiert).
 
 ### KURZFRISTIG (niedriges Risiko, hoher Impact)
@@ -196,7 +196,7 @@ Mit KLARER Separation zwischen relevant (>0.6) und irrelevant (<0.3).
 → Entfernt den 1.76× Bias gegen Episodic/Semantic. Dokumente und Konversationen werden nicht mehr systematisch benachteiligt.
 
 ### MITTELFRISTIG (Architektur-Entscheidung)
-**Datenmodell-Frage klären:** 
+**Datenmodell-Frage klären:**
 - Sollen Konversationen als atomisierte Claims (Decision-Nodes) oder als kohärente Session-Turns (Episodic) gespeichert werden?
 - Sollen Dokumente in Chunks (Semantic) oder als extrahierte Fakten (Decision) leben?
 - Die Antwort bestimmt das Type-System und die Multiplier.

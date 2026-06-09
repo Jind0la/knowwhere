@@ -232,4 +232,3 @@ Nach Abschluss aller Schritte:
 4. Browser: `http://localhost:3000/swagger-ui` -- Swagger-UI sichtbar
 5. Browser: `http://localhost:3000` -- Dashboard sichtbar
 6. Ausgabe: "WOCHE 5 ABGESCHLOSSEN -- OpenAPI + Auth + Docker + Beta-Ready"
-

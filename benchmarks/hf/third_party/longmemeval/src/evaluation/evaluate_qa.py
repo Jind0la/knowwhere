@@ -39,7 +39,7 @@ def get_anscheck_prompt(task, question, answer, response, abstention=False):
             raise NotImplementedError
     else:
         template = "I will give you an unanswerable question, an explanation, and a response from a model. Please answer yes if the model correctly identifies the question as unanswerable. The model could say that the information is incomplete, or some other information is given but the asked information is not.\n\nQuestion: {}\n\nExplanation: {}\n\nModel Response: {}\n\nDoes the model correctly identify the question as unanswerable? Answer yes or no only."
-        prompt = template.format(question, answer, response) 
+        prompt = template.format(question, answer, response)
     return prompt
 
 
@@ -52,7 +52,7 @@ if __name__ == '__main__':
     hyp_file = sys.argv[2]
     ref_file = sys.argv[3]
     verbose = True
-    
+
     result_file = hyp_file + '.eval-results-{}'.format(metric_model_short)
 
     if metric_model_short not in model_zoo:
@@ -66,7 +66,7 @@ if __name__ == '__main__':
     else:
         openai_api_key = "EMPTY"
         openai_api_base = "http://localhost:8001/v1"
-    
+
     metric_client = OpenAI(
         api_key=openai_api_key,
         base_url=openai_api_base,
@@ -92,12 +92,12 @@ if __name__ == '__main__':
             if entry['question_id'] not in qid2qtype:
                 print('Warning: skipping {} as it is not in reference data.'.format(entry['question_id']))
                 continue
-            
+
             qtype = qid2qtype[entry['question_id']]
             q = qid2qdata[entry['question_id']]['question']
             ans = qid2qdata[entry['question_id']]['answer']
             hyp = entry['hypothesis']
-            
+
             prompt = get_anscheck_prompt(qtype, q, ans, hyp, abstention='_abs' in entry['question_id'])
             kwargs = {
                 'model': metric_model,
@@ -126,7 +126,7 @@ if __name__ == '__main__':
             print(json.dumps(entry), file=out_f)
             qtype2acc[qid2qtype[entry['question_id']]].append(1 if label else 0)
 
-            
+
     print('Accuracy:', round(np.mean([1 if x['autoeval_label']['label'] else 0 for x in logs]).item(), 4))
     for k,v in qtype2acc.items():
         print('\t{}: {} ({})'.format(k, round(np.mean(v), 4), len(v)))

@@ -194,10 +194,10 @@ def force_consolidation():
     r = api("post", "/consolidation/force")
     data = r.json()
     print(f"  Candidates: {data.get('candidates_found')}, Total: {data.get('total_nodes')}")
-    
+
     if not data.get("accepted"):
         return False
-    
+
     # Wait for consolidation to process
     for i in range(TIMEOUT_CONSOLIDATION // 5):
         time.sleep(5)
@@ -208,7 +208,7 @@ def force_consolidation():
         if recent_cons:
             newest_time = recent_cons[0].get("created_at", "")
             print(f"  [{i*5}s] Found {len(recent_cons)} consolidation nodes, newest: {newest_time}")
-    
+
     return True
 
 def measure_precision(query, ground_terms, category):
@@ -218,23 +218,23 @@ def measure_precision(query, ground_terms, category):
         "max_depth": 2,
         "limit": 3,
     })
-    
+
     if r.status_code != 200:
         print(f"    Query failed: {r.status_code}")
         return 0, []
-    
+
     data = r.json()
     nodes = data.get("nodes", data) if isinstance(data, dict) else data
     if not isinstance(nodes, list):
         nodes = [nodes]
-    
+
     relevant = 0
     for node in nodes[:3]:
         content = (node.get("content") or "").lower()
         matches = sum(1 for term in ground_terms if term.lower() in content)
         if matches >= 1:
             relevant += 1
-    
+
     precision = relevant / min(3, len(nodes)) if nodes else 0
     return precision, nodes[:3]
 
@@ -244,21 +244,21 @@ def measure_precision(query, ground_terms, category):
 
 def main():
     print("═══ KNOWWHERE FRACTAL HIERARCHY ACTIVATION TEST ═══\n")
-    
+
     # Step 1: Health check
     print("STEP 1: Health Check")
     health = health_check()
     print(f"  Server: {health['status']}, Nodes: {health['node_count']}\n")
-    
+
     # Step 2: Ingest test session
     print("STEP 2: Ingesting 8-Turn Test Session")
     node_ids = ingest_session(TEST_TURNS)
     print(f"  Stored {len(node_ids)} nodes\n")
-    
+
     if len(node_ids) < 8:
         print("  ⚠️ Not all turns stored! Check server logs.")
         return 1
-    
+
     # Step 3: Verify raw nodes
     print("STEP 3: Verifying Raw Nodes")
     for nid in node_ids:
@@ -266,12 +266,12 @@ def main():
         if info:
             print(f"  {nid[:16]}... tier={info['tier']} len={info['content_len']}")
     print()
-    
+
     # Step 4: Force consolidation
     print("STEP 4: Running Consolidation")
     success = force_consolidation()
     print(f"  Consolidation {'started' if success else 'failed'}\n")
-    
+
     # Step 5: Verify hierarchy
     print("STEP 5: Verifying Fractal Hierarchy")
     hierarchy_found = False
@@ -289,7 +289,7 @@ def main():
                         print(f"      L0 {str(parent_info['parent'])[:16]}... tier={l0_info['tier']} content='{l0_info['content_preview']}'")
                         hierarchy_found = True
     print(f"  Hierarchy found: {hierarchy_found}\n")
-    
+
     # Step 6: Test fractal zoom
     print("STEP 6: Testing Fractal Zoom")
     r = api("post", "/retrieve_fractal", json={
@@ -297,7 +297,7 @@ def main():
         "max_depth": 2,
         "limit": 5,
     })
-    
+
     if r.status_code == 200:
         data = r.json()
         nodes = data.get("nodes", data) if isinstance(data, dict) else data
@@ -309,31 +309,31 @@ def main():
         print(f"  Multi-tier zoom: {'✅' if len(tiers_found) > 1 else '❌'} ({len(tiers_found)} tiers)\n")
     else:
         print(f"  retrieve_fractal failed: {r.status_code}\n")
-    
+
     # Step 7: Retrieval benchmarks
     print("STEP 7: Retrieval Benchmarks (Precision@3)")
-    
+
     doc_precisions = []
     conv_precisions = []
-    
+
     print("\n  Document Queries:")
     for query, terms in GROUND_TRUTH["document"].items():
         p, results = measure_precision(query, terms, "document")
         doc_precisions.append(p)
         print(f"    {query[:50]:50s} P@3={p:.2f}")
-    
+
     print("\n  Conversation Queries:")
     for query, terms in GROUND_TRUTH["conversation"].items():
         p, results = measure_precision(query, terms, "conversation")
         conv_precisions.append(p)
         print(f"    {query[:50]:50s} P@3={p:.2f}")
-    
+
     avg_doc = sum(doc_precisions) / len(doc_precisions) if doc_precisions else 0
     avg_conv = sum(conv_precisions) / len(conv_precisions) if conv_precisions else 0
-    
+
     print(f"\n  Average Document Precision@3:     {avg_doc:.2f} {'✅' if avg_doc >= 0.50 else '❌'}")
     print(f"  Average Conversation Precision@3: {avg_conv:.2f} {'✅' if avg_conv >= 0.50 else '❌'}")
-    
+
     # Summary
     print("\n═══ RESULTS SUMMARY ═══")
     print(f"  1. Self-Hosted Consolidation:  {'✅' if success else '❌'}")
@@ -341,10 +341,10 @@ def main():
     print(f"  3. Fractal Zoom:                {'✅' if len(tiers_found) > 1 else '❌'}")
     print(f"  4. Document P@3 ≥ 0.50:        {'✅' if avg_doc >= 0.50 else '❌'} ({avg_doc:.2f})")
     print(f"  5. Conversation P@3 ≥ 0.50:    {'✅' if avg_conv >= 0.50 else '❌'} ({avg_conv:.2f})")
-    
+
     all_pass = success and hierarchy_found and len(tiers_found) > 1 and avg_doc >= 0.50 and avg_conv >= 0.50
     print(f"\n  ALL CRITERIA MET: {'✅ YES' if all_pass else '❌ NO'}")
-    
+
     return 0 if all_pass else 1
 
 if __name__ == "__main__":

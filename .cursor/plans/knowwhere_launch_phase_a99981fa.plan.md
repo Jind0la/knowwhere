@@ -153,7 +153,7 @@ Neue Struktur:
    git clone https://github.com/Jind0la/knowwhere.git
    cd knowwhere
    docker compose up --build
-   
+
 
 ```
 
@@ -178,4 +178,3 @@ Sequenziell ausfuehren:
 4. Browser: `http://localhost:3000/` (Dashboard) und `/swagger-ui` (API Docs)
 5. Python SDK: `pip install -e sdk/python && python sdk/python/examples/langchain_example.py`
 6. Finale Ausgabe: "KNOWWHERE IST LAUNCH-READY -- Finale Phase abgeschlossen"
-

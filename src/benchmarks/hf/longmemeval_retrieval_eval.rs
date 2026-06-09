@@ -113,11 +113,10 @@ fn session_text(session: &Value) -> String {
 }
 
 fn parse_dataset(path: &str, max_cases: usize) -> Result<Vec<RawCase>> {
-    let file = std::fs::File::open(path)
-        .map_err(|e| anyhow!("cannot open dataset {}: {e}", path))?;
+    let file =
+        std::fs::File::open(path).map_err(|e| anyhow!("cannot open dataset {}: {e}", path))?;
     let reader = std::io::BufReader::with_capacity(256 * 1024, file); // 256KB buffer
-    let stream = serde_json::Deserializer::from_reader(reader)
-        .into_iter::<RawCase>();
+    let stream = serde_json::Deserializer::from_reader(reader).into_iter::<RawCase>();
 
     let offset = std::env::var("KNOWWHERE_BENCH_CASE_OFFSET")
         .ok()
@@ -127,13 +126,19 @@ fn parse_dataset(path: &str, max_cases: usize) -> Result<Vec<RawCase>> {
     let mut cases = Vec::with_capacity(max_cases.min(500));
     for (i, result) in stream.enumerate() {
         let case = result.map_err(|e| anyhow!("JSON parse error at case {i}: {e}"))?;
-        if i < offset { continue; }
+        if i < offset {
+            continue;
+        }
         cases.push(case);
-        if cases.len() >= max_cases { break; }
+        if cases.len() >= max_cases {
+            break;
+        }
     }
 
     if cases.is_empty() {
-        return Err(anyhow!("no cases after offset={offset} / max_cases={max_cases}"));
+        return Err(anyhow!(
+            "no cases after offset={offset} / max_cases={max_cases}"
+        ));
     }
     Ok(cases)
 }
@@ -223,12 +228,17 @@ async fn store_case_sessions(
     case: &RawCase,
 ) -> Result<Vec<Uuid>> {
     // Build all session payloads
-    let sessions: Vec<Value> = case.haystack_sessions.iter().enumerate().map(|(idx, sess)| {
-        let sid = session_id_at(case, idx);
-        let session_date = session_date_at(case, idx);
-        let content = session_text(sess);
-        store_payload(run_id, case, &sid, session_date.as_deref(), &content)
-    }).collect();
+    let sessions: Vec<Value> = case
+        .haystack_sessions
+        .iter()
+        .enumerate()
+        .map(|(idx, sess)| {
+            let sid = session_id_at(case, idx);
+            let session_date = session_date_at(case, idx);
+            let content = session_text(sess);
+            store_payload(run_id, case, &sid, session_date.as_deref(), &content)
+        })
+        .collect();
 
     // ONE HTTP call with batch endpoint
     let batch_payload = json!({ "sessions": sessions });
@@ -244,17 +254,23 @@ async fn store_case_sessions(
     let status = res.status();
     if !status.is_success() {
         let body = res.text().await.unwrap_or_default();
-        return Err(anyhow!("store_session_batch failed with {}: {}", status, body.chars().take(300).collect::<String>()));
+        return Err(anyhow!(
+            "store_session_batch failed with {}: {}",
+            status,
+            body.chars().take(300).collect::<String>()
+        ));
     }
 
     let data: Value = res.json().await?;
-    let results = data.get("results")
+    let results = data
+        .get("results")
         .and_then(Value::as_array)
         .ok_or_else(|| anyhow!("store_session_batch response missing results array"))?;
 
     let mut ids = Vec::new();
     for entry in results {
-        let primary = entry.get("id")
+        let primary = entry
+            .get("id")
             .and_then(Value::as_str)
             .ok_or_else(|| anyhow!("batch result missing id"))?;
         ids.push(Uuid::parse_str(primary)?);
@@ -289,9 +305,7 @@ fn retrieve_payload(case: &RawCase, top_k: usize) -> Value {
 }
 
 fn hit_session_id(hit: &Value) -> Option<String> {
-    hit.get("metadata")?
-        .get("session_id")
-        .map(as_string)
+    hit.get("metadata")?.get("session_id").map(as_string)
 }
 
 /// Deduplicate hits by session_id, keeping only the first (best-ranked) occurrence per session.
@@ -336,8 +350,16 @@ fn summary(results: &[CaseResult], top_k: usize) -> EvalSummary {
     let eval: Vec<&CaseResult> = results.iter().filter(|r| !r.is_abstention).collect();
     let n = eval.len().max(1) as f64;
     let top1 = eval.iter().filter(|r| r.rank == Some(1)).count() as f64 / n;
-    let r5 = eval.iter().filter(|r| r.rank.is_some_and(|x| x <= 5)).count() as f64 / n;
-    let r_k = eval.iter().filter(|r| r.rank.is_some_and(|x| x <= top_k)).count() as f64 / n;
+    let r5 = eval
+        .iter()
+        .filter(|r| r.rank.is_some_and(|x| x <= 5))
+        .count() as f64
+        / n;
+    let r_k = eval
+        .iter()
+        .filter(|r| r.rank.is_some_and(|x| x <= top_k))
+        .count() as f64
+        / n;
     let mrr = eval.iter().map(|r| reciprocal(r.rank)).sum::<f64>() / n;
     EvalSummary {
         total_cases: results.len(),
@@ -374,7 +396,9 @@ async fn retrieve_case(
     let fetch_k = (cfg.top_k * 4).max(40);
     let payload = retrieve_payload(case, fetch_k);
     let data = post_json(client, cfg, "retrieve_fractal", &payload).await?;
-    let hits = data.as_array().ok_or_else(|| anyhow!("invalid retrieval response"))?;
+    let hits = data
+        .as_array()
+        .ok_or_else(|| anyhow!("invalid retrieval response"))?;
     Ok(hits.iter().filter_map(hit_session_id).collect())
 }
 

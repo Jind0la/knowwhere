@@ -107,10 +107,10 @@ def knowwhere_retrieve(query: str, k: int = 10) -> tuple[str, float]:
         nodes = resp.json()
     except Exception as e:
         return f"[ERROR: {e}]", 0
-    
+
     elapsed = (time.perf_counter() - t0) * 1000
     nodes = [n for n in nodes if not (n.get("content") or "").strip().startswith("<knowwhere_")]
-    
+
     context = "\n\n".join(
         f"[{n.get('memory_type', '?')}] {n.get('content', '')[:500]}"
         for n in nodes[:k]
@@ -121,11 +121,11 @@ def knowwhere_retrieve(query: str, k: int = 10) -> tuple[str, float]:
 def run_query(query_text: str, gold_answers: list[str]) -> dict:
     # Retrieve
     context, retrieve_ms = knowwhere_retrieve(query_text)
-    
+
     # Generate answer from context
     gen_prompt = f"Answer based ONLY on context. Be concise.\n\nContext:\n{context}\n\nQuestion: {query_text}\n\nAnswer:"
     answer = call_judge(gen_prompt, max_tokens=300).strip()
-    
+
     # Judge
     judge_input = JUDGE_PROMPT.format(
         query=query_text,
@@ -134,13 +134,13 @@ def run_query(query_text: str, gold_answers: list[str]) -> dict:
     )
     judge_output = call_judge(judge_input, max_tokens=200)
     judge_lower = judge_output.lower()
-    
+
     correct = (
         '"correct": true' in judge_lower
         or 'correct=true' in judge_lower
         or '"correct":true' in judge_lower
     )
-    
+
     return {
         "query": query_text[:80],
         "correct": correct,
@@ -174,7 +174,7 @@ def main():
     print(f"KnowWhere: {ENDPOINT}")
     print("=" * 65)
     print()
-    
+
     # Health check
     try:
         h = requests.get(f"{ENDPOINT}/health", headers=KW_HEADERS, timeout=5)
@@ -183,12 +183,12 @@ def main():
     except Exception as e:
         print(f"Server: ❌ {e}\n")
         sys.exit(1)
-    
+
     correct = 0
     total = 0
     results = []
     retrieve_times = []
-    
+
     for query_text, gold_answers in QUERIES:
         r = run_query(query_text, gold_answers)
         results.append(r)
@@ -196,14 +196,14 @@ def main():
         if r["correct"]:
             correct += 1
         retrieve_times.append(r["retrieve_ms"])
-        
+
         marker = "✅" if r["correct"] else "❌"
         print(f"  {marker} [{r['retrieve_ms']:.0f}ms] {query_text[:60]}...")
-    
+
     accuracy = correct / total if total > 0 else 0
     p50 = sorted(retrieve_times)[len(retrieve_times) // 2] if retrieve_times else 0
     p95 = sorted(retrieve_times)[int(len(retrieve_times) * 0.95)] if len(retrieve_times) > 1 else 0
-    
+
     print()
     print("=" * 65)
     print("RESULTS")
@@ -213,7 +213,7 @@ def main():
     print(f"  Accuracy:        {accuracy:.3f} ({accuracy*100:.1f}%)")
     print(f"  Retrieve P50:    {p50:.0f}ms")
     print(f"  Retrieve P95:    {p95:.0f}ms")
-    
+
     output = {
         "benchmark": "KnowWhere AMB-Standard v0.5",
         "methodology": "Same judge prompt as AMB (agentmemorybenchmark.ai), DeepSeek-chat judge",
@@ -225,12 +225,12 @@ def main():
         "retrieve_p95_ms": round(p95, 1),
         "comparison": "AMB leaderboard: agentmemorybenchmark.ai",
     }
-    
+
     path = "/Users/nimarfranklinmac/knowwhere/benchmark_results_amb.json"
     with open(path, "w") as f:
         json.dump(output, f, indent=2, ensure_ascii=False)
     print(f"\nResults → {path}")
-    
+
     return 0 if accuracy >= 0.6 else 1
 
 

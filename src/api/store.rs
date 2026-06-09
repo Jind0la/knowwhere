@@ -9,13 +9,13 @@ use serde_json::Value;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use crate::api::turns::BatchTurnItem;
 use crate::api::types::{clean_for_embedding, parse_speaker_role_from_chunk, AppState};
 use crate::embedding::{embed_document, embed_document_batch};
 use crate::memory::fact_extraction::{FactExtractionContext, FactExtractor};
 use crate::memory::types::{MemorySource, MemoryType, Sensitivity};
 use crate::memory::FractalNode;
 use crate::multimodal::MultimodalData;
-use crate::api::turns::BatchTurnItem;
 
 pub(crate) fn chunk_into_rounds(text: &str, min_round_chars: usize) -> Vec<String> {
     let role_prefixes = [
@@ -58,9 +58,8 @@ pub(crate) fn chunk_into_rounds(text: &str, min_round_chars: usize) -> Vec<Strin
 
     // If no dialog turns detected, use smart semantic chunking
     if !has_role_prefixes && text.len() > 6000 {
-        let chunker = crate::memory::TextChunker::new(
-            crate::memory::ChunkerConfig::for_nomic_8192(),
-        );
+        let chunker =
+            crate::memory::TextChunker::new(crate::memory::ChunkerConfig::for_nomic_8192());
         let chunks = chunker.chunk(text);
         if chunks.len() > 1 {
             return chunks.into_iter().map(|c| c.content).collect();
@@ -376,14 +375,31 @@ async fn store_session_json(
             let turn_meta = Some(serde_json::to_value(&req.metadata).unwrap_or_default());
             let emb_type = state.embedding.name().to_string();
             let emb_dim = state.embedding.dimension() as i32;
-            match pg.store_turn(sid, turn_idx, &speaker, &cleaned, vector.clone(), turn_meta, &emb_type, emb_dim).await {
-                Ok(turn_id) => tracing::info!(%turn_id, %sid, turn_idx, %speaker, "turn stored (single-chunk session)"),
+            match pg
+                .store_turn(
+                    sid,
+                    turn_idx,
+                    &speaker,
+                    &cleaned,
+                    vector.clone(),
+                    turn_meta,
+                    &emb_type,
+                    emb_dim,
+                )
+                .await
+            {
+                Ok(turn_id) => {
+                    tracing::info!(%turn_id, %sid, turn_idx, %speaker, "turn stored (single-chunk session)")
+                }
                 Err(e) => tracing::warn!(%sid, "turn storage failed (non-fatal): {e}"),
             }
         }
 
         let mut metadata = req.metadata;
-        metadata.insert("speaker_role".to_string(), Value::String(speaker.to_string()));
+        metadata.insert(
+            "speaker_role".to_string(),
+            Value::String(speaker.to_string()),
+        );
         metadata.insert("is_turn".to_string(), Value::Bool(true));
         if let Some(ref sid) = req.session_id {
             metadata.insert("session_id".to_string(), Value::String(sid.clone()));
@@ -452,16 +468,10 @@ async fn store_session_json(
                                     %fact_id, source_id = %id,
                                     "inline fact stored"
                                 ),
-                                Err(e) => tracing::debug!(
-                                    "inline fact store failed: {}",
-                                    e
-                                ),
+                                Err(e) => tracing::debug!("inline fact store failed: {}", e),
                             }
                         }
-                        Err(e) => tracing::debug!(
-                            "inline fact embed failed: {}",
-                            e
-                        ),
+                        Err(e) => tracing::debug!("inline fact embed failed: {}", e),
                     }
                 }
                 tracing::debug!(
@@ -510,11 +520,14 @@ async fn store_session_json(
     for ((idx, _), vector) in cleaned.iter().zip(vectors) {
         let idx = *idx;
         let original_chunk = &chunks[idx];
-        let (speaker, _) = parse_speaker_role_from_chunk(original_chunk)
-            .unwrap_or(("assistant", original_chunk));
+        let (speaker, _) =
+            parse_speaker_role_from_chunk(original_chunk).unwrap_or(("assistant", original_chunk));
 
         let mut metadata = req.metadata.clone();
-        metadata.insert("speaker_role".to_string(), Value::String(speaker.to_string()));
+        metadata.insert(
+            "speaker_role".to_string(),
+            Value::String(speaker.to_string()),
+        );
         metadata.insert("is_turn".to_string(), Value::Bool(true));
         metadata.insert(
             "turn_index".to_string(),
@@ -579,7 +592,9 @@ async fn store_session_json(
                     Ok(emb) => {
                         fact_node.vector = emb;
                         match state.store.insert(fact_node).await {
-                            Ok(fact_id) => tracing::debug!(%fact_id, source_id = %primary_id, "inline fact stored (multi-turn)"),
+                            Ok(fact_id) => {
+                                tracing::debug!(%fact_id, source_id = %primary_id, "inline fact stored (multi-turn)")
+                            }
                             Err(e) => tracing::debug!("inline fact store failed: {}", e),
                         }
                     }
@@ -597,8 +612,7 @@ async fn store_session_json(
         let mut turn_items: Vec<BatchTurnItem> = Vec::with_capacity(chunks.len());
         let mut turn_texts: Vec<&str> = Vec::with_capacity(chunks.len());
         for (i, chunk) in chunks.iter().enumerate() {
-            let (speaker, _) = parse_speaker_role_from_chunk(chunk)
-                .unwrap_or(("assistant", ""));
+            let (speaker, _) = parse_speaker_role_from_chunk(chunk).unwrap_or(("assistant", ""));
             turn_items.push(BatchTurnItem {
                 turn_index: i as i32,
                 speaker_role: speaker.to_string(),
@@ -608,17 +622,18 @@ async fn store_session_json(
             turn_texts.push(chunk.as_str());
         }
         // Use cleaned texts for embedding (same as fractal node embeddings)
-        let cleaned_texts: Vec<String> = turn_texts.iter()
-            .map(|t| clean_for_embedding(t))
-            .collect();
-        let cleaned_refs: Vec<&str> = cleaned_texts.iter()
+        let cleaned_texts: Vec<String> =
+            turn_texts.iter().map(|t| clean_for_embedding(t)).collect();
+        let cleaned_refs: Vec<&str> = cleaned_texts
+            .iter()
             .map(|s| s.as_str())
             .filter(|s| s.len() >= 4)
             .collect();
         if !cleaned_refs.is_empty() {
             match embed_document_batch(&*state.embedding, &cleaned_refs).await {
                 Ok(turn_embeddings) => {
-                    let embeddable_items: Vec<BatchTurnItem> = turn_items.iter()
+                    let embeddable_items: Vec<BatchTurnItem> = turn_items
+                        .iter()
                         .filter(|item| {
                             let cleaned = clean_for_embedding(&item.content);
                             cleaned.len() >= 4
@@ -628,18 +643,40 @@ async fn store_session_json(
                     if embeddable_items.len() == turn_embeddings.len() {
                         let emb_type = state.embedding.name().to_string();
                         let emb_dim = state.embedding.dimension() as i32;
-                        match pg.store_turns_batch(sid, &embeddable_items, turn_embeddings, &emb_type, emb_dim).await {
+                        match pg
+                            .store_turns_batch(
+                                sid,
+                                &embeddable_items,
+                                turn_embeddings,
+                                &emb_type,
+                                emb_dim,
+                            )
+                            .await
+                        {
                             Ok((session_uuid, turn_ids)) => {
                                 tracing::info!(%session_uuid, turns = turn_ids.len(), "turn-level storage complete (multi-turn session)");
                             }
-                            Err(e) => tracing::warn!(%sid, "turn batch storage failed (non-fatal): {e}"),
+                            Err(e) => {
+                                tracing::warn!(%sid, "turn batch storage failed (non-fatal): {e}")
+                            }
                         }
                     } else {
                         tracing::warn!(%sid, expected = embeddable_items.len(), got = turn_embeddings.len(), "embedding count mismatch, storing individually");
                         let emb_type = state.embedding.name().to_string();
                         let emb_dim = state.embedding.dimension() as i32;
                         for (item, emb) in embeddable_items.iter().zip(turn_embeddings.iter()) {
-                            let _ = pg.store_turn(sid, item.turn_index, &item.speaker_role, &item.content, emb.clone(), item.metadata.clone(), &emb_type, emb_dim).await;
+                            let _ = pg
+                                .store_turn(
+                                    sid,
+                                    item.turn_index,
+                                    &item.speaker_role,
+                                    &item.content,
+                                    emb.clone(),
+                                    item.metadata.clone(),
+                                    &emb_type,
+                                    emb_dim,
+                                )
+                                .await;
                         }
                     }
                 }
@@ -836,7 +873,10 @@ pub async fn store_session_batch(
                 .unwrap_or(("assistant", &work.original as &str));
 
             let mut metadata = session.metadata.clone();
-            metadata.insert("speaker_role".to_string(), Value::String(speaker.to_string()));
+            metadata.insert(
+                "speaker_role".to_string(),
+                Value::String(speaker.to_string()),
+            );
             metadata.insert("is_turn".to_string(), Value::Bool(true));
             metadata.insert(
                 "turn_index".to_string(),
@@ -876,20 +916,25 @@ pub async fn store_session_batch(
             // Store each turn in conversation_turns so session_id-filtered
             // retrieval works via retrieve_turns_internal.
             #[cfg(feature = "postgres-storage")]
-            if let (Some(pg), Some(ref sid)) = (state.pg_store.as_ref(), session.session_id.as_ref()) {
+            if let (Some(pg), Some(ref sid)) =
+                (state.pg_store.as_ref(), session.session_id.as_ref())
+            {
                 let emb_type = state.embedding.name().to_string();
                 let emb_dim = state.embedding.dimension() as i32;
                 let turn_meta = Some(serde_json::to_value(&session.metadata).unwrap_or_default());
-                if let Err(e) = pg.store_turn(
-                    sid,
-                    local_idx as i32,
-                    speaker,
-                    &work.cleaned,
-                    vector,
-                    turn_meta,
-                    &emb_type,
-                    emb_dim,
-                ).await {
+                if let Err(e) = pg
+                    .store_turn(
+                        sid,
+                        local_idx as i32,
+                        speaker,
+                        &work.cleaned,
+                        vector,
+                        turn_meta,
+                        &emb_type,
+                        emb_dim,
+                    )
+                    .await
+                {
                     tracing::warn!(%sid, turn = local_idx, "turn storage in pg failed (non-fatal): {e}");
                 }
             }
@@ -940,7 +985,9 @@ pub struct SelfImproveRequest {
     pub session_id: Option<String>,
 }
 
-fn default_importance() -> i32 { 5 }
+fn default_importance() -> i32 {
+    5
+}
 
 #[derive(Serialize, ToSchema)]
 pub struct SelfImproveResponse {
@@ -978,15 +1025,26 @@ pub async fn self_improve(
     let cleaned = clean_for_embedding(&req.content);
     let vector = embed_document(&*state.embedding, &cleaned)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("embed failed: {e}")))?;
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("embed failed: {e}"),
+            )
+        })?;
 
     let mut metadata: HashMap<String, Value> = HashMap::new();
     metadata.insert("session_id".to_string(), Value::String(session_id.clone()));
-    metadata.insert("source_system".to_string(), Value::String("hermes_self_improve".to_string()));
+    metadata.insert(
+        "source_system".to_string(),
+        Value::String("hermes_self_improve".to_string()),
+    );
     metadata.insert("agent".to_string(), Value::String("hermes".to_string()));
     metadata.insert("role".to_string(), Value::String("ai_agent".to_string()));
     metadata.insert("observed_at".to_string(), Value::String(observed_at));
-    metadata.insert("importance".to_string(), Value::Number(serde_json::Number::from(importance)));
+    metadata.insert(
+        "importance".to_string(),
+        Value::Number(serde_json::Number::from(importance)),
+    );
     normalize_node_metadata(memory_type, source, &mut metadata);
 
     let mut node = FractalNode::new_typed(
@@ -1013,7 +1071,11 @@ pub async fn self_improve(
             id,
             memory_type: memory_type.label().to_string(),
             importance,
-            message: format!("self-improvement memory stored as {} (importance={})", memory_type.label(), importance),
+            message: format!(
+                "self-improvement memory stored as {} (importance={})",
+                memory_type.label(),
+                importance
+            ),
         }),
     ))
 }
@@ -1077,7 +1139,11 @@ pub async fn store_external(
         Some(v) if !v.is_empty() => v,
         _ => {
             // Embed content if provided, otherwise fall back to pointer
-            let text_to_embed = req.content.as_deref().filter(|s| !s.trim().is_empty()).unwrap_or(&req.pointer);
+            let text_to_embed = req
+                .content
+                .as_deref()
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or(&req.pointer);
             if let Some(ref mm) = req.multimodal {
                 let emb = mm.embedding();
                 if !emb.is_empty() {
@@ -1187,7 +1253,9 @@ pub async fn store_external(
                         Ok(emb) => {
                             fact_node.vector = emb;
                             match state.store.insert(fact_node).await {
-                                Ok(fact_id) => tracing::debug!(%fact_id, source_id = %id, "inline fact stored (external)"),
+                                Ok(fact_id) => {
+                                    tracing::debug!(%fact_id, source_id = %id, "inline fact stored (external)")
+                                }
                                 Err(e) => tracing::debug!("inline fact store failed: {}", e),
                             }
                         }

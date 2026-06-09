@@ -13,13 +13,12 @@ use uuid::Uuid;
 
 use crate::api::types::*;
 use crate::embedding::{embed_document, embed_document_batch, embed_query};
-use crate::memory::FractalNode;
 #[cfg(feature = "postgres-storage")]
-use crate::memory::dream::energy_decay::{MemoryEnergyInfo, DecayResult, CompressionResult};
+use crate::memory::dream::energy_decay::{CompressionResult, DecayResult, MemoryEnergyInfo};
+use crate::memory::FractalNode;
 #[cfg(feature = "postgres-storage")]
 use crate::services::lifecycle::LifecycleService;
 use crate::storage::RetrievalProfile;
-
 
 // =============================================================================
 // Energy Decay Routes (Ebbinghaus forgetting curve)

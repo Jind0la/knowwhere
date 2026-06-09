@@ -1,6 +1,6 @@
 -- =============================================================================
 -- Migration 007: Conflict Detection for Dream Mode
--- 
+--
 -- Enables automatic detection and resolution of conflicting memories:
 --   - Entity conflicts: same entity, different facts
 --   - Temporal conflicts: same fact at different times
@@ -17,22 +17,22 @@
 -- Memory conflicts table: stores detected conflict groups
 CREATE TABLE IF NOT EXISTS memory_conflicts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    
+
     -- The memories involved in this conflict
     conflicting_memory_ids UUID[] NOT NULL,
-    
+
     -- Type of conflict
     conflict_type VARCHAR(20) NOT NULL CHECK (
         conflict_type IN ('entity', 'temporal', 'confidence')
     ),
-    
+
     -- Human-readable description
     description TEXT NOT NULL,
-    
+
     -- Timestamps
     detected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     resolved_at TIMESTAMPTZ,
-    
+
     -- State: pending, resolved
     state VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (
         state IN ('pending', 'resolved')

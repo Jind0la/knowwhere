@@ -40,6 +40,6 @@ pub use types::{ConflictState, ContextTier, MemorySource, MemoryStatus, MemoryTy
 
 #[cfg(feature = "postgres-storage")]
 pub use conversation::{
-    ConversationSession, ConversationTurn, EmbeddingInfo, ScoredTurn, ScoredTurnRow, SessionRow, SpeakerRole,
-    TurnRow,
+    ConversationSession, ConversationTurn, EmbeddingInfo, ScoredTurn, ScoredTurnRow, SessionRow,
+    SpeakerRole, TurnRow,
 };

@@ -14,7 +14,7 @@ resp = requests.post("http://localhost:11434/api/embed",
     json={"model": "nomic-embed-text:latest", "input": texts}, timeout=30)
 embeddings = [np.array(e) for e in resp.json()["embeddings"]]
 
-def cos(a, b): 
+def cos(a, b):
     return float(np.dot(a,b)/(np.linalg.norm(a)*np.linalg.norm(b)))
 
 trunc_dims = [64, 128, 256, 512, 768]

@@ -39,7 +39,7 @@ fn query_prefix(&self) -> &str { "search_query: " }
 - **Languages**: Multilingual (English + French, Spanish, Italian, German per benchmarks)
 - **Size**: 1.2GB, 8K context
 - **Performance**: SOTA on MTEB retrieval for multilingual (55.65 nDCG@10)
-- **Pros**: 
+- **Pros**:
   - Excels at both English AND multilingual retrieval
   - MRL support allows dimension reduction to 768 if needed
   - 8K context (vs 512 in nomic)
@@ -81,7 +81,7 @@ fn query_prefix(&self) -> &str { "search_query: " }
 4. MRL support allows adapting to 768-dim if needed
 5. 8K context is 16x larger than current 512
 
-**Implementation**: 
+**Implementation**:
 ```bash
 ollama pull snowflake-arctic-embed2
 # Then set environment variable:

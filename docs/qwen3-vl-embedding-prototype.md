@@ -113,7 +113,7 @@ Qwen3-1024 and Snowflake-1024 vectors are NOT directly compatible (different emb
 **→ 1024.** MRL truncation has zero quality loss. 1024 matches snowflake-arctic-embed2, simplifying migration. Halves storage and improves query speed.
 
 ### One Provider or Two?
-**→ Qwen3 for text. Snowflake as fallback during migration.** 
+**→ Qwen3 for text. Snowflake as fallback during migration.**
 - Qwen3: 10x faster, multilingual, deterministic, MRL-capable
 - Keep snowflake-arctic-embed2 loaded for existing indexed data until re-indexed
 - Short-term: dual-provider mode in KnowWhere

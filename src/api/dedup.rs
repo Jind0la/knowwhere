@@ -13,11 +13,12 @@ use uuid::Uuid;
 
 use crate::api::types::*;
 use crate::embedding::{embed_document, embed_document_batch, embed_query};
-use crate::memory::FractalNode;
 #[cfg(feature = "postgres-storage")]
-use crate::memory::dream::deduplication::{DuplicatePair, DeduplicationWorker, DeduplicationResult, DeduplicationRunRow};
+use crate::memory::dream::deduplication::{
+    DeduplicationResult, DeduplicationRunRow, DeduplicationWorker, DuplicatePair,
+};
+use crate::memory::FractalNode;
 use crate::storage::RetrievalProfile;
-
 
 // =============================================================================
 // Deduplication Routes

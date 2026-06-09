@@ -145,7 +145,13 @@ async fn post_json(
     Ok(res.json().await?)
 }
 
-fn store_payload(run_id: &str, case: &RawCase, sid: &str, session_date: Option<&str>, content: &str) -> Value {
+fn store_payload(
+    run_id: &str,
+    case: &RawCase,
+    sid: &str,
+    session_date: Option<&str>,
+    content: &str,
+) -> Value {
     json!({
         "content": content,
         "metadata": {
@@ -247,7 +253,8 @@ fn run_official_eval(cfg: &QaEvalConfig) -> Result<bool> {
     let Some(script) = &cfg.official_eval_script else {
         return Ok(false);
     };
-    let python = std::env::var("KNOWWHERE_LONGMEMEVAL_PYTHON").unwrap_or_else(|_| "python3".to_string());
+    let python =
+        std::env::var("KNOWWHERE_LONGMEMEVAL_PYTHON").unwrap_or_else(|_| "python3".to_string());
     let status = Command::new(python)
         .arg(script)
         .arg(&cfg.official_eval_model)

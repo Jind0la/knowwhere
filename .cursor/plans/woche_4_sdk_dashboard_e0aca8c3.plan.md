@@ -226,4 +226,3 @@ graph TB
 - `Cargo.toml`: tower-http features um `"fs"` erweitern
 - `pyproject.toml`: requests, pydantic>=2, langchain-core>=0.3
 - Keine neuen Rust-Crates noetig ausser dem Feature-Flag
-

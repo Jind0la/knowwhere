@@ -153,4 +153,3 @@ Bestehender Frigate-Poller in [src/main.rs](src/main.rs) bleibt als Fallback; De
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): Webhook-Layer, Connector-Pattern, Dedup.
 - [README.md](README.md): Setup Webhooks, ENV-Variablen, Beispiel-Konfiguration pro Connector-Typ.
-

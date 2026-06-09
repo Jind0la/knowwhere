@@ -1,6 +1,5 @@
 /// Unit tests for the Haversine distance formula.
 /// RED phase: these tests will FAIL because haversine_distance() doesn't exist yet.
-
 use knowwhere_server::api::distance_matrix::haversine_distance;
 
 #[test]
@@ -181,7 +180,11 @@ async fn distance_matrix_basic_2x2() {
 
     let distances = json["distances"].as_array().unwrap();
     assert_eq!(distances.len(), 2, "should have 2 rows (origins)");
-    assert_eq!(distances[0].as_array().unwrap().len(), 2, "each row should have 2 cols");
+    assert_eq!(
+        distances[0].as_array().unwrap().len(),
+        2,
+        "each row should have 2 cols"
+    );
     assert_eq!(distances[1].as_array().unwrap().len(), 2);
 
     // Berlin → London: ~930 km

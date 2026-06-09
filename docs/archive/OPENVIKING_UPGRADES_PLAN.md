@@ -61,7 +61,7 @@ CREATE INDEX idx_memories_tier_session ON memories(session_id, context_tier);
 #[serde(rename_all = "lowercase")]
 pub enum ContextTier {
     Summary,   // L0: one-sentence
-    Overview,  // L1: paragraph  
+    Overview,  // L1: paragraph
     Raw,       // L2: full content
 }
 ```
@@ -134,32 +134,32 @@ CREATE TABLE retrieval_runs (
     query_text TEXT NOT NULL,
     query_embedding vector(768),
     run_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    
+
     -- Stats
     total_candidates INT,
     retrieved_count INT,
     execution_time_ms INT,
     max_depth_used INT,
-    
+
     metadata JSONB DEFAULT '{}'
 );
 
 CREATE TABLE retrieval_trajectory (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     run_id UUID REFERENCES retrieval_runs(id) ON DELETE CASCADE,
-    
+
     step_index INT NOT NULL,
     step_type VARCHAR(30),  -- 'initial_search', 'fractal_zoom', 'rerank', 'governance_filter'
-    
+
     memory_id UUID REFERENCES memories(id),
     score_before FLOAT,
     score_after FLOAT,
     rank INT,
-    
+
     -- Reasoning/Explainability
     decision TEXT,           -- "Directory 'skills' had 3/5 relevant children"
     filter_reason TEXT,      -- "Excluded: superseded memory"
-    
+
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -233,18 +233,18 @@ CREATE TABLE agent_skills (
     skill_name TEXT NOT NULL,
     category VARCHAR(50),         -- 'language', 'tool', 'domain', 'framework'
     proficiency INT DEFAULT 5,    -- 1-10
-    
+
     -- Nutzung
     last_used TIMESTAMPTZ,
     success_rate FLOAT,           -- % erfolgreicher Einsätze
-    
+
     -- Komponenten (was gehört zur Skill?)
     components TEXT[],             -- ['tokio', 'axum', 'sqlx']
     prerequisites TEXT[],         -- ['rust', 'async']
-    
+
     -- Verknüpfung zu Memories wo gelernt
     learned_from_memory_id UUID REFERENCES memories(id),
-    
+
     metadata JSONB DEFAULT '{}',
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -313,7 +313,7 @@ pub struct SkillsStore {
 #### Konzept
 
 ```
-Session-Transcript → Extraction-Prompt → 
+Session-Transcript → Extraction-Prompt →
   1. User-Präferenzen (neu oder aktualisiert)
   2. Tool/Ansatz-Erfolge ("Tool X mit Pattern Y hat gut funktioniert")
   3. Tool/Ansatz-Fails ("Tool Z ist fehlgeschlagen weil...")
@@ -324,7 +324,7 @@ Session-Transcript → Extraction-Prompt →
 
 ```sql
 -- consolidation_history erweitern
-ALTER TABLE consolidation_history 
+ALTER TABLE consolidation_history
 ADD COLUMN IF NOT EXISTS preferences_extracted INT DEFAULT 0,
 ADD COLUMN IF NOT EXISTS experiences_extracted INT DEFAULT 0,
 ADD COLUMN IF NOT EXISTS extraction_prompt_tokens INT DEFAULT 0;
@@ -344,11 +344,11 @@ pub struct SessionExtractor {
 impl SessionExtractor {
     /// Extrahiert Knowledge aus einer Session
     pub async fn extract_session_knowledge(
-        &self, 
+        &self,
         session_id: Uuid,
         transcript: &str
     ) -> Result<ExtractionResult> {
-        
+
         // 1. Build extraction prompt
         let prompt = format!(
             "Analyze this session transcript and extract:\n\
@@ -356,16 +356,16 @@ impl SessionExtractor {
              2. Successful tool/approach patterns\n\
              3. Failed approaches and why\n\
              4. Key insights or decisions\n\n\
-             Transcript:\n{}", 
+             Transcript:\n{}",
             transcript
         );
-        
+
         // 2. Call VLM (cheap model like GPT-4o-mini)
         let response = self.llm_client.complete(&prompt).await?;
-        
+
         // 3. Parse response und erstelle Memories
         let result = self.parse_extraction(&response)?;
-        
+
         // 4. Speichere als 'experiential' oder 'preference' Memories
         // mit source='consolidation' und provenance.extra
 
@@ -409,10 +409,10 @@ CREATE TABLE memory_namespaces (
     path TEXT NOT NULL UNIQUE,  -- 'user/preferences', 'agent/skills', 'resources/docs'
     depth INT NOT NULL,
     parent_id UUID REFERENCES memory_namespaces(id),
-    
+
     description TEXT,
     memory_type_hint VARCHAR(20),  -- 'preference', 'procedural', etc.
-    
+
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -455,7 +455,7 @@ impl NamespaceStore {
     pub async fn find_by_path(&self, path: &str) -> Result<Option<MemoryNamespace>> {
         // ...
     }
-    
+
     /// Get all children of a namespace
     pub async fn children(&self, parent_id: Uuid) -> Result<Vec<MemoryNamespace>> {
         // ...

@@ -1,6 +1,6 @@
 # KnowWhere — Task-Liste
 
-> Erstellt: 2026-03-21 | Letztes Update: 2026-03-25  
+> Erstellt: 2026-03-21 | Letztes Update: 2026-03-25
 > Status: ✅ Alle Tasks erledigt | Alle Bugs behoben
 
 ---
@@ -50,7 +50,7 @@
 
 ### [MED-002] Tiered Compaction — LLM-Summarization statt Truncation ✅
 
-**Erledigt.** 
+**Erledigt.**
 
 **Was implementiert:**
 - Retrieval-optimierte Prompts: L1 Overview + L0 Summary mit System-Directive + User-Template

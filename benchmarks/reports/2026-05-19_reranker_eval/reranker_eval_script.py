@@ -142,11 +142,11 @@ def run_reranker_evaluation(
 
     # Load reranker
     session, tokenizer, input_names = load_reranker(model_path, tokenizer_path)
-    
+
     # Determine effective max_length from model inputs
     # gte-modernbert defaults to 8192, others to 512
     effective_max_length = 8192  # gte-modernbert supports 8K
-    
+
     # ── Phase 1: Dense proxy baseline (bi-encoder proxy) ──
     print("\n── Phase 1: Dense Proxy Baseline (Bi-Encoder) ──")
     dense_proxy_results = []

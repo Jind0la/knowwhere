@@ -64,12 +64,15 @@ impl<'a> NamespaceStore<'a> {
 
     /// Look up a namespace by its path.
     pub async fn find_by_path(&self, path: &str) -> anyhow::Result<Option<MemoryNamespace>> {
-        let row = sqlx::query_as::<_, MemoryNamespaceRow>(r#"
+        let row = sqlx::query_as::<_, MemoryNamespaceRow>(
+            r#"
             SELECT id as "id!", path as "path!", depth as "depth!",
                    parent_id, description, memory_type_hint
             FROM memory_namespaces
             WHERE path = $1
-            "#).bind(path)
+            "#,
+        )
+        .bind(path)
         .fetch_optional(self.pool)
         .await?;
 
@@ -78,12 +81,14 @@ impl<'a> NamespaceStore<'a> {
 
     /// List all namespaces ordered by path.
     pub async fn list_all(&self) -> anyhow::Result<Vec<MemoryNamespace>> {
-        let rows = sqlx::query_as::<_, MemoryNamespaceRow>(r#"
+        let rows = sqlx::query_as::<_, MemoryNamespaceRow>(
+            r#"
             SELECT id as "id!", path as "path!", depth as "depth!",
                    parent_id, description, memory_type_hint
             FROM memory_namespaces
             ORDER BY path ASC
-            "#)
+            "#,
+        )
         .fetch_all(self.pool)
         .await?;
 
@@ -117,13 +122,16 @@ impl<'a> NamespaceStore<'a> {
 
     /// List direct child namespaces of a parent.
     pub async fn children(&self, parent_id: Uuid) -> anyhow::Result<Vec<MemoryNamespace>> {
-        let rows = sqlx::query_as::<_, MemoryNamespaceRow>(r#"
+        let rows = sqlx::query_as::<_, MemoryNamespaceRow>(
+            r#"
             SELECT id as "id!", path as "path!", depth as "depth!",
                    parent_id, description, memory_type_hint
             FROM memory_namespaces
             WHERE parent_id = $1
             ORDER BY path ASC
-            "#).bind(parent_id)
+            "#,
+        )
+        .bind(parent_id)
         .fetch_all(self.pool)
         .await?;
 
@@ -139,7 +147,8 @@ impl<'a> NamespaceStore<'a> {
         namespace_id: Uuid,
         limit: i32,
     ) -> anyhow::Result<Vec<MemoryRow>> {
-        let rows = sqlx::query_as::<_, MemoryRow>(r#"
+        let rows = sqlx::query_as::<_, MemoryRow>(
+            r#"
             SELECT
                 id as "id!",
                 memory_type as "memory_type!",
@@ -167,7 +176,10 @@ impl<'a> NamespaceStore<'a> {
             WHERE namespace_id = $1
             ORDER BY created_at DESC
             LIMIT $2
-            "#).bind(namespace_id).bind(limit as i64)
+            "#,
+        )
+        .bind(namespace_id)
+        .bind(limit as i64)
         .fetch_all(self.pool)
         .await?;
 
@@ -179,12 +191,15 @@ impl<'a> NamespaceStore<'a> {
         &self,
         namespace_id: Uuid,
     ) -> anyhow::Result<(MemoryNamespace, Vec<MemoryNamespace>)> {
-        let ns = sqlx::query_as::<_, MemoryNamespaceRow>(r#"
+        let ns = sqlx::query_as::<_, MemoryNamespaceRow>(
+            r#"
             SELECT id as "id!", path as "path!", depth as "depth!",
                    parent_id, description, memory_type_hint
             FROM memory_namespaces
             WHERE id = $1
-            "#).bind(namespace_id)
+            "#,
+        )
+        .bind(namespace_id)
         .fetch_optional(self.pool)
         .await?
         .map(|r| r.into())

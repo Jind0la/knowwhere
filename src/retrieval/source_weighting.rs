@@ -220,11 +220,7 @@ pub fn detect_source_type(node: &FractalNode) -> SourceType {
     }
 
     // 2. Check source_dataset for known synthetic datasets
-    if let Some(dataset) = node
-        .metadata
-        .get("source_dataset")
-        .and_then(|v| v.as_str())
-    {
+    if let Some(dataset) = node.metadata.get("source_dataset").and_then(|v| v.as_str()) {
         let ds_lower = dataset.to_lowercase();
         if ds_lower.contains("synthetic")
             || ds_lower.contains("llm")
@@ -241,11 +237,7 @@ pub fn detect_source_type(node: &FractalNode) -> SourceType {
     }
 
     // 3. Check provenance.method JSON field
-    if let Some(method) = node
-        .provenance
-        .get("method")
-        .and_then(|v| v.as_str())
-    {
+    if let Some(method) = node.provenance.get("method").and_then(|v| v.as_str()) {
         match method.to_lowercase().as_str() {
             "session" | "external" | "external_multimodal" | "manual" => {
                 return SourceType::Real;
@@ -332,8 +324,6 @@ mod tests {
             n_m: 0,
         }
     }
-
-
 
     #[test]
     fn test_detect_from_metadata_provenance_real() {
@@ -523,11 +513,7 @@ mod tests {
     fn test_custom_weights() {
         let mut meta = HashMap::new();
         meta.insert("provenance".into(), serde_json::json!("synthetic"));
-        let node = make_node(
-            MemorySource::Consolidation,
-            serde_json::json!({}),
-            meta,
-        );
+        let node = make_node(MemorySource::Consolidation, serde_json::json!({}), meta);
         let weights = SourceTypeWeights::new(1.0, 0.5, 0.5, 0.5);
         let mult = source_multiplier(&node, &weights);
         assert!((mult - 0.5).abs() < 0.001);
@@ -546,8 +532,14 @@ mod tests {
     fn test_default_weights_are_reasonable() {
         let w = SourceTypeWeights::default();
         assert!(w.real >= 1.0, "real should not be penalized");
-        assert!(w.synthetic < w.real, "synthetic should be discounted vs real");
-        assert!(w.derived < w.synthetic, "derived should be more discounted than synthetic");
+        assert!(
+            w.synthetic < w.real,
+            "synthetic should be discounted vs real"
+        );
+        assert!(
+            w.derived < w.synthetic,
+            "derived should be more discounted than synthetic"
+        );
         assert!(w.unknown < w.real, "unknown should have slight penalty");
         assert!(w.unknown > 0.0, "unknown should not be zero");
     }
@@ -592,7 +584,10 @@ mod tests {
             // Node 2: Derived — auto summary
             {
                 let mut meta = HashMap::new();
-                meta.insert("source_dataset".into(), serde_json::json!("derived_summaries_v1"));
+                meta.insert(
+                    "source_dataset".into(),
+                    serde_json::json!("derived_summaries_v1"),
+                );
                 make_node(
                     MemorySource::Consolidation,
                     serde_json::json!({"method": "summary"}),
@@ -667,8 +662,14 @@ mod tests {
         let synth_mult = source_multiplier(&nodes[1], &weights);
         let deriv_mult = source_multiplier(&nodes[2], &weights);
 
-        assert!(real_mult > synth_mult, "real ({real_mult}) > synthetic ({synth_mult})");
-        assert!(synth_mult > deriv_mult, "synthetic ({synth_mult}) > derived ({deriv_mult})");
+        assert!(
+            real_mult > synth_mult,
+            "real ({real_mult}) > synthetic ({synth_mult})"
+        );
+        assert!(
+            synth_mult > deriv_mult,
+            "synthetic ({synth_mult}) > derived ({deriv_mult})"
+        );
     }
 
     #[test]
@@ -681,8 +682,10 @@ mod tests {
         let mult0 = source_multiplier(&nodes[0], &weights);
         let mult3 = source_multiplier(&nodes[3], &weights);
 
-        assert!((mult0 - mult3).abs() < 0.001,
-            "All Real nodes should have identical multiplier");
+        assert!(
+            (mult0 - mult3).abs() < 0.001,
+            "All Real nodes should have identical multiplier"
+        );
     }
 
     #[test]
@@ -725,10 +728,7 @@ mod tests {
     #[test]
     fn test_from_env_partial_json_keeps_defaults() {
         let _lock = ENV_LOCK.lock().unwrap();
-        std::env::set_var(
-            "KNOWWHERE_SOURCE_TYPE_WEIGHTS",
-            r#"{"synthetic":0.2}"#,
-        );
+        std::env::set_var("KNOWWHERE_SOURCE_TYPE_WEIGHTS", r#"{"synthetic":0.2}"#);
         let w = SourceTypeWeights::from_env().expect("should parse");
         // synthetic overridden
         assert!((w.synthetic - 0.2).abs() < 0.001);
@@ -748,7 +748,10 @@ mod tests {
         );
         let w = SourceTypeWeights::from_env().expect("should parse");
         assert!((w.real - 2.0).abs() < 0.001, "real clamped to 2.0");
-        assert!((w.synthetic - 0.0).abs() < 0.001, "synthetic clamped to 0.0");
+        assert!(
+            (w.synthetic - 0.0).abs() < 0.001,
+            "synthetic clamped to 0.0"
+        );
         assert!((w.derived - 2.0).abs() < 0.001, "derived clamped to 2.0");
         assert!((w.unknown - 0.0).abs() < 0.001, "unknown clamped to 0.0");
         std::env::remove_var("KNOWWHERE_SOURCE_TYPE_WEIGHTS");
@@ -811,7 +814,10 @@ mod tests {
         .unwrap();
         let w = SourceTypeWeights::from_file(&path).expect("should parse");
         assert!((w.real - 2.0).abs() < 0.001, "real clamped to 2.0");
-        assert!((w.synthetic - 0.0).abs() < 0.001, "synthetic clamped to 0.0");
+        assert!(
+            (w.synthetic - 0.0).abs() < 0.001,
+            "synthetic clamped to 0.0"
+        );
         assert!((w.derived - 2.0).abs() < 0.001, "derived clamped to 2.0");
         assert!((w.unknown - 0.0).abs() < 0.001, "unknown clamped to 0.0");
     }
@@ -871,9 +877,15 @@ mod tests {
         std::env::set_var("KNOWWHERE_SOURCE_TYPE_WEIGHTS_FILE", &path);
         let w = SourceTypeWeights::from_config().expect("should use env");
         assert!((w.real - 1.5).abs() < 0.001, "env real should win");
-        assert!((w.synthetic - 0.3).abs() < 0.001, "env synthetic should win");
+        assert!(
+            (w.synthetic - 0.3).abs() < 0.001,
+            "env synthetic should win"
+        );
         // unknown was not in env — should fall to default, NOT file
-        assert!((w.unknown - 0.95).abs() < 0.001, "unknown should use default");
+        assert!(
+            (w.unknown - 0.95).abs() < 0.001,
+            "unknown should use default"
+        );
         std::env::remove_var("KNOWWHERE_SOURCE_TYPE_WEIGHTS");
         std::env::remove_var("KNOWWHERE_SOURCE_TYPE_WEIGHTS_FILE");
     }
@@ -884,16 +896,15 @@ mod tests {
         std::env::remove_var("KNOWWHERE_SOURCE_TYPE_WEIGHTS");
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("source_weights.json");
-        std::fs::write(
-            &path,
-            r#"{"real":0.9,"synthetic":0.6}"#,
-        )
-        .unwrap();
+        std::fs::write(&path, r#"{"real":0.9,"synthetic":0.6}"#).unwrap();
         std::env::set_var("KNOWWHERE_SOURCE_TYPE_WEIGHTS_FILE", &path);
         let w = SourceTypeWeights::from_config().expect("should use file");
         assert!((w.real - 0.9).abs() < 0.001);
         assert!((w.synthetic - 0.6).abs() < 0.001);
-        assert!((w.derived - 0.70).abs() < 0.001, "derived should use default");
+        assert!(
+            (w.derived - 0.70).abs() < 0.001,
+            "derived should use default"
+        );
         std::env::remove_var("KNOWWHERE_SOURCE_TYPE_WEIGHTS_FILE");
     }
 
@@ -989,10 +1000,7 @@ mod tests {
         );
         let weights = SourceTypeWeights::default();
         let debug = RetrievalProfile::FullFidelity.score_debug(0.95, &node, Some(weights));
-        assert_eq!(
-            debug.source_type.as_deref(),
-            Some("synthetic (0.85x)")
-        );
+        assert_eq!(debug.source_type.as_deref(), Some("synthetic (0.85x)"));
     }
 
     #[test]
@@ -1034,10 +1042,18 @@ mod tests {
         assert!((debug2.source_weight_applied.unwrap() - 0.70).abs() < 0.001);
 
         // Real score should be highest (with equal base scores, real wins)
-        assert!(debug0.final_score() > debug1.final_score(),
-            "real ({}) > synthetic ({})", debug0.final_score(), debug1.final_score());
-        assert!(debug1.final_score() > debug2.final_score(),
-            "synthetic ({}) > derived ({})", debug1.final_score(), debug2.final_score());
+        assert!(
+            debug0.final_score() > debug1.final_score(),
+            "real ({}) > synthetic ({})",
+            debug0.final_score(),
+            debug1.final_score()
+        );
+        assert!(
+            debug1.final_score() > debug2.final_score(),
+            "synthetic ({}) > derived ({})",
+            debug1.final_score(),
+            debug2.final_score()
+        );
     }
 
     // ── Full pipeline integration tests (score_node) ─────────────────
@@ -1072,8 +1088,12 @@ mod tests {
 
         // Real boosted by 1.5x, synthetic penalized to 0.3x
         // Ratio should be significant
-        assert!(m0 > m1 * 2.0,
-            "with custom weights, real multiplier ({}) should be >2x synthetic ({})", m0, m1);
+        assert!(
+            m0 > m1 * 2.0,
+            "with custom weights, real multiplier ({}) should be >2x synthetic ({})",
+            m0,
+            m1
+        );
     }
 
     /// Verify score_multiplier applies default weights when None is passed.
@@ -1083,12 +1103,15 @@ mod tests {
 
         let with_defaults = RetrievalProfile::UserFacing
             .score_multiplier(&nodes[1], Some(SourceTypeWeights::default()));
-        let with_none = RetrievalProfile::UserFacing
-            .score_multiplier(&nodes[1], None);
+        let with_none = RetrievalProfile::UserFacing.score_multiplier(&nodes[1], None);
 
         // None should behave identically to explicit default weights
-        assert!((with_defaults - with_none).abs() < 0.001,
-            "None weights should default, got {} vs {}", with_defaults, with_none);
+        assert!(
+            (with_defaults - with_none).abs() < 0.001,
+            "None weights should default, got {} vs {}",
+            with_defaults,
+            with_none
+        );
     }
 
     /// Verify score_node produces correct final scores for mixed-source inputs.
@@ -1099,43 +1122,60 @@ mod tests {
 
         let base_score = 0.95;
 
-        let scored0 = RetrievalProfile::UserFacing
-            .score_node(base_score, nodes[0].clone(), Some(weights));
-        let scored1 = RetrievalProfile::UserFacing
-            .score_node(base_score, nodes[1].clone(), Some(weights));
-        let scored2 = RetrievalProfile::UserFacing
-            .score_node(base_score, nodes[2].clone(), Some(weights));
+        let scored0 =
+            RetrievalProfile::UserFacing.score_node(base_score, nodes[0].clone(), Some(weights));
+        let scored1 =
+            RetrievalProfile::UserFacing.score_node(base_score, nodes[1].clone(), Some(weights));
+        let scored2 =
+            RetrievalProfile::UserFacing.score_node(base_score, nodes[2].clone(), Some(weights));
 
         // Verify debug info carries source metadata
         assert_eq!(
-            scored0.debug.as_ref().and_then(|d| d.original_source.as_deref()),
+            scored0
+                .debug
+                .as_ref()
+                .and_then(|d| d.original_source.as_deref()),
             Some("real")
         );
         assert_eq!(
-            scored1.debug.as_ref().and_then(|d| d.original_source.as_deref()),
+            scored1
+                .debug
+                .as_ref()
+                .and_then(|d| d.original_source.as_deref()),
             Some("synthetic")
         );
         assert_eq!(
-            scored2.debug.as_ref().and_then(|d| d.original_source.as_deref()),
+            scored2
+                .debug
+                .as_ref()
+                .and_then(|d| d.original_source.as_deref()),
             Some("derived")
         );
 
         // Real should score highest (equal base scores → real wins)
         assert!(
             scored0.score > scored1.score,
-            "real ({}) > synthetic ({})", scored0.score, scored1.score
+            "real ({}) > synthetic ({})",
+            scored0.score,
+            scored1.score
         );
         assert!(
             scored1.score > scored2.score,
-            "synthetic ({}) > derived ({})", scored1.score, scored2.score
+            "synthetic ({}) > derived ({})",
+            scored1.score,
+            scored2.score
         );
 
         // Verify scores are consistent with multipliers
-        let m0 = RetrievalProfile::UserFacing
-            .score_multiplier(&nodes[0], Some(weights));
+        let m0 = RetrievalProfile::UserFacing.score_multiplier(&nodes[0], Some(weights));
         let expected0 = base_score * m0;
-        assert!((scored0.score - expected0).abs() < 0.001,
-            "score {} should equal base {} * multiplier {}", scored0.score, base_score, m0);
+        assert!(
+            (scored0.score - expected0).abs() < 0.001,
+            "score {} should equal base {} * multiplier {}",
+            scored0.score,
+            base_score,
+            m0
+        );
     }
 
     /// Verify score_node with custom weights changes ranking order.
@@ -1146,15 +1186,17 @@ mod tests {
         let weights = SourceTypeWeights::new(0.2, 2.0, 1.5, 1.0);
 
         let base = 0.90;
-        let scored0 = RetrievalProfile::UserFacing
-            .score_node(base, nodes[0].clone(), Some(weights));
-        let scored1 = RetrievalProfile::UserFacing
-            .score_node(base, nodes[1].clone(), Some(weights));
+        let scored0 =
+            RetrievalProfile::UserFacing.score_node(base, nodes[0].clone(), Some(weights));
+        let scored1 =
+            RetrievalProfile::UserFacing.score_node(base, nodes[1].clone(), Some(weights));
 
         // With reversed weights, synthetic should score higher than real
         assert!(
             scored1.score > scored0.score,
-            "with reversed weights, synthetic ({}) > real ({})", scored1.score, scored0.score
+            "with reversed weights, synthetic ({}) > real ({})",
+            scored1.score,
+            scored0.score
         );
     }
 
@@ -1167,18 +1209,13 @@ mod tests {
         // Synthetic node: should be penalized in policy profiles (UserFacing/AgentDebug)
         let synthetic_node = &nodes[1];
 
-        for profile in [
-            RetrievalProfile::UserFacing,
-            RetrievalProfile::AgentDebug,
-        ] {
+        for profile in [RetrievalProfile::UserFacing, RetrievalProfile::AgentDebug] {
             let scored = profile.score_node(0.95, synthetic_node.clone(), Some(weights));
-            let source_applied = scored
-                .debug
-                .as_ref()
-                .and_then(|d| d.source_weight_applied);
+            let source_applied = scored.debug.as_ref().and_then(|d| d.source_weight_applied);
             assert!(
                 source_applied.is_some(),
-                "{:?} profile should carry source_weight_applied", profile
+                "{:?} profile should carry source_weight_applied",
+                profile
             );
             assert!(
                 (source_applied.unwrap() - 0.85).abs() < 0.001,
@@ -1187,9 +1224,13 @@ mod tests {
                 source_applied
             );
             assert_eq!(
-                scored.debug.as_ref().and_then(|d| d.original_source.as_deref()),
+                scored
+                    .debug
+                    .as_ref()
+                    .and_then(|d| d.original_source.as_deref()),
                 Some("synthetic"),
-                "{:?} profile should detect synthetic source", profile
+                "{:?} profile should detect synthetic source",
+                profile
             );
         }
     }
@@ -1204,16 +1245,25 @@ mod tests {
             HashMap::new(),
         );
         let weights = SourceTypeWeights::default();
-        let scored = RetrievalProfile::FullFidelity
-            .score_node(1.0, node, Some(weights));
+        let scored = RetrievalProfile::FullFidelity.score_node(1.0, node, Some(weights));
 
         assert_eq!(
-            scored.debug.as_ref().and_then(|d| d.original_source.as_deref()),
+            scored
+                .debug
+                .as_ref()
+                .and_then(|d| d.original_source.as_deref()),
             Some("real"),
             "Import with unrecognized method should fall back to Real"
         );
         assert!(
-            (scored.debug.as_ref().and_then(|d| d.source_weight_applied).unwrap() - 1.0).abs() < 0.001,
+            (scored
+                .debug
+                .as_ref()
+                .and_then(|d| d.source_weight_applied)
+                .unwrap()
+                - 1.0)
+                .abs()
+                < 0.001,
             "Real source should have 1.0x multiplier"
         );
     }
@@ -1236,21 +1286,27 @@ mod tests {
 
         // score_node with None vs explicit defaults — same result
         for (i, node) in nodes.iter().enumerate() {
-            let scored_none = RetrievalProfile::UserFacing
-                .score_node(base, node.clone(), None);
-            let scored_default = RetrievalProfile::UserFacing
-                .score_node(base, node.clone(), Some(defaults));
+            let scored_none = RetrievalProfile::UserFacing.score_node(base, node.clone(), None);
+            let scored_default =
+                RetrievalProfile::UserFacing.score_node(base, node.clone(), Some(defaults));
 
             assert!(
                 (scored_none.score - scored_default.score).abs() < 0.001,
                 "node {i}: None score ({}) == default score ({})",
-                scored_none.score, scored_default.score
+                scored_none.score,
+                scored_default.score
             );
 
             // Both should detect the same provenance
             assert_eq!(
-                scored_none.debug.as_ref().and_then(|d| d.original_source.as_deref()),
-                scored_default.debug.as_ref().and_then(|d| d.original_source.as_deref()),
+                scored_none
+                    .debug
+                    .as_ref()
+                    .and_then(|d| d.original_source.as_deref()),
+                scored_default
+                    .debug
+                    .as_ref()
+                    .and_then(|d| d.original_source.as_deref()),
                 "node {i}: provenance should match"
             );
         }
@@ -1266,29 +1322,43 @@ mod tests {
         let defaults = SourceTypeWeights::default();
 
         // Real node: identity == defaults (both 1.0)
-        let real_none = RetrievalProfile::UserFacing
-            .score_node(0.90, nodes[0].clone(), None);
-        let real_identity = RetrievalProfile::UserFacing
-            .score_node(0.90, nodes[0].clone(), Some(identity));
-        assert!((real_none.score - real_identity.score).abs() < 0.001,
-            "Real: identity == defaults");
+        let real_none = RetrievalProfile::UserFacing.score_node(0.90, nodes[0].clone(), None);
+        let real_identity =
+            RetrievalProfile::UserFacing.score_node(0.90, nodes[0].clone(), Some(identity));
+        assert!(
+            (real_none.score - real_identity.score).abs() < 0.001,
+            "Real: identity == defaults"
+        );
 
         // Synthetic node: identity (1.0) > defaults (0.85)
-        let synth_default = RetrievalProfile::UserFacing
-            .score_node(0.90, nodes[1].clone(), Some(defaults));
-        let synth_identity = RetrievalProfile::UserFacing
-            .score_node(0.90, nodes[1].clone(), Some(identity));
-        assert!(synth_identity.score > synth_default.score,
+        let synth_default =
+            RetrievalProfile::UserFacing.score_node(0.90, nodes[1].clone(), Some(defaults));
+        let synth_identity =
+            RetrievalProfile::UserFacing.score_node(0.90, nodes[1].clone(), Some(identity));
+        assert!(
+            synth_identity.score > synth_default.score,
             "Synthetic: identity ({}) > defaults ({})",
-            synth_identity.score, synth_default.score);
+            synth_identity.score,
+            synth_default.score
+        );
 
         // Provenance still correct with identity weights
         assert_eq!(
-            synth_identity.debug.as_ref().and_then(|d| d.original_source.as_deref()),
+            synth_identity
+                .debug
+                .as_ref()
+                .and_then(|d| d.original_source.as_deref()),
             Some("synthetic")
         );
         assert!(
-            (synth_identity.debug.as_ref().and_then(|d| d.source_weight_applied).unwrap() - 1.0).abs() < 0.001,
+            (synth_identity
+                .debug
+                .as_ref()
+                .and_then(|d| d.source_weight_applied)
+                .unwrap()
+                - 1.0)
+                .abs()
+                < 0.001,
             "identity weight should reflect 1.0"
         );
     }
@@ -1313,38 +1383,98 @@ mod tests {
 
         // Node 0: Real → source_weight = 1.0
         assert_eq!(
-            scored[0].debug.as_ref().and_then(|d| d.original_source.as_deref()),
+            scored[0]
+                .debug
+                .as_ref()
+                .and_then(|d| d.original_source.as_deref()),
             Some("real")
         );
-        assert!((scored[0].debug.as_ref().and_then(|d| d.source_weight_applied).unwrap() - 1.0).abs() < 0.001);
+        assert!(
+            (scored[0]
+                .debug
+                .as_ref()
+                .and_then(|d| d.source_weight_applied)
+                .unwrap()
+                - 1.0)
+                .abs()
+                < 0.001
+        );
 
         // Node 1: Synthetic → 0.85
         assert_eq!(
-            scored[1].debug.as_ref().and_then(|d| d.original_source.as_deref()),
+            scored[1]
+                .debug
+                .as_ref()
+                .and_then(|d| d.original_source.as_deref()),
             Some("synthetic")
         );
-        assert!((scored[1].debug.as_ref().and_then(|d| d.source_weight_applied).unwrap() - 0.85).abs() < 0.001);
+        assert!(
+            (scored[1]
+                .debug
+                .as_ref()
+                .and_then(|d| d.source_weight_applied)
+                .unwrap()
+                - 0.85)
+                .abs()
+                < 0.001
+        );
 
         // Node 2: Derived → 0.70
         assert_eq!(
-            scored[2].debug.as_ref().and_then(|d| d.original_source.as_deref()),
+            scored[2]
+                .debug
+                .as_ref()
+                .and_then(|d| d.original_source.as_deref()),
             Some("derived")
         );
-        assert!((scored[2].debug.as_ref().and_then(|d| d.source_weight_applied).unwrap() - 0.70).abs() < 0.001);
+        assert!(
+            (scored[2]
+                .debug
+                .as_ref()
+                .and_then(|d| d.source_weight_applied)
+                .unwrap()
+                - 0.70)
+                .abs()
+                < 0.001
+        );
 
         // Node 3: Document → Real → 1.0
         assert_eq!(
-            scored[3].debug.as_ref().and_then(|d| d.original_source.as_deref()),
+            scored[3]
+                .debug
+                .as_ref()
+                .and_then(|d| d.original_source.as_deref()),
             Some("real")
         );
-        assert!((scored[3].debug.as_ref().and_then(|d| d.source_weight_applied).unwrap() - 1.0).abs() < 0.001);
+        assert!(
+            (scored[3]
+                .debug
+                .as_ref()
+                .and_then(|d| d.source_weight_applied)
+                .unwrap()
+                - 1.0)
+                .abs()
+                < 0.001
+        );
 
         // Node 4: Import → Real → 1.0
         assert_eq!(
-            scored[4].debug.as_ref().and_then(|d| d.original_source.as_deref()),
+            scored[4]
+                .debug
+                .as_ref()
+                .and_then(|d| d.original_source.as_deref()),
             Some("real")
         );
-        assert!((scored[4].debug.as_ref().and_then(|d| d.source_weight_applied).unwrap() - 1.0).abs() < 0.001);
+        assert!(
+            (scored[4]
+                .debug
+                .as_ref()
+                .and_then(|d| d.source_weight_applied)
+                .unwrap()
+                - 1.0)
+                .abs()
+                < 0.001
+        );
 
         // Score ordering: Real > Synthetic > Derived (equal base → weights determine)
         assert!(scored[0].score > scored[1].score, "real > synthetic");
@@ -1352,12 +1482,18 @@ mod tests {
         // Nodes 0 (Conversation, primary trust) and 3 (Document, reference trust)
         // may have different scores due to trust tier, but both carry Real provenance.
         assert_eq!(
-            scored[0].debug.as_ref().and_then(|d| d.original_source.as_deref()),
+            scored[0]
+                .debug
+                .as_ref()
+                .and_then(|d| d.original_source.as_deref()),
             Some("real"),
             "Conversation → Real"
         );
         assert_eq!(
-            scored[3].debug.as_ref().and_then(|d| d.original_source.as_deref()),
+            scored[3]
+                .debug
+                .as_ref()
+                .and_then(|d| d.original_source.as_deref()),
             Some("real"),
             "Document → Real"
         );
@@ -1405,7 +1541,10 @@ mod tests {
         assert!((synth_mult - 2.0).abs() < 0.001, "synthetic boosted to 2.0");
         assert!((deriv_mult - 1.0).abs() < 0.001, "derived at 1.0");
 
-        assert!(synth_mult > deriv_mult, "synthetic > derived with custom weights");
+        assert!(
+            synth_mult > deriv_mult,
+            "synthetic > derived with custom weights"
+        );
         assert!(deriv_mult > real_mult, "derived > real with custom weights");
     }
 
@@ -1450,15 +1589,18 @@ mod tests {
             assert_eq!(
                 debug.original_source.as_deref(),
                 Some("derived"),
-                "{:?}: should detect derived source", profile
+                "{:?}: should detect derived source",
+                profile
             );
             assert!(
                 (debug.source_weight_applied.unwrap() - 0.70).abs() < 0.001,
-                "{:?}: derived weight should be 0.70", profile
+                "{:?}: derived weight should be 0.70",
+                profile
             );
             assert!(
                 debug.source_type.as_deref().unwrap_or("").contains("0.70"),
-                "{:?}: composite source_type should mention weight", profile
+                "{:?}: composite source_type should mention weight",
+                profile
             );
         }
     }
@@ -1504,10 +1646,7 @@ mod tests {
     #[test]
     fn test_unknown_weight_from_env() {
         let _lock = ENV_LOCK.lock().unwrap();
-        std::env::set_var(
-            "KNOWWHERE_SOURCE_TYPE_WEIGHTS",
-            r#"{"unknown":0.42}"#,
-        );
+        std::env::set_var("KNOWWHERE_SOURCE_TYPE_WEIGHTS", r#"{"unknown":0.42}"#);
         let w = SourceTypeWeights::from_env().expect("should parse");
         assert!((w.unknown - 0.42).abs() < 0.001, "unknown overridden");
         assert!((w.real - 1.0).abs() < 0.001, "real stays default");
@@ -1554,8 +1693,7 @@ mod tests {
         );
         // Real weight = 0.0 → final score should be 0.0 (policy profiles apply source)
         let weights = SourceTypeWeights::new(0.0, 0.85, 0.70, 0.95);
-        let scored = RetrievalProfile::UserFacing
-            .score_node(0.95, node, Some(weights));
+        let scored = RetrievalProfile::UserFacing.score_node(0.95, node, Some(weights));
 
         assert!(
             scored.score == 0.0,
@@ -1563,11 +1701,20 @@ mod tests {
             scored.score
         );
         assert_eq!(
-            scored.debug.as_ref().and_then(|d| d.original_source.as_deref()),
+            scored
+                .debug
+                .as_ref()
+                .and_then(|d| d.original_source.as_deref()),
             Some("real")
         );
         assert!(
-            (scored.debug.as_ref().and_then(|d| d.source_weight_applied).unwrap() - 0.0).abs()
+            (scored
+                .debug
+                .as_ref()
+                .and_then(|d| d.source_weight_applied)
+                .unwrap()
+                - 0.0)
+                .abs()
                 < 0.001,
             "source_weight_applied should be 0.0"
         );
@@ -1584,8 +1731,7 @@ mod tests {
         );
         // Synthetic weight = 0.0
         let weights = SourceTypeWeights::new(1.0, 0.0, 0.70, 0.95);
-        let scored = RetrievalProfile::UserFacing
-            .score_node(0.90, node, Some(weights));
+        let scored = RetrievalProfile::UserFacing.score_node(0.90, node, Some(weights));
 
         assert!(
             scored.score == 0.0,
@@ -1593,7 +1739,10 @@ mod tests {
             scored.score
         );
         assert_eq!(
-            scored.debug.as_ref().and_then(|d| d.original_source.as_deref()),
+            scored
+                .debug
+                .as_ref()
+                .and_then(|d| d.original_source.as_deref()),
             Some("synthetic")
         );
     }
@@ -1610,8 +1759,7 @@ mod tests {
                 "node {i}: all-zero weights should give 0.0 multiplier, got {mult}"
             );
 
-            let scored = RetrievalProfile::UserFacing
-                .score_node(0.95, node.clone(), Some(weights));
+            let scored = RetrievalProfile::UserFacing.score_node(0.95, node.clone(), Some(weights));
             assert!(
                 scored.score == 0.0,
                 "node {i}: all-zero weights should give 0.0 final score, got {}",
@@ -1639,10 +1787,10 @@ mod tests {
         assert!((mult2 - 0.70).abs() < 0.001, "Derived non-zero");
 
         // Synthetic should score higher than Real when Real is zeroed
-        let scored0 = RetrievalProfile::UserFacing
-            .score_node(0.90, nodes[0].clone(), Some(weights));
-        let scored1 = RetrievalProfile::UserFacing
-            .score_node(0.90, nodes[1].clone(), Some(weights));
+        let scored0 =
+            RetrievalProfile::UserFacing.score_node(0.90, nodes[0].clone(), Some(weights));
+        let scored1 =
+            RetrievalProfile::UserFacing.score_node(0.90, nodes[1].clone(), Some(weights));
         assert!(
             scored1.score > scored0.score,
             "synthetic ({}) > real ({}) when real is zeroed",
@@ -1684,10 +1832,7 @@ mod tests {
         );
         let weights = SourceTypeWeights::new(0.0, 0.85, 0.70, 0.95);
 
-        for profile in [
-            RetrievalProfile::UserFacing,
-            RetrievalProfile::AgentDebug,
-        ] {
+        for profile in [RetrievalProfile::UserFacing, RetrievalProfile::AgentDebug] {
             let scored = profile.score_node(0.95, node.clone(), Some(weights));
             assert!(
                 scored.score == 0.0,
@@ -1812,10 +1957,10 @@ mod tests {
         // score_multiplier() includes tier * explicit * memory_type * source_type,
         // so the 2x source weight should exactly double the final score relative
         // to a 1x source weight when all other multipliers are held equal.
-        let scored_2x = RetrievalProfile::UserFacing
-            .score_node(base, node.clone(), Some(weights_2x));
-        let scored_1x = RetrievalProfile::UserFacing
-            .score_node(base, node.clone(), Some(weights_1x));
+        let scored_2x =
+            RetrievalProfile::UserFacing.score_node(base, node.clone(), Some(weights_2x));
+        let scored_1x =
+            RetrievalProfile::UserFacing.score_node(base, node.clone(), Some(weights_1x));
 
         assert!(
             scored_2x.score > 0.0,

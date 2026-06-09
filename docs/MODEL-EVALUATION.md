@@ -75,13 +75,13 @@ Test: real KnowWhere node (602 chars, "SESSION TURN 8 — Alex: The KnowWhere ro
 #### `qwen2.5:3b` (current)
 ```json
 {
-  "summary": "Alex outlined the KnowWhere roadmap divided into three phases, 
+  "summary": "Alex outlined the KnowWhere roadmap divided into three phases,
               detailing progress on each phase with specific metrics and improvements.",
   "claims": [
     {
-      "claim": "Phase 1 of KnowWhere's roadmap is complete with RRF k=5 fixed 
+      "claim": "Phase 1 of KnowWhere's roadmap is complete with RRF k=5 fixed
                 and AMB at 73 percent accuracy.",
-      "reason": "Alex stated that Phase 1 Core Loop Proof is complete, specifically 
+      "reason": "Alex stated that Phase 1 Core Loop Proof is complete, specifically
                  mentioning RRF k=5 fixed and AMB at 73 percent accuracy."
     },
     ...
@@ -90,7 +90,7 @@ Test: real KnowWhere node (602 chars, "SESSION TURN 8 — Alex: The KnowWhere ro
 ```
 ✅ Specific metrics, exact technologies, proper JSON, 3 claims extracted.
 
-#### `llama3.2:3b` 
+#### `llama3.2:3b`
 ```json
 {
   "summary": "KnowWhere Roadmap Phases",

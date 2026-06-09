@@ -1,8 +1,8 @@
 # Entity Graph Layer — Implementation Plan
 
-**Status:** Approved  
-**Date:** May 20, 2026  
-**Source:** `docs/ENTITY_GRAPH_SPIKE.md` (parent task t_d112844c)  
+**Status:** Approved
+**Date:** May 20, 2026
+**Source:** `docs/ENTITY_GRAPH_SPIKE.md` (parent task t_d112844c)
 **Related:** `docs/HMEM_PAPER_ANALYSIS.md`, `docs/THEORETICAL_FOUNDATIONS.md`
 
 ---
@@ -256,7 +256,7 @@ impl EntityGraph {
 ```
 
 **Tests to write (Phase 1):**
-- `test_extract_person_entity` — "Nimar configured the server" extracts Person "Nimar"  
+- `test_extract_person_entity` — "Nimar configured the server" extracts Person "Nimar"
 - `test_extract_technology_entity` — "migrated from Docker to native macOS" extracts Technology "Docker"
 - `test_extract_relation` — "Nimar uses Rust" creates relation edge with confidence 0.70
 - `test_entity_upsert_dedup` — two nodes mentioning "PostgreSQL" → single entity, two source_node_ids
@@ -295,47 +295,47 @@ let entity_graph = Arc::new(tokio::sync::RwLock::new(
 impl EntityGraph {
     // --- Construction ---
     pub fn new(config: EntityGraphConfig) -> Self;
-    
+
     // --- Entity CRUD ---
-    pub fn upsert_entity(&mut self, name: &str, entity_type: EntityType, 
+    pub fn upsert_entity(&mut self, name: &str, entity_type: EntityType,
                          source_node_id: Uuid, confidence: f64) -> NodeIndex;
-    
+
     /// Find top-K entity nodes by cosine similarity to a query embedding.
     /// Only returns entities that have embeddings set.
-    pub fn find_seed_entities(&self, query_embedding: &[f32], k: usize) 
+    pub fn find_seed_entities(&self, query_embedding: &[f32], k: usize)
         -> Vec<(NodeIndex, f32)>;
-    
+
     /// Look up an entity by canonical name.
     pub fn find_entity(&self, name: &str) -> Option<NodeIndex>;
-    
+
     /// All entity nodes linked to a source FractalNode.
     pub fn entities_for_node(&self, node_id: &Uuid) -> Vec<NodeIndex>;
-    
+
     // --- Relations ---
     pub fn add_relation(&mut self, from: NodeIndex, to: NodeIndex,
                         relation_type: &str, source_node_id: Uuid,
                         confidence: f64, evidence: &str);
-    
+
     /// Get all relations (edges) for an entity node.
-    pub fn relations_for_entity(&self, entity: NodeIndex) 
+    pub fn relations_for_entity(&self, entity: NodeIndex)
         -> Vec<(NodeIndex, &EntityEdge)>;
-    
+
     // --- Multi-Hop Expansion ---
-    
+
     /// BFS from seed entity nodes up to config.max_expansion_depth.
     /// Returns all entity nodes reachable in the subgraph.
     pub fn multi_hop_expand(
         &self,
         seeds: &[NodeIndex],
     ) -> Vec<NodeIndex>;
-    
+
     /// Map entity graph nodes back to source FractalNode UUIDs.
     /// This is the critical bidirectional link for retrieval.
     pub fn source_nodes_for_entities(
         &self,
         entities: &[NodeIndex],
     ) -> HashSet<Uuid>;
-    
+
     /// Full retrieval sub-flow:
     /// 1. embed query → find seed entities
     /// 2. BFS from seeds → collect subgraph entities
@@ -345,22 +345,22 @@ impl EntityGraph {
         &self,
         query_embedding: &[f32],
     ) -> (HashSet<Uuid>, Vec<(Uuid, f32)>);
-    
+
     // --- Maintenance ---
-    
+
     /// Remove stale entities (below min_degree_for_retention, last_seen > threshold).
     /// Returns count of pruned entities.
     pub fn prune_stale(&mut self, older_than: DateTime<Utc>) -> usize;
-    
+
     /// Merge two entity nodes (disambiguation). Relabels edges, updates indices.
     /// Returns the preserved NodeIndex.
-    pub fn merge_entities(&mut self, primary: NodeIndex, secondary: NodeIndex) 
+    pub fn merge_entities(&mut self, primary: NodeIndex, secondary: NodeIndex)
         -> anyhow::Result<NodeIndex>;
-    
+
     // --- Serialization ---
     pub fn to_json(&self) -> serde_json::Result<String>;
     pub fn from_json(json: &str) -> serde_json::Result<Self>;
-    
+
     // --- Stats ---
     pub fn entity_count(&self) -> usize;
     pub fn edge_count(&self) -> usize;
@@ -374,7 +374,7 @@ pub fn multi_hop_expand(&self, seeds: &[NodeIndex]) -> Vec<NodeIndex> {
     use petgraph::visit::Bfs;
     let mut visited = HashSet::new();
     let mut result = Vec::new();
-    
+
     for &seed in seeds {
         let mut bfs = Bfs::new(&self.graph, seed);
         while let Some(node) = bfs.next(&self.graph) {
@@ -484,8 +484,8 @@ In `src/memory/dream/consolidation.rs`, after LLM summarization returns the `Det
 if let Some(entity_graph) = &self.entity_graph {
     let mut eg = entity_graph.write().await;
     let added = eg.ingest_from_summary(
-        &summary_text, 
-        parent_node_id, 
+        &summary_text,
+        parent_node_id,
         self.config.entity_confidence_threshold
     );
     tracing::info!(
@@ -524,12 +524,12 @@ if let Some(entity_graph) = &self.entity_graph {
 ```rust
 pub struct HybridQuery {
     // ... existing fields ...
-    
+
     /// Enable entity graph expansion as a retrieval perspective.
     /// When true, entity-aware retrieval runs alongside dense/BM25.
     #[serde(default)]
     pub entity_graph: bool,
-    
+
     /// Weight for entity graph scores in final RRF fusion.
     /// 0.0 = entity graph disabled in scoring, 1.0 = equal to other perspectives.
     /// Recommended: 0.3–0.5 for balanced impact.
@@ -575,15 +575,15 @@ async fn entity_graph_retrieve(
     if seeds.is_empty() {
         return vec![];
     }
-    
+
     // 2. BFS from seeds to build subgraph
     let entities = entity_graph.multi_hop_expand(
         &seeds.iter().map(|(idx, _)| *idx).collect::<Vec<_>>()
     );
-    
+
     // 3. Map entities to source FractalNode IDs
     let source_ids = entity_graph.source_nodes_for_entities(&entities);
-    
+
     // 4. Return (node_id, entity_graph_score) pairs
     //    Score = max(seed_similarity * edge_confidence) for each node
     source_ids.into_iter().map(|id| {

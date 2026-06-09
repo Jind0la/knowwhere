@@ -1,8 +1,8 @@
 # CRIT-003: PostgreSQL Integration — Architecture Decision
 
-> Status: ✅ Done  
-> Erstellt: 2026-03-22  
-> Letztes Update: 2026-03-22  
+> Status: ✅ Done
+> Erstellt: 2026-03-22
+> Letztes Update: 2026-03-22
 > Commits: `6f9cfc6`, `eceb6e2`, `b4244db`, `4cfa5b7`
 
 ---
@@ -49,7 +49,7 @@ let store: Arc<dyn StorageBackend> = Arc::new(BillionScaleUSearch::new());
 └─────────────────────────────────┘
 ```
 
-**Pro:** Ein System, ACID, WAL, Multi-Instance  
+**Pro:** Ein System, ACID, WAL, Multi-Instance
 **Contra:** Fractal traversal muss als rekursive CTE gebaut werden, 10-20ms p99 latency
 
 ---
@@ -63,7 +63,7 @@ let store: Arc<dyn StorageBackend> = Arc::new(BillionScaleUSearch::new());
 └──────────────┘    └──────────────┘
 ```
 
-**Pro:** USearch performanter (2-5ms p99), fractal zoom existiert bereits  
+**Pro:** USearch performanter (2-5ms p99), fractal zoom existiert bereits
 **Contra:** ⚠️ **USearch ist RAM-only** — nach Neustart muss Index aus Postgres rebuilt werden. Availability-Problem bis rebuild fertig.
 
 **Versteckter Killer:** Bei 10M+ Nodes dauert der Index-Rebuild Minuten. In dieser Zeit: kein fractal zoom möglich.
@@ -74,7 +74,7 @@ let store: Arc<dyn StorageBackend> = Arc::new(BillionScaleUSearch::new());
 
 Events nach Postgres, fractal retrieval bleibt auf JSON + USearch.
 
-**Pro:** Minimaler Eingriff  
+**Pro:** Minimaler Eingriff
 **Contra:** Kein echtes Production-Backend für Memories
 
 ---
@@ -118,7 +118,7 @@ Events nach Postgres, fractal retrieval bleibt auf JSON + USearch.
 
 **Bei welchem Node-Count kippt pgvector (HNSW) und was ist der konkrete Migrationspfad zu pgvectorscale?**
 
-Nicht: "ist Performance relevant?"  
+Nicht: "ist Performance relevant?"
 Sondern: "Wo ist die Grenze und wie sieht der Wechsel aus?"
 
 ---

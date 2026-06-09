@@ -1,8 +1,8 @@
 # Phase 0 Research: Temporal Approach, Golden Queries & Baseline Metrics
 
-**Date:** 2026-05-17  
-**Dataset:** 2,405 nodes loaded in KnowWhere  
-**Embedding Model:** nomic-embed-text (768-dim, Ollama)  
+**Date:** 2026-05-17
+**Dataset:** 2,405 nodes loaded in KnowWhere
+**Embedding Model:** nomic-embed-text (768-dim, Ollama)
 **Evaluator:** `eval/baseline_runner.py`
 
 ---
@@ -54,7 +54,7 @@ The current KnowWhere API (`/retrieve_fractal`) does not yet support temporal fi
 
 ## 2. Temporal Golden Queries
 
-**Location:** `queries/temporal_golden.json`  
+**Location:** `queries/temporal_golden.json`
 **Count:** 15 queries across 6 temporal reasoning dimensions
 
 ### Query Categories
@@ -115,8 +115,8 @@ Max fractal depth: 3
 
 ### 3.2 LongMemEval (20 Questions)
 
-**Source:** `benchmarks/data/longmemeval_s_cleaned.json` (first 20 non-abstention cases)  
-**Question types:** single-session-user, multi-session-user, single-session-assistant  
+**Source:** `benchmarks/data/longmemeval_s_cleaned.json` (first 20 non-abstention cases)
+**Question types:** single-session-user, multi-session-user, single-session-assistant
 **Report:** `eval/results/baseline_longmemeval_*.json`
 
 | Metric | Value |
@@ -137,8 +137,8 @@ Max fractal depth: 3
 
 ### 3.3 PersonaMem (20 Questions)
 
-**Source:** HuggingFace `bowen-upenn/PersonaMem` (32k token version, first 20 questions)  
-**Question types:** recall_user_shared_facts, track_full_preference_evolution, suggest_new_ideas  
+**Source:** HuggingFace `bowen-upenn/PersonaMem` (32k token version, first 20 questions)
+**Question types:** recall_user_shared_facts, track_full_preference_evolution, suggest_new_ideas
 **Report:** `eval/results/baseline_personamem_*.json`
 
 | Metric | Value |
@@ -172,7 +172,7 @@ The Agent Memory Benchmark (AMB) by Vectorize provides a standardized evaluation
 Ingest → Retrieve → Generate (Gemini) → Judge (Gemini)
 ```
 
-**Supported datasets:** BEAM, LongMemEval, PersonaMem, LoCoMo, MemBench, MemSIM, LifeBench  
+**Supported datasets:** BEAM, LongMemEval, PersonaMem, LoCoMo, MemBench, MemSIM, LifeBench
 **Supported providers:** BM25, Hindsight, Mastra, Cognee, Neo4j, Mem0
 
 ### 4.2 KnowWhere as an AMB Provider

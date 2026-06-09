@@ -1,7 +1,7 @@
 # KnowWhere Session-ID Match Benchmark
 
-**Date:** 2026-05-30  
-**Dataset:** LongMemEval S (AMB format), 30 queries  
+**Date:** 2026-05-30
+**Dataset:** LongMemEval S (AMB format), 30 queries
 **Baseline:** Hindsight Recall@5 = 94.6% (BGE-reranker-v2-m3, 568M params)
 
 ---

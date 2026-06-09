@@ -178,7 +178,7 @@ Der AMB-Adapter (`agent-memory-benchmark/knowwhere.py`) ruft `POST /retrieve_fra
 
 **Retrieval-Qualität (Content-Based P@3, RRF k=5):**
 - doc_roadmap: 3/3 (1.00)
-- doc_state: 3/3 (1.00)  
+- doc_state: 3/3 (1.00)
 - doc_arch: 3/3 (1.00)
 - conv_decision: 1/3 (0.33)
 - conv_session: 0/3 (0.00)

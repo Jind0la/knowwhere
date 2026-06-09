@@ -207,20 +207,24 @@ fn percentile_95_ms(samples_ms: &[u128]) -> u128 {
 }
 
 fn find_rank(results: &[knowwhere_server::storage::ScoredNode], target: Uuid) -> Option<usize> {
-    results.iter().position(|r| r.id == target).map(|idx| idx + 1)
+    results
+        .iter()
+        .position(|r| r.id == target)
+        .map(|idx| idx + 1)
 }
 
-async fn run_echo_suite(store: &MemoryStore, ids: &[Uuid]) -> anyhow::Result<(EchoMetrics, Vec<u128>)> {
+async fn run_echo_suite(
+    store: &MemoryStore,
+    ids: &[Uuid],
+) -> anyhow::Result<(EchoMetrics, Vec<u128>)> {
     let mut ranks = Vec::new();
     let mut latencies_ms = Vec::new();
     for case in ECHO_CASES {
         for (variant_idx, query_text) in case.queries.iter().enumerate() {
             let t0 = Instant::now();
-            let results = StorageBackend::hybrid_retrieve(
-                store,
-                &query_for(case, variant_idx, query_text),
-            )
-            .await?;
+            let results =
+                StorageBackend::hybrid_retrieve(store, &query_for(case, variant_idx, query_text))
+                    .await?;
             latencies_ms.push(t0.elapsed().as_millis());
             ranks.push(find_rank(&results, ids[case.topic]));
         }
@@ -243,7 +247,11 @@ async fn echo_retrieval_quality_baseline() -> anyhow::Result<()> {
         "Precision@1 too low: {:.2}",
         metrics.precision_at_1
     );
-    assert!(metrics.recall_at_3 >= 0.85, "Recall@3 too low: {:.2}", metrics.recall_at_3);
+    assert!(
+        metrics.recall_at_3 >= 0.85,
+        "Recall@3 too low: {:.2}",
+        metrics.recall_at_3
+    );
     assert!(metrics.mrr >= 0.75, "MRR too low: {:.2}", metrics.mrr);
     assert!(
         metrics.semantically_robust >= 0.80,
@@ -264,7 +272,10 @@ async fn growing_db_retrieval_regression_suite() -> anyhow::Result<()> {
         let (metrics, latencies_ms) = run_echo_suite(&store, &ids).await?;
         let p95_ms = percentile_95_ms(&latencies_ms);
         println!("growing_db size={size} metrics={metrics:?} p95_ms={p95_ms}");
-        assert!(metrics.precision_at_1 >= 0.70, "size={size} precision@1 too low");
+        assert!(
+            metrics.precision_at_1 >= 0.70,
+            "size={size} precision@1 too low"
+        );
         assert!(metrics.recall_at_3 >= 0.85, "size={size} recall@3 too low");
         assert!(metrics.mrr >= 0.75, "size={size} mrr too low");
         assert!(

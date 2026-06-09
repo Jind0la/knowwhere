@@ -116,11 +116,11 @@ def initialize(self, session_id, **kwargs):
     self._session_id = session_id
     self._turn = 0
     self._turn_lock = threading.Lock()  # Thread-safe turn counter
-    
+
     # Persist turn counter to disk so it survives Hermes restarts
     self._state_file = Path(kwargs["hermes_home"]) / "plugins" / "knowwhere" / "state.json"
     self._load_state()
-    
+
     # Verify KnowWhere is reachable
     if not self.is_available():
         logger.warning("KnowWhere not reachable at %s — plugin disabled", self.endpoint)
@@ -137,12 +137,12 @@ def prefetch(self, query, *, session_id=""):
         return ""
     if not query or len(query.strip()) < 3:
         return ""
-    
+
     try:
         memories = self._retrieve(query)
         if not memories:
             return ""
-        
+
         # Format for injection into system prompt
         blocks = []
         for i, m in enumerate(memories):
@@ -150,7 +150,7 @@ def prefetch(self, query, *, session_id=""):
             score = m.get("score", 0)
             sid = m.get("metadata", {}).get("session_id", "?")
             blocks.append(f"[KW-{i+1}] (score={score:.3f}, session={sid[:12]}...)\n{content}")
-        
+
         return "\n## Relevant Memories (KnowWhere)\n" + "\n\n".join(blocks)
     except Exception as e:
         logger.warning("KnowWhere prefetch failed: %s", e)
@@ -165,9 +165,9 @@ def sync_turn(self, user_content, assistant_content, *, session_id=""):
     """Called after each turn. Store both messages to KnowWhere."""
     if not self._enabled or not self.auto_capture:
         return
-    
+
     sid = session_id or self._session_id
-    
+
     def _store():
         with self._turn_lock:
             turn_u = self._turn
@@ -175,12 +175,12 @@ def sync_turn(self, user_content, assistant_content, *, session_id=""):
             turn_a = self._turn
             self._turn += 1
             self._save_state()
-        
+
         # Store user message
         self._store_message(user_content, sid, turn_u, role="user", trust="primary")
         # Store assistant response
         self._store_message(assistant_content, sid, turn_a, role="assistant", trust="derived")
-    
+
     # Fire-and-forget — don't block the agent loop
     threading.Thread(target=_store, daemon=True).start()
 ```
@@ -254,7 +254,7 @@ def _save_state(self):
 def register_cli(subparsers):
     parser = subparsers.add_parser("knowwhere", help="KnowWhere fractal memory")
     sub = parser.add_subparsers(dest="knowwhere_action")
-    
+
     sub.add_parser("setup", help="Configure KnowWhere connection")
     sub.add_parser("status", help="Show KnowWhere status")
     sub.add_parser("test", help="Test store+retrieve roundtrip")
@@ -294,7 +294,7 @@ The `prefetch()` output is injected into the system prompt. Hermes sees it as:
 
 ```
 ## Relevant Memories (KnowWhere)
-[KW-1] (score=0.852, session=hermes-2026-...) 
+[KW-1] (score=0.852, session=hermes-2026-...)
 [Nimar] Ok, sehr nice!! Danke für die ehrliche und meiner Meinung nach völlig richtige Einschätzung!
 
 [KW-2] (score=0.734, session=hermes-2026-...)
@@ -303,7 +303,7 @@ The `prefetch()` output is injected into the system prompt. Hermes sees it as:
 
 The `[KW-N]` markers make the source unambiguous. Nimar evaluates each response:
 - `+kw` → KnowWhere context improved the response
-- `-kw` → KnowWhere context degraded the response  
+- `-kw` → KnowWhere context degraded the response
 - `~kw` → KnowWhere context was irrelevant
 
 Over 50+ rated responses: Precision, Helpfulness, Harm rate.

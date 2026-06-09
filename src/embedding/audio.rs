@@ -22,8 +22,8 @@ impl AudioProvider {
     pub fn new() -> Self {
         let base_url =
             std::env::var("OLLAMA_URL").unwrap_or_else(|_| "http://localhost:11434".into());
-        let whisper_model = std::env::var("OLLAMA_WHISPER_MODEL")
-            .unwrap_or_else(|_| "whisper-base".into());
+        let whisper_model =
+            std::env::var("OLLAMA_WHISPER_MODEL").unwrap_or_else(|_| "whisper-base".into());
         Self {
             client: reqwest::Client::new(),
             base_url,
@@ -56,11 +56,10 @@ impl AudioProvider {
             anyhow::bail!("ollama whisper HTTP {status}: {snippet}");
         }
 
-        let wr: WhisperResponse = serde_json::from_str(&body)
-            .context(format!(
-                "failed to parse whisper response: {}",
-                body.chars().take(200).collect::<String>()
-            ))?;
+        let wr: WhisperResponse = serde_json::from_str(&body).context(format!(
+            "failed to parse whisper response: {}",
+            body.chars().take(200).collect::<String>()
+        ))?;
 
         Ok(wr.response)
     }

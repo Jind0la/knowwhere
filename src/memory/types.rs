@@ -168,7 +168,9 @@ impl MemoryType {
     pub fn can_evolve(&self) -> bool {
         matches!(
             self,
-            MemoryType::Semantic | MemoryType::Preference | MemoryType::Procedural
+            MemoryType::Semantic
+                | MemoryType::Preference
+                | MemoryType::Procedural
                 | MemoryType::Decision
         )
     }

@@ -74,12 +74,12 @@ context_tier=raw     context_tier=      context_tier=
 
 **Beispiel 1: L1 — Entscheidung mit Rest vermischt (7cd18b16)**
 ```
-Key decisions made and WHY: Ein `/retrieve_decisions` Endpoint wurde geschaffen, 
-um eine vollständige Liste aller Entscheidungen zu liefern, im Gegensatz zum 
-generischen `/retrieve_fractal`. Dieser Unterschied liegt darin, dass die 
+Key decisions made and WHY: Ein `/retrieve_decisions` Endpoint wurde geschaffen,
+um eine vollständige Liste aller Entscheidungen zu liefern, im Gegensatz zum
+generischen `/retrieve_fractal`. Dieser Unterschied liegt darin, dass die
 `/retrieve_decisions`-Query typisiert ist und keine Filterung mehr ermöglicht.
 
-Important facts: Der `/retrieve_decisions`-Endpoint liefert eine Top-50 Liste 
+Important facts: Der `/retrieve_decisions`-Endpoint liefert eine Top-50 Liste
 aller Entscheidungen oder alle Entscheidungen innerhalb eines bestimmten Zeitraums.
 
 Entities and timestamps: Es handelt sich um einen speziellen Endpoint...
@@ -94,7 +94,7 @@ Migration is not necessary.
 
 **Beispiel 3: L0 — Entscheidung ohne Why (a490945e)**
 ```
-A new `/retrieve_decisions` endpoint was created to provide a complete list 
+A new `/retrieve_decisions` endpoint was created to provide a complete list
 of decisions, differing from the generic `/retrieve_fractal`.
 ```
 → *Was wurde entschieden? Ja. Warum? Fehlt.*

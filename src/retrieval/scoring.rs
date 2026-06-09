@@ -135,8 +135,12 @@ mod tests {
             meta.insert("trust_tier".to_string(), serde_json::json!(t));
         }
         FractalNode::new_typed(
-            Some("test".into()), None, vec![1.0; 4],
-            meta, memory_type, crate::memory::types::MemorySource::Conversation,
+            Some("test".into()),
+            None,
+            vec![1.0; 4],
+            meta,
+            memory_type,
+            crate::memory::types::MemorySource::Conversation,
         )
     }
 
@@ -145,8 +149,10 @@ mod tests {
         let node = make_node(MemoryType::Decision, None);
         let mult = ScoringEngine::multiplier(RetrievalProfile::FullFidelity, &node, None);
         let ebbi = node.ebbinghaus_decay(chrono::Utc::now()) as f32;
-        assert!((mult - ebbi).abs() < 1e-6,
-            "FullFidelity multiplier ({mult}) must equal ebbinghaus ({ebbi})");
+        assert!(
+            (mult - ebbi).abs() < 1e-6,
+            "FullFidelity multiplier ({mult}) must equal ebbinghaus ({ebbi})"
+        );
     }
 
     #[test]
@@ -167,8 +173,10 @@ mod tests {
         // Decision=primary(1.3) × explicit(1.0) × mtype(1.5) × source(1.0) × ebbi(~1.0) ≈ 1.95
         let ebbi = node.ebbinghaus_decay(chrono::Utc::now()) as f32;
         let expected = 1.3 * 1.0 * 1.5 * 1.0 * ebbi;
-        assert!((mult - expected).abs() < 1e-6,
-            "UserFacing multiplier ({mult}) must include policy, expected ~{expected}");
+        assert!(
+            (mult - expected).abs() < 1e-6,
+            "UserFacing multiplier ({mult}) must include policy, expected ~{expected}"
+        );
         assert!(mult > 1.5); // must be significantly >1.0
     }
 
@@ -186,9 +194,8 @@ mod tests {
         let node = make_node(MemoryType::Episodic, None);
         let ebbi = node.ebbinghaus_decay(chrono::Utc::now()) as f32;
         let base = 0.75_f32;
-        let scored = ScoringEngine::score_node(
-            RetrievalProfile::FullFidelity, base, node.clone(), None,
-        );
+        let scored =
+            ScoringEngine::score_node(RetrievalProfile::FullFidelity, base, node.clone(), None);
         assert!((scored.score - base * ebbi).abs() < 1e-6);
         assert_eq!(scored.id, node.id);
     }
@@ -196,9 +203,7 @@ mod tests {
     #[test]
     fn score_debug_includes_source_info_even_under_full_fidelity() {
         let node = make_node(MemoryType::Semantic, None);
-        let debug = ScoringEngine::score_debug(
-            RetrievalProfile::FullFidelity, 1.0, &node, None,
-        );
+        let debug = ScoringEngine::score_debug(RetrievalProfile::FullFidelity, 1.0, &node, None);
         // Source fields are populated for observability even if not used in multiplier
         assert!(debug.source_type.is_some());
         assert!(debug.source_weight_applied.is_some());

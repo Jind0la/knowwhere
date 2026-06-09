@@ -33,10 +33,7 @@ pub fn sensor_to_text(data: &Value) -> String {
 /// the configured embedding provider via `embed_document`.
 ///
 /// Returns a 768-dim embedding vector (or whatever the provider's dimension is).
-pub async fn embed_sensor(
-    data: &Value,
-    provider: &dyn EmbeddingProvider,
-) -> Result<Vec<f32>> {
+pub async fn embed_sensor(data: &Value, provider: &dyn EmbeddingProvider) -> Result<Vec<f32>> {
     let text = sensor_to_text(data);
     embed_document(provider, &text).await
 }

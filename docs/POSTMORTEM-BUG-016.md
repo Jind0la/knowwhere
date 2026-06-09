@@ -1,7 +1,7 @@
 # Post-Mortem: BUG-016 Vector Retrieval Score Collapse
 
-**Date:** 2026-05-13  
-**Fix applied by:** Hermes (autonomous operator) / Nimar  
+**Date:** 2026-05-13
+**Fix applied by:** Hermes (autonomous operator) / Nimar
 **Severity:** CRITICAL — all semantic retrieval was effectively broken
 
 ## What Happened

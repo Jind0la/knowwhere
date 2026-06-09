@@ -1,7 +1,7 @@
 # Next Steps — KnowWhere v0.6.0 → v0.7.0
 
-> Stand: 2026-05-19, nach Phase 2 Completion (Retrieval Quality & Benchmarking).  
-> v0.6.0: 82 tasks, 8 initiatives, 72.97% Recall@5 on LongMemEval.  
+> Stand: 2026-05-19, nach Phase 2 Completion (Retrieval Quality & Benchmarking).
+> v0.6.0: 82 tasks, 8 initiatives, 72.97% Recall@5 on LongMemEval.
 > [→ Completion Report](phase2-retrieval-quality-completion.md)
 
 ---

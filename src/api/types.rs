@@ -1,6 +1,6 @@
+use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Arc;
-use serde::Serialize;
 use tokio::sync::RwLock;
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -103,12 +103,8 @@ impl ScoredNode {
         let debug = entry.debug.clone();
         let dist = entry.distribution_scores.clone();
         let score_debug = include_debug.then(|| score_debug_response(debug.as_ref(), &entry.node));
-        Self::from_parts(entry.score, entry.node, debug.as_ref(), score_debug, dist).with_governance(
-            confidence,
-            sensitivity,
-            governance_passed,
-            issues,
-        )
+        Self::from_parts(entry.score, entry.node, debug.as_ref(), score_debug, dist)
+            .with_governance(confidence, sensitivity, governance_passed, issues)
     }
 
     fn from_parts(

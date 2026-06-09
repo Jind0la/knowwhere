@@ -7,7 +7,7 @@ V2: Instead of measuring recall (self-similarity dominates),
 measure whether L1 bag nodes and their L0 children retrieve
 SEMANTICALLY SIMILAR result sets for related queries.
 
-This matches the TST paper's core claim: coarse representations 
+This matches the TST paper's core claim: coarse representations
 preserve enough structure for downstream utility.
 """
 
@@ -144,30 +144,30 @@ for gi, group in enumerate(groups):
     member_ids = [m[0] for m in group]
     member_vecs = [m[1] for m in group]
     centroid = np.mean(member_vecs, axis=0)
-    
+
     # Store bag node
     bag_content = " | ".join([f"[{mid[:8]}] {p[:60]}" for mid, _, p in group])
     stored = store_bag_node(bag_content, centroid, member_ids)
     bag_id = stored["id"]
-    
+
     # For each probe query, retrieve with each L0 vector and with the L1 centroid
     overlaps = []
     for pq in probe_queries:
         pq_results = fetch_nodes(pq, k=5)
         pq_ids = set(r["id"] for r in pq_results)
-        
+
         # How many L0 members are in the probe results?
         l0_hits = len([mid for mid in member_ids if mid in pq_ids])
-        
+
         # Retrieve with L1 centroid
         l1_results = retrieve_with_vector(centroid, k=5)
         l1_ids = set(r["id"] for r in l1_results)
-        
+
         # Jaccard overlap between L0-hit IDs and L1 retrieval
         l0_hit_set = set(mid for mid in member_ids if mid in pq_ids)
         overlap = len(l0_hit_set & l1_ids)
         jaccard = overlap / len(l0_hit_set | l1_ids) if (l0_hit_set | l1_ids) else 0
-        
+
         overlaps.append({
             "query": pq[:40],
             "l0_hits": l0_hits,
@@ -175,11 +175,11 @@ for gi, group in enumerate(groups):
             "overlap": overlap,
             "jaccard": jaccard,
         })
-    
+
     # Also measure: centroid→member cosine similarities
     centroid_sims = [cosine_sim(centroid, v) for _, v, _ in group]
     avg_sim = np.mean(centroid_sims)
-    
+
     results_data.append({
         "group": gi + 1,
         "size": len(group),
@@ -187,7 +187,7 @@ for gi, group in enumerate(groups):
         "avg_centroid_sim": avg_sim,
         "overlaps": overlaps,
     })
-    
+
     print(f"   Group {gi+1}: {len(group)} nodes → bag {bag_id[:8]}, avg centroid sim={avg_sim:.3f}")
     time.sleep(0.3)
 

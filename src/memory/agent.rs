@@ -234,12 +234,7 @@ impl AgentRegistry {
 
     /// List all registered agents.
     pub async fn list(&self) -> Vec<AgentState> {
-        self.agents
-            .read()
-            .await
-            .values()
-            .cloned()
-            .collect()
+        self.agents.read().await.values().cloned().collect()
     }
 
     /// List all active agents.
@@ -408,9 +403,7 @@ impl MemoryVisibility {
         match self {
             MemoryVisibility::Shared => true,
             MemoryVisibility::Private => false,
-            MemoryVisibility::Restricted { allowed_agents } => {
-                allowed_agents.contains(agent_id)
-            }
+            MemoryVisibility::Restricted { allowed_agents } => allowed_agents.contains(agent_id),
         }
     }
 
@@ -434,7 +427,6 @@ impl std::fmt::Display for MemoryVisibility {
         write!(f, "{}", self.label())
     }
 }
-
 
 // -----------------------------------------------------------------------------
 // Tests

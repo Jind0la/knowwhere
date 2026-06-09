@@ -116,25 +116,25 @@ print(f"\nRunning {len(persona_queries)} PersonaMem queries...\n")
 persona_results = []
 for i, (query, expected_keywords) in enumerate(persona_queries):
     status, results = retrieve(query, top_k=3, recency_boost=0.10)
-    
+
     if not isinstance(results, list) or not results:
         persona_results.append({"query": query, "match": False, "top_content": "NO RESULTS", "score": 0})
         print(f"  [{i+1:02d}] ✗ NO RESULTS: {query}")
         continue
-    
+
     top_content = (results[0].get("content") or "").lower()
     top_score = results[0].get("score", 0)
-    
+
     # Check if any expected keyword is in the top result
     matched = any(kw.lower() in top_content for kw in expected_keywords)
-    
+
     persona_results.append({
         "query": query,
         "match": matched,
         "top_content": top_content[:120],
         "score": top_score,
     })
-    
+
     icon = "✓" if matched else "✗"
     print(f"  [{i+1:02d}] {icon} score={top_score:.4f} | {top_content[:80]}...")
 
@@ -239,12 +239,12 @@ for case_idx, case in enumerate(echo_cases):
         status, results = retrieve(query, top_k=5)
         elapsed = (time.time() - t0) * 1000
         echo_latencies.append(elapsed)
-        
+
         if not isinstance(results, list) or not results:
             echo_ranks.append(None)
             print(f"  [{case_idx+1}.{q_idx+1}] ✗ NO RESULTS: {query}")
             continue
-        
+
         # Find rank of the correct fact
         rank = None
         for r_idx, result in enumerate(results):
@@ -252,11 +252,11 @@ for case_idx, case in enumerate(echo_cases):
             if content in case["fact"].lower() or case["fact"].lower() in content:
                 rank = r_idx + 1
                 break
-        
+
         echo_ranks.append(rank)
         if rank == 1:
             echo_top1_hits += 1
-        
+
         icon = "✓" if rank and rank <= 5 else "✗"
         rank_str = f"rank={rank}" if rank else "not found"
         print(f"  [{case_idx+1}.{q_idx+1}] {icon} {rank_str} | {elapsed:.0f}ms | {query[:60]}")
@@ -315,7 +315,7 @@ if perf_latencies:
     print(f"    P50: {perf_p50:.0f}ms")
     print(f"    P95: {perf_p95:.0f}ms")
     print(f"    P99: {perf_p99:.0f}ms")
-    
+
     perf_ok = perf_p95 < 500  # P95 under 500ms
     print(f"  Performance (P95 < 500ms): → {'✓ PASS' if perf_ok else '✗ WARN'}")
 else:
@@ -334,11 +334,11 @@ new_session = str(uuid.uuid4())
 
 # Old fact (simulated — store first so it's "older")
 print("Storing temporal test data...")
-store("OLD FACT: KnowWhere used Ollama for embeddings initially on port 11434.", 
+store("OLD FACT: KnowWhere used Ollama for embeddings initially on port 11434.",
       "semantic", {"session_id": old_session, "temporal": "old"})
 time.sleep(0.3)
 
-# New fact (stored second so it's "newer")  
+# New fact (stored second so it's "newer")
 store("NEW FACT: KnowWhere now uses OpenAI text-embedding-3-small (1536-dim) via API.",
       "semantic", {"session_id": new_session, "temporal": "new"})
 time.sleep(0.5)
@@ -376,27 +376,27 @@ for i, tq in enumerate(temporal_queries):
     _, results_noboost = retrieve(tq["query"], top_k=3)
     # Test WITH recency boost
     _, results_boost = retrieve(tq["query"], top_k=3, recency_boost=0.15)
-    
+
     def check_content(results, keywords):
         if not isinstance(results, list) or not results:
             return False
         top_content = " ".join((r.get("content") or "").lower() for r in results[:3])
         return any(kw.lower() in top_content for kw in keywords)
-    
+
     noboost_new = check_content(results_noboost, tq["new_keywords"])
     noboost_old = check_content(results_noboost, tq["old_keywords"])
     boost_new = check_content(results_boost, tq["new_keywords"])
     boost_old = check_content(results_boost, tq["old_keywords"])
-    
+
     # The boosted version should favor the new fact more
     if tq["expect_new"]:
         # New fact should be findable; boost should help surface it
         temporal_ok = boost_new  # At minimum, boost should surface new fact
     else:
         temporal_ok = boost_old or noboost_old  # Old fact should be findable
-    
+
     temporal_passes += 1 if temporal_ok else 0
-    
+
     icon = "✓" if temporal_ok else "✗"
     print(f"  [{i+1}] {icon} \"{tq['query']}\"")
     if not temporal_ok:

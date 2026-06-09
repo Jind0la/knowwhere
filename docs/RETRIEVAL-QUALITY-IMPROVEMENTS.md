@@ -1,6 +1,6 @@
 # Retrieval Quality Improvements (May 2026)
 
-**Status:** In Progress  
+**Status:** In Progress
 **Goal:** Spürbar relevantere, zeitlich sinnvollere und weniger verrauschte Retrieval-Ergebnisse.
 
 ## Overview
@@ -85,7 +85,7 @@ This is a practical and effective "SQL-level" implementation without rewriting a
 ## Work Package 3: Chunking & Context-Management
 
 ### Current State
-Chunking is primarily handled upstream (Hermes plugin / ingestion scripts).  
+Chunking is primarily handled upstream (Hermes plugin / ingestion scripts).
 The new retrieval parameters (`session_id`, `temporal_weight`) now reward well-structured metadata.
 
 ### Recommended Standards (for future)
@@ -173,10 +173,10 @@ Example:
 
 ## Known Limitation (Kanban t_100bf7cd)
 
-The `created_at` field passed via `/store_external` is currently ignored.  
+The `created_at` field passed via `/store_external` is currently ignored.
 `FractalNode::new_external()` always hardcodes `created_at = Utc::now()`.
 
-**Impact:** Calendar-based temporal measurements are unreliable in benchmarks.  
+**Impact:** Calendar-based temporal measurements are unreliable in benchmarks.
 We are therefore using **session-order recency** as proxy metric for the current evaluation.
 
 **Planned fix:** Separate Kanban ticket `t_100bf7cd` (assigned to `backend-eng`).

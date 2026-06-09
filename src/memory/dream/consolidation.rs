@@ -223,21 +223,19 @@ impl<C: ConsolidationStore> ConsolidationEngine<C> {
             let total_weighted_importance: f64 = memories
                 .iter()
                 .map(|m| {
-                    let consolidation_weight: f64 =
-                        if let Some(ref schema_key) = m.schema_key {
-                            if unstable_schemas.contains(schema_key) {
-                                weight_mult
-                            } else {
-                                1.0
-                            }
+                    let consolidation_weight: f64 = if let Some(ref schema_key) = m.schema_key {
+                        if unstable_schemas.contains(schema_key) {
+                            weight_mult
                         } else {
-                            1.0 // no schema_key → full weight
-                        };
+                            1.0
+                        }
+                    } else {
+                        1.0 // no schema_key → full weight
+                    };
                     (m.importance as f64) * consolidation_weight
                 })
                 .sum();
-            let avg_importance =
-                total_weighted_importance / memories.len() as f32 as f64;
+            let avg_importance = total_weighted_importance / memories.len() as f32 as f64;
 
             // Generate summary (simplified — in production this would call an LLM)
             let summary = self.generate_summary(&contents, &cluster.topic)?;
@@ -504,11 +502,11 @@ pub struct ConsolidationMemory {
 // re-embeds from text (re-initialization destroys representation continuity,
 // per TST's harshest ablation result).
 
+use crate::memory::types::MemoryStatus;
+use crate::memory::FractalNode;
+use crate::storage::in_memory::MemoryStore;
 use std::sync::Arc;
 use std::sync::Mutex;
-use crate::storage::in_memory::MemoryStore;
-use crate::memory::FractalNode;
-use crate::memory::types::{MemoryStatus};
 
 /// Wraps MemoryStore to implement the ConsolidationStore trait.
 /// All consolidation operations pass through to the underlying store.
@@ -586,8 +584,17 @@ impl ConsolidationStore for InMemoryConsolidationStore {
                 ClusteringCandidate {
                     id: n.id,
                     content: n.content.unwrap_or_default(),
-                    vector: if n.vector.is_empty() { None } else { Some(n.vector.clone()) },
-                    topic: n.metadata.get("topic").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    vector: if n.vector.is_empty() {
+                        None
+                    } else {
+                        Some(n.vector.clone())
+                    },
+                    topic: n
+                        .metadata
+                        .get("topic")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
                     schema_key,
                 }
             })
@@ -761,7 +768,10 @@ mod bridge_tests {
         // 3 episodic nodes → C(3,2) = 3 edges
         // 2 semantic nodes → C(2,2) = 1 edge
         // Total: 4 edges
-        assert_eq!(edge_count, 4, "expected 4 edges (3 from 3 Episodic + 1 from 2 Semantic)");
+        assert_eq!(
+            edge_count, 4,
+            "expected 4 edges (3 from 3 Episodic + 1 from 2 Semantic)"
+        );
 
         let edges = engine.store.edges();
         assert_eq!(edges.len(), 4);
@@ -769,7 +779,11 @@ mod bridge_tests {
         // All edges should be RELATES_TO with the configured weight
         for edge in &edges {
             assert_eq!(edge.edge_type, "RELATES_TO");
-            assert!((edge.weight - 0.3).abs() < 1e-6, "expected weight 0.3, got {}", edge.weight);
+            assert!(
+                (edge.weight - 0.3).abs() < 1e-6,
+                "expected weight 0.3, got {}",
+                edge.weight
+            );
         }
     }
 
@@ -778,10 +792,10 @@ mod bridge_tests {
     #[tokio::test]
     async fn test_bridge_by_type_no_edges_for_singleton_types() {
         let engine = build_engine_with_nodes(vec![
-            (MemoryType::Episodic, 1.0),   // singleton
+            (MemoryType::Episodic, 1.0), // singleton
             (MemoryType::Semantic, 2.0),
             (MemoryType::Semantic, 3.0),
-            (MemoryType::Preference, 1.0),  // singleton
+            (MemoryType::Preference, 1.0), // singleton
         ])
         .await;
 
@@ -823,7 +837,11 @@ mod bridge_tests {
 
         let edge_count = engine.bridge_by_type().await.unwrap();
         // Capped at 5 nodes → C(5,2) = 10 edges
-        assert_eq!(edge_count, 10, "expected 10 edges from 5 nodes (cap), got {}", edge_count);
+        assert_eq!(
+            edge_count, 10,
+            "expected 10 edges from 5 nodes (cap), got {}",
+            edge_count
+        );
     }
 
     // ── Correct edge weight ──
@@ -866,7 +884,11 @@ mod bridge_tests {
         engine.bridge_by_type().await.unwrap();
         let edges = engine.store.edges();
         assert_eq!(edges.len(), 1);
-        assert!((edges[0].weight - 0.7).abs() < 1e-6, "expected weight 0.7, got {}", edges[0].weight);
+        assert!(
+            (edges[0].weight - 0.7).abs() < 1e-6,
+            "expected weight 0.7, got {}",
+            edges[0].weight
+        );
     }
 
     // ── No duplicates on repeated calls ──
@@ -888,14 +910,24 @@ mod bridge_tests {
         let count2 = engine.bridge_by_type().await.unwrap();
         // Note: bridge_by_type returns all_edges.len() (generated), not inserted count.
         // It always generates 3 edges for 3 episodic nodes.
-        assert_eq!(count2, 3, "bridge_by_type always generates edges for all pairs");
+        assert_eq!(
+            count2, 3,
+            "bridge_by_type always generates edges for all pairs"
+        );
 
         // Third call — same
         let count3 = engine.bridge_by_type().await.unwrap();
-        assert_eq!(count3, 3, "bridge_by_type always generates edges for all pairs");
+        assert_eq!(
+            count3, 3,
+            "bridge_by_type always generates edges for all pairs"
+        );
 
         let edges = engine.store.edges();
-        assert_eq!(edges.len(), 3, "edge count should still be 3 after repeated calls");
+        assert_eq!(
+            edges.len(),
+            3,
+            "edge count should still be 3 after repeated calls"
+        );
     }
 
     // ── Empty store produces no errors ──
@@ -968,7 +1000,10 @@ mod bridge_tests {
         ];
 
         let inserted = cons_store.insert_memory_edges(&edges).await.unwrap();
-        assert_eq!(inserted, 1, "only first edge should be inserted, not the duplicate");
+        assert_eq!(
+            inserted, 1,
+            "only first edge should be inserted, not the duplicate"
+        );
 
         // Try inserting the same edge again
         let edges2 = vec![MemoryEdge::new_relates_to(id1, id2, 0.3)];
@@ -1056,9 +1091,24 @@ mod schema_weight_tests {
         // Insert 3 episodic nodes:
         // - 2 with stable schema (freq=5, recorded in fact_schemas)
         // - 1 with unstable schema (freq=2, below threshold of 3)
-        let n1 = node_with_schema("I like Rust", MemoryType::Episodic, 10.0, "self_preference_language");
-        let n2 = node_with_schema("I prefer Python", MemoryType::Episodic, 10.0, "self_preference_language");
-        let n3 = node_with_schema("I decided to use Zig", MemoryType::Episodic, 10.0, "self_decision_language");
+        let n1 = node_with_schema(
+            "I like Rust",
+            MemoryType::Episodic,
+            10.0,
+            "self_preference_language",
+        );
+        let n2 = node_with_schema(
+            "I prefer Python",
+            MemoryType::Episodic,
+            10.0,
+            "self_preference_language",
+        );
+        let n3 = node_with_schema(
+            "I decided to use Zig",
+            MemoryType::Episodic,
+            10.0,
+            "self_decision_language",
+        );
 
         mem_store.insert(n1).await.unwrap();
         mem_store.insert(n2).await.unwrap();
@@ -1080,7 +1130,10 @@ mod schema_weight_tests {
         let engine = ConsolidationEngine::new(config, cons_store);
 
         let report = engine.run_consolidation().await.unwrap();
-        assert_eq!(report.summaries_created, 1, "should create one summary node from the cluster");
+        assert_eq!(
+            report.summaries_created, 1,
+            "should create one summary node from the cluster"
+        );
         assert_eq!(report.memories_processed, 3);
 
         // Verify the summary node was created with reduced weight.
@@ -1120,9 +1173,24 @@ mod schema_weight_tests {
     async fn test_all_stable_schemas_get_full_weight() {
         let mem_store = Arc::new(MemoryStore::new());
 
-        let n1 = node_with_schema("I like Rust", MemoryType::Episodic, 8.0, "self_preference_language");
-        let n2 = node_with_schema("I prefer Python", MemoryType::Episodic, 8.0, "self_preference_language");
-        let n3 = node_with_schema("I enjoy Go", MemoryType::Episodic, 8.0, "self_preference_language");
+        let n1 = node_with_schema(
+            "I like Rust",
+            MemoryType::Episodic,
+            8.0,
+            "self_preference_language",
+        );
+        let n2 = node_with_schema(
+            "I prefer Python",
+            MemoryType::Episodic,
+            8.0,
+            "self_preference_language",
+        );
+        let n3 = node_with_schema(
+            "I enjoy Go",
+            MemoryType::Episodic,
+            8.0,
+            "self_preference_language",
+        );
 
         mem_store.insert(n1).await.unwrap();
         mem_store.insert(n2).await.unwrap();
@@ -1204,9 +1272,24 @@ mod schema_weight_tests {
 
         // Use a schema that has frequency 4.
         // With threshold=5 it's unstable; with threshold=3 it's stable.
-        let n1 = node_with_schema("I like Rust", MemoryType::Episodic, 10.0, "self_preference_rust");
-        let n2 = node_with_schema("I enjoy Rust", MemoryType::Episodic, 10.0, "self_preference_rust");
-        let n3 = node_with_schema("Rust is great", MemoryType::Episodic, 10.0, "self_preference_rust");
+        let n1 = node_with_schema(
+            "I like Rust",
+            MemoryType::Episodic,
+            10.0,
+            "self_preference_rust",
+        );
+        let n2 = node_with_schema(
+            "I enjoy Rust",
+            MemoryType::Episodic,
+            10.0,
+            "self_preference_rust",
+        );
+        let n3 = node_with_schema(
+            "Rust is great",
+            MemoryType::Episodic,
+            10.0,
+            "self_preference_rust",
+        );
 
         mem_store.insert(n1).await.unwrap();
         mem_store.insert(n2).await.unwrap();
@@ -1224,9 +1307,24 @@ mod schema_weight_tests {
 
         // Need a fresh store for the second test
         let mem_store2 = Arc::new(MemoryStore::new());
-        let n1b = node_with_schema("I like Rust", MemoryType::Episodic, 10.0, "self_preference_rust");
-        let n2b = node_with_schema("I enjoy Rust", MemoryType::Episodic, 10.0, "self_preference_rust");
-        let n3b = node_with_schema("Rust is great", MemoryType::Episodic, 10.0, "self_preference_rust");
+        let n1b = node_with_schema(
+            "I like Rust",
+            MemoryType::Episodic,
+            10.0,
+            "self_preference_rust",
+        );
+        let n2b = node_with_schema(
+            "I enjoy Rust",
+            MemoryType::Episodic,
+            10.0,
+            "self_preference_rust",
+        );
+        let n3b = node_with_schema(
+            "Rust is great",
+            MemoryType::Episodic,
+            10.0,
+            "self_preference_rust",
+        );
         mem_store2.insert(n1b).await.unwrap();
         mem_store2.insert(n2b).await.unwrap();
         mem_store2.insert(n3b).await.unwrap();
@@ -1277,7 +1375,8 @@ mod schema_weight_tests {
         assert!(
             weight_strict < weight_lenient,
             "stricter threshold should produce lower weight (strict={}, lenient={})",
-            weight_strict, weight_lenient
+            weight_strict,
+            weight_lenient
         );
         assert!(
             (weight_strict - 3.0).abs() < 0.5,

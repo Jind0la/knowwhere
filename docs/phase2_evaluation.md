@@ -1,8 +1,8 @@
 # Phase 2 Evaluation — Embedding Upgrade: nomic-embed-text
 
-**Date:** 2026-05-17  
-**Run ID:** 199  
-**Task:** t_0567f891  
+**Date:** 2026-05-17
+**Run ID:** 199
+**Task:** t_0567f891
 **Status:** Historical — model switch benchmark only.
 
 > **Note:** This document records the initial embedding model switch evaluation from May 17. The full Phase 2 completion with post-migration LongMemEval results is in [`docs/phase2-retrieval-quality-completion.md`](phase2-retrieval-quality-completion.md).

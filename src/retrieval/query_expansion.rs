@@ -16,10 +16,7 @@ pub fn expand_query(query: &str) -> Vec<String> {
     if !keywords.is_empty() {
         // Broadening: general category from first keyword
         if !keywords.is_empty() {
-            let broad = format!(
-                "{} Systeme, Tools und Konfigurationen",
-                keywords[0]
-            );
+            let broad = format!("{} Systeme, Tools und Konfigurationen", keywords[0]);
             if broad != query {
                 expanded.push(broad);
             }
@@ -52,11 +49,9 @@ fn extract_keywords(query: &str) -> Vec<String> {
 
     // Filter out short/stop words
     let stop_words: &[&str] = &[
-        "der", "die", "das", "und", "oder", "mit", "von", "für", "auf", "in",
-        "the", "a", "an", "is", "of", "to", "for", "with", "and", "or",
-        "wie", "was", "warum", "welche", "welcher", "welches",
-        "ein", "eine", "einen", "einem",
-        "ich", "wir", "unser", "unsere",
+        "der", "die", "das", "und", "oder", "mit", "von", "für", "auf", "in", "the", "a", "an",
+        "is", "of", "to", "for", "with", "and", "or", "wie", "was", "warum", "welche", "welcher",
+        "welches", "ein", "eine", "einen", "einem", "ich", "wir", "unser", "unsere",
     ];
 
     words
@@ -85,7 +80,8 @@ mod tests {
         assert_eq!(result.len(), 3);
         assert_eq!(result[0], "Redis als Message-Queue"); // original
         assert!(result[1].contains("Redis")); // broadening
-        assert!(result[2].contains("Message-Queue") || result[2].contains("Message")); // narrowing
+        assert!(result[2].contains("Message-Queue") || result[2].contains("Message"));
+        // narrowing
     }
 
     #[test]

@@ -36,7 +36,7 @@ for idx, case in enumerate(cases[:MAX_CASES]):
     question = case["question"]
     answer = case.get("answer", "").strip()
     qtype = case.get("question_type", "?")
-    
+
     t0 = time.time()
     try:
         retrieved = retrieve(question, top_k=TOP_K)
@@ -45,7 +45,7 @@ for idx, case in enumerate(cases[:MAX_CASES]):
         print(f"[{idx+1:2d}] ❌ {qid}: {e}")
         results.append({"qid": qid, "hit": False, "error": str(e), "elapsed": 0})
         continue
-    
+
     # Content match: is the answer substring in any retrieved content?
     hit = False
     matched_content = ""
@@ -57,7 +57,7 @@ for idx, case in enumerate(cases[:MAX_CASES]):
                 hit = True
                 matched_content = content[:120]
                 break
-    
+
     results.append({
         "qid": qid,
         "question": question[:60],
@@ -67,7 +67,7 @@ for idx, case in enumerate(cases[:MAX_CASES]):
         "elapsed": round(elapsed, 1),
         "type": qtype,
     })
-    
+
     icon = "✅" if hit else "❌"
     print(f"[{idx+1:2d}] {icon} {qid} [{qtype}] {elapsed:.1f}s — {question[:60]}...")
     if hit:

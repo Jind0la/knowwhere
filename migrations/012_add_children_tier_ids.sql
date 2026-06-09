@@ -14,12 +14,12 @@
 -- The fractal effect: more data → better cluster overlap → faster retrieval
 
 -- Add children_tier_ids column (UUID array)
-ALTER TABLE memories 
+ALTER TABLE memories
 ADD COLUMN IF NOT EXISTS children_tier_ids UUID[] DEFAULT ARRAY[]::UUID[];
 
 -- Index for fast "find children of parent" queries
-CREATE INDEX IF NOT EXISTS idx_memories_children_tier 
-ON memories USING GIN (children_tier_ids) 
+CREATE INDEX IF NOT EXISTS idx_memories_children_tier
+ON memories USING GIN (children_tier_ids)
 WHERE array_length(children_tier_ids, 1) > 0;
 
 -- Schema version

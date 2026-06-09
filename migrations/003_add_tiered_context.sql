@@ -1,11 +1,11 @@
 -- =============================================================================
 -- Migration 003: Tiered Context (L0/L1/L2)
--- 
+--
 -- Enables hierarchical context loading:
 --   - L0 (summary): one-sentence summary
---   - L1 (overview): paragraph summary  
+--   - L1 (overview): paragraph summary
 --   - L2 (raw): full original content
--- 
+--
 -- Memories default to 'raw' (L2) for backward compatibility.
 -- Compaction generates L1 then L0 with parent_tier_id linking.
 -- =============================================================================

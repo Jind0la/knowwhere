@@ -52,14 +52,14 @@ def retrieve(query, intent=None, memory_type_filter=None):
 
 def is_relevant(node, intent):
     """Check if a node is relevant for the query intent.
-    
+
     For decision_why: node should contain decision language.
     For procedure: node should be procedural or decision.
     For open_recall: content should be diverse.
     """
     content = (node.get("content") or "").lower()
     mtype = (node.get("memory_type") or "").lower()
-    
+
     if intent == "decision_why":
         # Decision nodes are always relevant for decision queries
         if mtype == "decision":
@@ -68,24 +68,24 @@ def is_relevant(node, intent):
         if "entscheid" in content or "decision" in content:
             return True
         return False
-    
+
     if intent == "procedure":
         if mtype in ("procedural", "decision"):
             return True
         return "start" in content or "bau" in content or "features" in content
-    
+
     if intent == "current_state":
         return mtype in ("decision", "semantic") or "stand" in content
-    
+
     if intent == "preference":
         return mtype in ("decision", "preference") or "präferenz" in content
-    
+
     if intent == "open_recall":
         return True  # All top results are relevant for open recall
-    
+
     if intent == "historical":
         return "2026" in content or "mai" in content or mtype == "decision"
-    
+
     return True
 
 
@@ -94,21 +94,21 @@ def compute_metrics(results):
     total = len(results)
     if total == 0:
         return {}
-    
+
     recall_at_1 = sum(1 for r in results if r["relevant_ranks"] and min(r["relevant_ranks"]) == 1) / total
     recall_at_3 = sum(1 for r in results if r["relevant_ranks"] and min(r["relevant_ranks"]) <= 3) / total
     recall_at_5 = sum(1 for r in results if r["relevant_ranks"] and min(r["relevant_ranks"]) <= 5) / total
-    
+
     mrr = sum(1.0 / min(r["relevant_ranks"]) for r in results if r["relevant_ranks"]) / total
-    
+
     precision_5 = sum(r["relevant_at_5"] for r in results) / (total * TOP_K)
-    
+
     decision_purity = sum(r["decision_in_top5"] for r in results) / (total * TOP_K)
-    
+
     latencies = sorted(r["latency"] for r in results)
     p50 = latencies[len(latencies) // 2] if latencies else 0
     p95 = latencies[int(len(latencies) * 0.95)] if len(latencies) > 1 else p50
-    
+
     return {
         "total_queries": total,
         "recall@1": round(recall_at_1, 3),
@@ -127,14 +127,14 @@ def main():
     print("KnowWhere v0.5 Benchmark — Golden Queries (n=12)")
     print("=" * 70)
     print()
-    
+
     results = []
     for intent, query in GOLDEN_QUERIES:
         nodes, latency = retrieve(query, intent=intent)
-        
+
         relevant_ranks = [i + 1 for i, n in enumerate(nodes[:TOP_K]) if is_relevant(n, intent)]
         decision_count = sum(1 for n in nodes[:TOP_K] if (n.get("memory_type") or "").lower() == "decision")
-        
+
         result = {
             "query": query,
             "intent": intent,
@@ -145,13 +145,13 @@ def main():
             "decision_in_top5": decision_count,
         }
         results.append(result)
-        
+
         marker = "✅" if relevant_ranks else "❌"
         first_rel = min(relevant_ranks) if relevant_ranks else "-"
         print(f"  {marker} Rank{first_rel:>4} | Decision:{decision_count}/5 | {query[:55]}...")
-    
+
     metrics = compute_metrics(results)
-    
+
     print()
     print("=" * 70)
     print("AGGREGATE METRICS")
@@ -164,7 +164,7 @@ def main():
     print(f"  Decision@5:    {metrics['decision_purity']:.3f} ({metrics['decision_purity']*100:.0f}%)")
     print(f"  Latency P50:   {metrics['latency_p50_ms']:.1f}ms")
     print(f"  Latency P95:   {metrics['latency_p95_ms']:.1f}ms")
-    
+
     # Full JSON output
     output = {
         "benchmark": "KnowWhere Golden Queries v0.5",
@@ -186,11 +186,11 @@ def main():
             "latency_ms": round(r["latency"] * 1000, 1),
         } for r in results],
     }
-    
+
     with open("benchmark_results.json", "w") as f:
         json.dump(output, f, indent=2, ensure_ascii=False)
     print(f"\n✅ Full results written to benchmark_results.json")
-    
+
     return 0 if metrics["recall@5"] >= 0.9 else 1
 
 

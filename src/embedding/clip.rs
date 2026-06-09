@@ -17,8 +17,7 @@ impl ClipProvider {
     pub fn new() -> Self {
         let base_url =
             std::env::var("OLLAMA_URL").unwrap_or_else(|_| "http://localhost:11434".into());
-        let model =
-            std::env::var("OLLAMA_CLIP_MODEL").unwrap_or_else(|_| "clip-vit-large".into());
+        let model = std::env::var("OLLAMA_CLIP_MODEL").unwrap_or_else(|_| "clip-vit-large".into());
         Self {
             client: Client::new(),
             base_url,

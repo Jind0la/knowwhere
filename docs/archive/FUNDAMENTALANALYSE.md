@@ -109,7 +109,7 @@ Um das zu beantworten, braucht der LLM NICHT isolierte Fakten wie "Kanoa Manu en
 
 ```
 Turn 12: "I don't really care about album reviews"       → dislikes reviews
-Turn 34: "Started writing reviews, actually enjoy this"   → enjoys reviews  
+Turn 34: "Started writing reviews, actually enjoy this"   → enjoys reviews
 Turn 67: "Criticism is getting to me, reviews are a chore" → dislikes again
 ```
 
@@ -117,7 +117,7 @@ Wenn KnowWhere diese Turns als 3 unabhängige Nodes speichert und per Cosine-Sim
 
 ```
 Claim: "Kanoa Manu enjoys writing album reviews"
-Claim: "Kanoa Manu dislikes album reviews"  
+Claim: "Kanoa Manu dislikes album reviews"
 Claim: "Kanoa Manu finds album reviews a chore"
 ```
 
@@ -173,7 +173,7 @@ INGESTION:
         │
         ├─ Phase 1: Atomic Claims (wie bisher, aber geordnet)
         │   "Turn 12: Kanoa dislikes album reviews"
-        │   "Turn 34: Kanoa enjoys writing album reviews"  
+        │   "Turn 34: Kanoa enjoys writing album reviews"
         │   "Turn 67: Kanoa dislikes album reviews due to criticism"
         │
         ├─ Phase 2: Preference Arcs (NEU)
@@ -189,7 +189,7 @@ SPEICHERUNG:
     ├─ temporal_relation: Option<TemporalRelation>  ← NEU
     │   enum TemporalRelation {
     │       Precedes(Uuid),   // "dieser Claim kommt NACH Claim X"
-    │       Follows(Uuid),    // "dieser Claim kommt VOR Claim Y"  
+    │       Follows(Uuid),    // "dieser Claim kommt VOR Claim Y"
     │       Causes(Uuid),     // "Claim X verursacht Claim Y"
     │       Contradicts(Uuid), // "dieser Claim widerspricht Claim X (später)"
     │   }
@@ -249,7 +249,7 @@ RETRIEVAL:
    TEMPORAL_CONTEXT = """## Timeline: {topic}
    {claims_sorted_by_turn}
    ## Arc: {preference_arc}
-   
+
    Based on this timeline, answer the question."""
    ```
 

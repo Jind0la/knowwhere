@@ -9,7 +9,10 @@ fn validate_speaker_role(role: &str) -> Result<&str, (StatusCode, String)> {
         "user" | "assistant" | "system" | "tool" => Ok(role),
         other => Err((
             StatusCode::BAD_REQUEST,
-            format!("invalid speaker_role '{}': expected user, assistant, system, or tool", other),
+            format!(
+                "invalid speaker_role '{}': expected user, assistant, system, or tool",
+                other
+            ),
         )),
     }
 }
@@ -25,27 +28,18 @@ use serde_json::Value;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
+use crate::api::turns::{BatchTurnItem, PaginatedSessionTurns, ScoredTurn, SessionTurnsResponse};
 use crate::api::types::*;
 use crate::embedding::{embed_document, embed_document_batch, embed_query};
 use crate::memory::FractalNode;
-use crate::api::turns::{BatchTurnItem, ScoredTurn, PaginatedSessionTurns, SessionTurnsResponse};
 
 use crate::storage::RetrievalProfile;
-
 
 // =============================================================================
 // Turn-Level Routes (per-turn embedding pipeline)
 // =============================================================================
 
 /// Validate that a speaker_role string is one of the allowed values.
-
-
-
-
-
-
-
-
 
 #[cfg(feature = "postgres-storage")]
 #[derive(Deserialize, ToSchema)]
@@ -101,21 +95,41 @@ pub async fn store_turn(
         Some(v) if !v.is_empty() => v,
         _ => embed_document(&*state.embedding, &cleaned)
             .await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("embed failed: {e}")))?,
+            .map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("embed failed: {e}"),
+                )
+            })?,
     };
     let emb_type = state.embedding.name().to_string();
     let emb_dim = state.embedding.dimension() as i32;
     let turn_id = pg
-        .store_turn(&req.session_id, req.turn_index, speaker, &cleaned, vector, req.metadata, &emb_type, emb_dim)
+        .store_turn(
+            &req.session_id,
+            req.turn_index,
+            speaker,
+            &cleaned,
+            vector,
+            req.metadata,
+            &emb_type,
+            emb_dim,
+        )
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let session_id = pg
         .find_or_create_session(&req.session_id)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    Ok((StatusCode::CREATED, Json(StoreTurnResponse {
-        turn_id, session_id, turn_index: req.turn_index, message: "turn stored".into(),
-    })))
+    Ok((
+        StatusCode::CREATED,
+        Json(StoreTurnResponse {
+            turn_id,
+            session_id,
+            turn_index: req.turn_index,
+            message: "turn stored".into(),
+        }),
+    ))
 }
 
 #[cfg(feature = "postgres-storage")]
@@ -153,7 +167,8 @@ pub async fn store_turns_batch(
     Json(req): Json<StoreTurnsBatchRequest>,
 ) -> Result<(StatusCode, Json<StoreTurnsBatchResponse>), (StatusCode, String)> {
     let pg = state.pg_store.as_ref().ok_or((
-        StatusCode::SERVICE_UNAVAILABLE, "postgres-storage not configured".into(),
+        StatusCode::SERVICE_UNAVAILABLE,
+        "postgres-storage not configured".into(),
     ))?;
     if req.turns.is_empty() {
         return Err((StatusCode::BAD_REQUEST, "no turns provided".into()));
@@ -164,20 +179,35 @@ pub async fn store_turns_batch(
             return Err((StatusCode::BAD_REQUEST, "turn content is empty".into()));
         }
     }
-    let cleaned: Vec<String> = req.turns.iter().map(|t| clean_for_embedding(&t.content)).collect();
+    let cleaned: Vec<String> = req
+        .turns
+        .iter()
+        .map(|t| clean_for_embedding(&t.content))
+        .collect();
     let refs: Vec<&str> = cleaned.iter().map(String::as_str).collect();
     let embeddings = embed_document_batch(&*state.embedding, &refs)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("batch embed failed: {e}")))?;
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("batch embed failed: {e}"),
+            )
+        })?;
     let emb_type = state.embedding.name().to_string();
     let emb_dim = state.embedding.dimension() as i32;
     let (session_id, turn_ids) = pg
         .store_turns_batch(&req.session_id, &req.turns, embeddings, &emb_type, emb_dim)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    Ok((StatusCode::CREATED, Json(StoreTurnsBatchResponse {
-        session_id, turn_ids, count: req.turns.len(), message: "turns batch stored".into(),
-    })))
+    Ok((
+        StatusCode::CREATED,
+        Json(StoreTurnsBatchResponse {
+            session_id,
+            turn_ids,
+            count: req.turns.len(),
+            message: "turns batch stored".into(),
+        }),
+    ))
 }
 
 #[cfg(feature = "postgres-storage")]
@@ -223,7 +253,8 @@ pub async fn retrieve_turns(
     Json(req): Json<RetrieveTurnsRequest>,
 ) -> Result<Json<RetrieveTurnsResponse>, (StatusCode, String)> {
     let pg = state.pg_store.as_ref().ok_or((
-        StatusCode::SERVICE_UNAVAILABLE, "postgres-storage not configured".into(),
+        StatusCode::SERVICE_UNAVAILABLE,
+        "postgres-storage not configured".into(),
     ))?;
     if req.query_text.trim().is_empty() {
         return Err((StatusCode::BAD_REQUEST, "query_text is empty".into()));
@@ -234,7 +265,12 @@ pub async fn retrieve_turns(
     let start = std::time::Instant::now();
     let query_vector = embed_query(&*state.embedding, &req.query_text)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("embed failed: {e}")))?;
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("embed failed: {e}"),
+            )
+        })?;
     let mut session_uuid_filter = req.session_id;
     if let Some(ref ext_id) = req.external_session_id {
         if session_uuid_filter.is_none() {
@@ -245,13 +281,21 @@ pub async fn retrieve_turns(
         }
     }
     let mut results = pg
-        .retrieve_turns(&query_vector, req.top_k.max(1).min(100), req.speaker_filter.as_deref(), session_uuid_filter)
+        .retrieve_turns(
+            &query_vector,
+            req.top_k.max(1).min(100),
+            req.speaker_filter.as_deref(),
+            session_uuid_filter,
+        )
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     if let Some(window) = req.context_window {
         if window > 0 {
             for turn in &mut results {
-                if let Ok(adjacent) = pg.get_adjacent_turns(turn.session_id, turn.turn_index, window).await {
+                if let Ok(adjacent) = pg
+                    .get_adjacent_turns(turn.session_id, turn.turn_index, window)
+                    .await
+                {
                     if !adjacent.is_empty() {
                         turn.adjacent_turns = Some(adjacent);
                     }
@@ -260,7 +304,11 @@ pub async fn retrieve_turns(
         }
     }
     let query_time_ms = start.elapsed().as_millis() as u64;
-    Ok(Json(RetrieveTurnsResponse { query: req.query_text, results, query_time_ms }))
+    Ok(Json(RetrieveTurnsResponse {
+        query: req.query_text,
+        results,
+        query_time_ms,
+    }))
 }
 
 /// Query parameters for session turns listing.
@@ -306,16 +354,16 @@ pub async fn get_session_turns(
     Query(query): Query<SessionTurnsQuery>,
 ) -> Result<Json<PaginatedSessionTurns>, (StatusCode, String)> {
     let pg = state.pg_store.as_ref().ok_or((
-        StatusCode::SERVICE_UNAVAILABLE, "postgres-storage not configured".into(),
+        StatusCode::SERVICE_UNAVAILABLE,
+        "postgres-storage not configured".into(),
     ))?;
 
-    let session_row: Option<(Option<String>,)> = sqlx::query_as(
-        "SELECT external_id FROM conversation_sessions WHERE id = $1",
-    )
-    .bind(session_id)
-    .fetch_optional(&pg.pool)
-    .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let session_row: Option<(Option<String>,)> =
+        sqlx::query_as("SELECT external_id FROM conversation_sessions WHERE id = $1")
+            .bind(session_id)
+            .fetch_optional(&pg.pool)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let external_session_id = session_row.and_then(|r| r.0);
 
     let order_desc = query.order.to_lowercase() == "desc";

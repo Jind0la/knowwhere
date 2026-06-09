@@ -1,7 +1,7 @@
-#[path = "../benchmarks/hf/shared_metrics.rs"]
-mod shared_metrics;
 #[path = "../benchmarks/hf/longmemeval_runner.rs"]
 mod longmemeval_runner;
+#[path = "../benchmarks/hf/shared_metrics.rs"]
+mod shared_metrics;
 
 use anyhow::{anyhow, Result};
 

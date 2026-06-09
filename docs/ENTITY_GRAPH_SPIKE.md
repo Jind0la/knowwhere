@@ -360,7 +360,7 @@ Rule 4: Relation detection
 A spike-only benchmark to validate the approach before full implementation:
 
 ```rust
-// Quick validation: does entity graph retrieval find nodes 
+// Quick validation: does entity graph retrieval find nodes
 // that pure vector retrieval misses?
 
 let eg = EntityGraph::new();

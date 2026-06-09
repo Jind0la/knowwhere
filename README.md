@@ -42,9 +42,9 @@ When an agent asks "why did we decide X three months ago?", other memory systems
 | Embedding Model | ✅ Stable | `nomic-embed-text` (768d, 8192 context) |
 | Cross-Encoder | ✅ Working | gte-modernbert via ONNX (599 MB, no Ollama needed) |
 
-📊 **Phase 2 Completion:** [`docs/phase2-retrieval-quality-completion.md`](docs/phase2-retrieval-quality-completion.md)  
-📋 **81-Task Summary:** CHANGELOG v0.6.0 section  
-🏗️ **Architecture:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)  
+📊 **Phase 2 Completion:** [`docs/phase2-retrieval-quality-completion.md`](docs/phase2-retrieval-quality-completion.md)
+📋 **81-Task Summary:** CHANGELOG v0.6.0 section
+🏗️ **Architecture:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 🧪 **Evaluation:** [`benchmarks/reports/LONGMEMEVAL_COMPARISON.md`](benchmarks/reports/LONGMEMEVAL_COMPARISON.md)
 
 ---

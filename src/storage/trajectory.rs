@@ -273,13 +273,15 @@ impl<'a> TrajectoryStore<'a> {
         let run_id = Uuid::new_v4();
 
         // Insert the run row
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             INSERT INTO retrieval_runs (
                 id, query_text, embedding, run_at,
                 total_candidates, retrieved_count, execution_time_ms, max_depth_used, metadata
             )
             VALUES ($1, $2, $3, NOW(), $4, $5, $6, $7, $8)
-            "#)
+            "#,
+        )
         .bind(run_id)
         .bind(&trajectory.query_text)
         .bind(trajectory.query_embedding.clone())
@@ -293,13 +295,15 @@ impl<'a> TrajectoryStore<'a> {
 
         // Insert all steps
         for (i, step) in trajectory.steps.iter().enumerate() {
-            sqlx::query(r#"
+            sqlx::query(
+                r#"
                 INSERT INTO retrieval_trajectory (
                     run_id, step_index, step_type, memory_id,
                     score_before, score_after, rank, decision, filter_reason
                 )
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                "#)
+                "#,
+            )
             .bind(run_id)
             .bind(i as i32)
             .bind(&step.step_type)

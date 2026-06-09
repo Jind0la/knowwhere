@@ -50,14 +50,14 @@ def print_comparison(query: str, baseline: List[Dict], optimized: List[Dict]):
     print("=" * 90)
     print(f"QUERY: {query}")
     print("-" * 90)
-    
+
     print("BASELINE (temporal_weight=0.0)")
     for i, r in enumerate(baseline, 1):
         sess = r.get("metadata", {}).get("session_id", "?")[:8]
         score = r.get("score", 0)
         content = r.get("content", "")[:100].replace("\n", " ")
         print(f"  {i}. [S:{sess}] {score:.3f} | {content}...")
-    
+
     print()
     print("OPTIMIZED (temporal_weight=0.5 + session)")
     for i, r in enumerate(optimized, 1):

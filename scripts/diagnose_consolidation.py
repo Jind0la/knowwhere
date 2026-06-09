@@ -44,7 +44,7 @@ for node in nodes:
     tier = node.get("context_tier", "unknown")
     pid = node.get("parent_tier_id")
     imp = node.get("importance", 0)
-    
+
     if (tier == "raw" and pid is None and imp >= 3 and len(content) > 500):
         candidates.append(node)
 

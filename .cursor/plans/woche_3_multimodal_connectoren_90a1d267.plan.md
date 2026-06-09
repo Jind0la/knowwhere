@@ -269,4 +269,3 @@ flowchart TB
 - **Serde-Tag fuer Enum:** `#[serde(tag = "type")]` erfordert dass JSON ein `"type"` Feld hat. Klare Dokumentation in API-Spec.
 - **Connector-Manager Lifetime:** Store und Embedding werden geklont (`Arc`), keine Ownership-Probleme.
 - **Placeholder-Connectoren:** Dummy-Daten laufen nur einmal beim Start (oder im Intervall). Spaeter echte APIs / Webhooks.
-

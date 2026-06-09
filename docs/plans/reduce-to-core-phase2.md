@@ -1,8 +1,8 @@
 # Reduce-to-Core Phase 2: Saubere Core/Policy-Trennung im Retrieval-Scoring
 
-**Branch:** `feature/reduce-to-core` (bestehend, Quick-Fix-Stand)  
-**Ziel-Branch:** bleibt `feature/reduce-to-core` oder `reduce-to-core-phase2`  
-**Status vor Start:** 305 Unit + 41 Integration Tests grün (Quick-Fix: nur tier/mtype/explicit neutralisiert, Source + Intent + Temporal + trust_tier-Hard-Rules + Backend-Tiebreaker noch aktiv)  
+**Branch:** `feature/reduce-to-core` (bestehend, Quick-Fix-Stand)
+**Ziel-Branch:** bleibt `feature/reduce-to-core` oder `reduce-to-core-phase2`
+**Status vor Start:** 305 Unit + 41 Integration Tests grün (Quick-Fix: nur tier/mtype/explicit neutralisiert, Source + Intent + Temporal + trust_tier-Hard-Rules + Backend-Tiebreaker noch aktiv)
 **Definition of Done:** siehe unten
 
 ---

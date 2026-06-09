@@ -15,13 +15,13 @@ echo "🔍 Checking sqlx offline query cache..."
 # Check if there are any sqlx-related changes
 if git diff --cached --name-only | grep -qE "(migrations/|src/.*\.rs|Cargo\.toml)"; then
     echo "📦 SQL-related changes detected, running cargo sqlx prepare..."
-    
+
     # Check if DATABASE_URL is set
     if [ -z "$DATABASE_URL" ]; then
         echo "${YELLOW}⚠️  DATABASE_URL not set, trying local postgres...${NC}"
         export DATABASE_URL="postgresql://postgres:kw@localhost:5433/knowwhere"
     fi
-    
+
     # Check if postgres is running
     if ! pg_isready -h localhost -p 5433 -U postgres > /dev/null 2>&1; then
         echo "${RED}❌ PostgreSQL not running on port 5433${NC}"
@@ -29,11 +29,11 @@ if git diff --cached --name-only | grep -qE "(migrations/|src/.*\.rs|Cargo\.toml
         echo "   Or skip this check with: git commit --no-verify"
         exit 1
     fi
-    
+
     # Run cargo sqlx prepare
     if cargo sqlx prepare -- --features postgres-storage > /dev/null 2>&1; then
         echo "${GREEN}✅ sqlx query cache updated${NC}"
-        
+
         # Check if .sqlx/ files changed
         if git diff --name-only | grep -q "\.sqlx/"; then
             echo "📁 Adding updated .sqlx/ files to commit..."

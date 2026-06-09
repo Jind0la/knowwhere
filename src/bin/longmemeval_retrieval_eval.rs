@@ -32,10 +32,19 @@ fn config() -> Result<EvalConfig> {
 
 fn print_summary(summary: &longmemeval_retrieval_eval::EvalSummary) {
     println!("longmemeval_retrieval_eval total={}", summary.total_cases);
-    println!("longmemeval_retrieval_eval evaluated={}", summary.evaluated_cases);
+    println!(
+        "longmemeval_retrieval_eval evaluated={}",
+        summary.evaluated_cases
+    );
     println!("longmemeval_retrieval_eval top1={:.4}", summary.top1);
-    println!("longmemeval_retrieval_eval recall@5={:.4}", summary.recall_at_5);
-    println!("longmemeval_retrieval_eval recall@{}={:.4}", summary.top_k, summary.recall_at_k);
+    println!(
+        "longmemeval_retrieval_eval recall@5={:.4}",
+        summary.recall_at_5
+    );
+    println!(
+        "longmemeval_retrieval_eval recall@{}={:.4}",
+        summary.top_k, summary.recall_at_k
+    );
     println!("longmemeval_retrieval_eval mrr={:.4}", summary.mrr);
 }
 

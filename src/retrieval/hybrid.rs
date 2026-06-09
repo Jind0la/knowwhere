@@ -62,13 +62,13 @@ impl QueryType {
         // German question words → semantic
         let lower = trimmed.to_lowercase();
         let question_words = [
-            "wie", "was", "warum", "welche", "welcher", "welches",
-            "wann", "wo", "wer", "womit", "wodurch",
-            "how", "what", "why", "which", "when", "where", "who",
+            "wie", "was", "warum", "welche", "welcher", "welches", "wann", "wo", "wer", "womit",
+            "wodurch", "how", "what", "why", "which", "when", "where", "who",
         ];
-        if question_words.iter().any(|w| {
-            lower.starts_with(w) || lower.contains(&format!(" {}", w))
-        }) {
+        if question_words
+            .iter()
+            .any(|w| lower.starts_with(w) || lower.contains(&format!(" {}", w)))
+        {
             return QueryType::Semantic;
         }
 
@@ -85,9 +85,8 @@ impl QueryType {
         // Short keyword-like queries (3-4 words, no stop words)
         // → keyword
         let stop_words = [
-            "der", "die", "das", "und", "oder", "mit", "von", "für", "auf", "in",
-            "the", "a", "an", "is", "of", "to", "for", "with", "and", "or",
-            "ein", "eine", "einen", "einem",
+            "der", "die", "das", "und", "oder", "mit", "von", "für", "auf", "in", "the", "a", "an",
+            "is", "of", "to", "for", "with", "and", "or", "ein", "eine", "einen", "einem",
         ];
         let content_words = trimmed
             .split_whitespace()
@@ -169,11 +168,7 @@ fn min_max_normalize(scores: &[(Uuid, f32)]) -> Vec<(Uuid, f32)> {
 
 /// Sort descending by score.
 fn sort_by_score(results: &mut [FusedResult]) {
-    results.sort_by(|a, b| {
-        b.score
-            .partial_cmp(&a.score)
-            .unwrap_or(Ordering::Equal)
-    });
+    results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(Ordering::Equal));
 }
 
 // ---------------------------------------------------------------------------
@@ -203,8 +198,16 @@ pub fn weighted_sum_fuse(
     );
 
     let total_weight = bm25_weight + dense_weight;
-    let bm25_w = if total_weight > 0.0 { bm25_weight / total_weight } else { 0.5 };
-    let dense_w = if total_weight > 0.0 { dense_weight / total_weight } else { 0.5 };
+    let bm25_w = if total_weight > 0.0 {
+        bm25_weight / total_weight
+    } else {
+        0.5
+    };
+    let dense_w = if total_weight > 0.0 {
+        dense_weight / total_weight
+    } else {
+        0.5
+    };
 
     let mut scores: HashMap<Uuid, (Option<f32>, Option<f32>)> = HashMap::new();
 
@@ -463,7 +466,13 @@ pub fn hybrid_retrieve(
         FusionStrategy::WeightedSum {
             bm25_weight,
             dense_weight,
-        } => weighted_sum_fuse(bm25_results, dense_candidates, bm25_weight, dense_weight, top_k),
+        } => weighted_sum_fuse(
+            bm25_results,
+            dense_candidates,
+            bm25_weight,
+            dense_weight,
+            top_k,
+        ),
 
         FusionStrategy::ReciprocalRankFusion { k } => {
             let dense_ids: Vec<Uuid> = dense_candidates.iter().map(|c| c.id).collect();
@@ -491,9 +500,21 @@ mod tests {
 
     fn dense() -> Vec<DenseCandidate> {
         vec![
-            DenseCandidate::new(uuid!("a1000000-0000-0000-0000-000000000002"), 0.95, vec![1.0]),
-            DenseCandidate::new(uuid!("a1000000-0000-0000-0000-000000000004"), 0.88, vec![1.0]),
-            DenseCandidate::new(uuid!("a1000000-0000-0000-0000-000000000001"), 0.72, vec![1.0]),
+            DenseCandidate::new(
+                uuid!("a1000000-0000-0000-0000-000000000002"),
+                0.95,
+                vec![1.0],
+            ),
+            DenseCandidate::new(
+                uuid!("a1000000-0000-0000-0000-000000000004"),
+                0.88,
+                vec![1.0],
+            ),
+            DenseCandidate::new(
+                uuid!("a1000000-0000-0000-0000-000000000001"),
+                0.72,
+                vec![1.0],
+            ),
         ]
     }
 
@@ -591,7 +612,12 @@ mod tests {
 
     #[test]
     fn test_routing_semantic_query() {
-        let routing = route_query(Some("Wie konfiguriere ich den Server?"), Some(&[1.0]), None, true);
+        let routing = route_query(
+            Some("Wie konfiguriere ich den Server?"),
+            Some(&[1.0]),
+            None,
+            true,
+        );
         assert_eq!(routing.query_type, QueryType::Semantic);
         assert!(routing.use_dense);
         match routing.strategy {
@@ -666,7 +692,10 @@ mod tests {
             &bm25(),
             &dense(),
             2, // only top 2
-            Some(FusionStrategy::WeightedSum { bm25_weight: 0.5, dense_weight: 0.5 }),
+            Some(FusionStrategy::WeightedSum {
+                bm25_weight: 0.5,
+                dense_weight: 0.5,
+            }),
             false,
         );
         assert_eq!(fused.len(), 2);
@@ -686,15 +715,7 @@ mod tests {
 
     #[test]
     fn test_hybrid_retrieve_no_text_no_vector() {
-        let fused = hybrid_retrieve(
-            None,
-            None,
-            &bm25(),
-            &dense(),
-            5,
-            None,
-            true,
-        );
+        let fused = hybrid_retrieve(None, None, &bm25(), &dense(), 5, None, true);
         // No text, no vector → falls back to BM25 only
         assert!(!fused.is_empty());
     }

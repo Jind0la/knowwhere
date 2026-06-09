@@ -89,9 +89,7 @@ impl ExtractedFact {
         );
         metadata.insert(
             "source_node_ids".to_string(),
-            serde_json::Value::Array(vec![serde_json::Value::String(
-                source_node_id.to_string(),
-            )]),
+            serde_json::Value::Array(vec![serde_json::Value::String(source_node_id.to_string())]),
         );
         if let Some(sid) = source_session_id {
             metadata.insert(
@@ -115,7 +113,9 @@ impl ExtractedFact {
         // Set explicit trust weight for retrieval scoring boost
         metadata.insert(
             "trust_weight".to_string(),
-            serde_json::Value::Number(serde_json::Number::from_f64(2.0).expect("2.0 is always valid JSON number")),
+            serde_json::Value::Number(
+                serde_json::Number::from_f64(2.0).expect("2.0 is always valid JSON number"),
+            ),
         );
 
         let mut node = FractalNode::new_typed(
@@ -368,10 +368,7 @@ impl FactExtractor {
     /// Uses zero vectors (will be re-embedded by the caller or during
     /// next consolidation cycle). This is the inline path — we don't
     /// want to block on embedding for every fact extraction.
-    pub fn extract_and_create_nodes(
-        text: &str,
-        ctx: &FactExtractionContext,
-    ) -> Vec<FractalNode> {
+    pub fn extract_and_create_nodes(text: &str, ctx: &FactExtractionContext) -> Vec<FractalNode> {
         let facts = Self::extract_facts(text);
         let zero_vector = vec![0.0f32; ctx.embedding_dim];
         facts
@@ -417,7 +414,10 @@ fn derive_head_type(claim: &str) -> String {
             // "The <noun>" → use the noun as type
             words
                 .get(1)
-                .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase())
+                .map(|w| {
+                    w.trim_matches(|c: char| !c.is_alphanumeric())
+                        .to_lowercase()
+                })
                 .filter(|w| !w.is_empty())
                 .unwrap_or_else(|| "entity".to_string())
         }
@@ -524,7 +524,10 @@ mod tests {
     fn test_compute_schema_key_distinct_relations() {
         let pref_key = compute_schema_key("self", "preference", "language");
         let dec_key = compute_schema_key("self", "decision", "language");
-        assert_ne!(pref_key, dec_key, "different relations must produce different keys");
+        assert_ne!(
+            pref_key, dec_key,
+            "different relations must produce different keys"
+        );
     }
 
     // ── Head type derivation tests ──
@@ -592,7 +595,8 @@ mod tests {
 
     #[test]
     fn test_preference_extraction() {
-        let text = "I really like Rust for systems programming. I also enjoy hiking in the mountains.";
+        let text =
+            "I really like Rust for systems programming. I also enjoy hiking in the mountains.";
         let facts = FactExtractor::extract_facts(text);
         assert!(
             facts.iter().any(|f| f.claim.contains("Rust")),
@@ -626,7 +630,8 @@ mod tests {
 
     #[test]
     fn test_intent_extraction() {
-        let text = "I will add fact extraction to the codebase this week. I plan to finish by Friday.";
+        let text =
+            "I will add fact extraction to the codebase this week. I plan to finish by Friday.";
         let facts = FactExtractor::extract_facts(text);
         assert!(
             facts.iter().any(|f| f.rule == "intent"),
@@ -664,7 +669,11 @@ mod tests {
             ));
         }
         let facts = FactExtractor::extract_facts(&text);
-        assert!(facts.len() <= 12, "should cap at 12 facts: got {}", facts.len());
+        assert!(
+            facts.len() <= 12,
+            "should cap at 12 facts: got {}",
+            facts.len()
+        );
     }
 
     #[test]
@@ -686,11 +695,7 @@ mod tests {
             confidence: 0.90,
             matched_span: "Rust is the primary language".to_string(),
         };
-        let node = fact.to_fractal_node(
-            Uuid::new_v4(),
-            Some("session-1"),
-            vec![0.0; 768],
-        );
+        let node = fact.to_fractal_node(Uuid::new_v4(), Some("session-1"), vec![0.0; 768]);
         assert_eq!(node.memory_type, MemoryType::Decision);
         assert_eq!(node.importance, 9);
         assert!(node.weight >= 2.0);
@@ -698,6 +703,9 @@ mod tests {
         assert!(node.metadata.contains_key("decision_why"));
         assert!(node.metadata.contains_key("fact_extraction"));
         // Evidence grounding: source_memory_id should equal the passed source_node_id
-        assert!(node.source_memory_id.is_some(), "source_memory_id must be set");
+        assert!(
+            node.source_memory_id.is_some(),
+            "source_memory_id must be set"
+        );
     }
 }

@@ -1,15 +1,15 @@
 # KnowWhere v0.6.0 — LongMemEval Benchmark Validation
 
-**Date:** May 20, 2026  
-**Validated against:** H-Mem (arXiv:2605.15701)  
-**KnowWhere version:** v0.6.0 (post-migration, turn-level storage)  
+**Date:** May 20, 2026
+**Validated against:** H-Mem (arXiv:2605.15701)
+**KnowWhere version:** v0.6.0 (post-migration, turn-level storage)
 **Benchmark run:** May 19, 2026, 17:52 CEST (commit `afabc1f`)
 
 ---
 
 ## TL;DR
 
-| System | Recall@5 | Top-1 | MRR | NDCG@5 (turn) | Embedding Model | 
+| System | Recall@5 | Top-1 | MRR | NDCG@5 (turn) | Embedding Model |
 |--------|:--------:|:-----:|:---:|:-------------:|-----------------|
 | **KnowWhere v0.6.0** | **72.97%** | 43.24% | 0.5577 | 0.4247 | nomic-embed-text (768-dim) |
 | **H-Mem** | **89.20%** | — | — | — | Qwen3-Embedding-4B (2048-dim) |
@@ -116,7 +116,7 @@
 
 ### Head-to-Head on LongMemEval
 
-| Metric | KnowWhere v0.6.0 | H-Mem | Δ | 
+| Metric | KnowWhere v0.6.0 | H-Mem | Δ |
 |--------|:---:|:---:|:---:|
 | **Recall@5** | 72.97% | 89.20% | **−16.23pp** |
 | **Top-1** | 43.24% | — | not reported |
@@ -190,7 +190,7 @@
 
 H-Mem uses GPT-4o-mini for:
 - Consolidation (summaries)
-- Entity extraction  
+- Entity extraction
 - Query decomposition
 - Missing-info bridge queries
 

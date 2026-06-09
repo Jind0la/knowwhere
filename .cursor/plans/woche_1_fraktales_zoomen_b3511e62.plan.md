@@ -232,4 +232,3 @@ In `[src/memory/tests.rs](src/memory/tests.rs)` neue Tests:
 - **Edit**: `src/main.rs` -- AppState, DreamMode spawn, neue Routen
 - **Edit**: `src/memory/tests.rs` -- 4 neue Tests
 - Keine neuen Dependencies noetig
-

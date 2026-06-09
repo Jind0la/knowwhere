@@ -16,7 +16,6 @@ use crate::embedding::{embed_document, embed_document_batch, embed_query};
 use crate::memory::FractalNode;
 use crate::storage::RetrievalProfile;
 
-
 // =============================================================================
 // Self-Healing Endpoints (Content Hashing for External Nodes)
 // =============================================================================

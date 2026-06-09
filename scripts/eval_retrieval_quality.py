@@ -65,7 +65,7 @@ def load_and_adapt_questions(limit: int = 15) -> List[Dict]:
         data = json.load(f)
 
     questions = [q for q in data if q.get("question_type") == "single-session-user" and q.get("answer")]
-    
+
     adapted = []
     for q in questions[:limit]:
         adapted.append({

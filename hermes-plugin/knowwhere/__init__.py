@@ -154,7 +154,7 @@ class KnowWhereProvider(MemoryProvider):
 
         Called by MemoryManager before each API call. Results are injected
         into the system prompt as context.
-        
+
         Two retrieval modes:
         1. Raw user-facing retrieval for relevant facts.
         2. Decision-filtered retrieval for past choices and rationale.
@@ -642,7 +642,7 @@ class KnowWhereProvider(MemoryProvider):
         query_intent: str = "",
     ) -> List[Dict[str, Any]]:
         """POST /retrieve_fractal — synchronous retrieval.
-        
+
         Args:
             query: Search query text
             memory_type_filter: If set, only return nodes of this type (e.g. "decision")

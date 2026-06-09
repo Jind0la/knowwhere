@@ -238,14 +238,14 @@ def parse_variant_a(raw_text: str) -> dict:
     """Parse text-based ---CLAIMS--- block."""
     summary = ""
     claims = []
-    
+
     if "---CLAIMS---" in raw_text:
         parts = raw_text.split("---CLAIMS---", 1)
         summary = parts[0].strip()
         block = parts[1]
         if "---END---" in block:
             block = block.split("---END---")[0]
-        
+
         current_claim = None
         for line in block.strip().split("\n"):
             line = line.strip()
@@ -256,12 +256,12 @@ def parse_variant_a(raw_text: str) -> dict:
                 current_claim = [claim_text, ""]
             elif line.startswith("reason:") and current_claim:
                 current_claim[1] = line.split(":", 1)[-1].strip()
-        
+
         if current_claim and current_claim[0]:
             claims.append({"claim": current_claim[0], "reason": current_claim[1]})
     else:
         summary = raw_text
-    
+
     return {"summary": summary, "claims": claims}
 
 
@@ -279,7 +279,7 @@ def evaluate(variant_name: str, result: dict, parsed: dict) -> dict:
     claims = parsed.get("claims", [])
     n_claims = len(claims)
     n_specific = sum(1 for c in claims if is_specific_claim(c.get("claim", "")))
-    
+
     return {
         "variant": variant_name,
         "ok": result["ok"],
@@ -299,60 +299,60 @@ def main():
         ("B (JSON Schema)", variant_b_prompt, parse_variant_bc),
         ("C (JSON Schema + Few-Shot)", variant_c_prompt, parse_variant_bc),
     ]
-    
+
     results = {}
-    
+
     for case in TEST_CASES:
         print(f"\n{'='*60}")
         print(f"TEST: {case['id']}")
         print(f"{'='*60}")
-        
+
         for vname, prompt_fn, parse_fn in variants:
             print(f"\n  [{vname}]", end=" ", flush=True)
-            
+
             payload = prompt_fn(case["content"])
             result = call_ollama(payload)
-            
+
             if not result["ok"]:
                 print(f"FAILED: {result['error']}")
                 continue
-            
+
             parsed = parse_fn(result["raw"] if vname.startswith("A") else result["raw"])
             metrics = evaluate(vname, result, parsed)
-            
+
             key = f"{case['id']}/{vname}"
             results[key] = metrics
-            
+
             print(f"latency={metrics['latency']}s | claims={metrics['claims_extracted']} | specific={metrics['specific_claims']} | score={metrics['specificity_score']}")
-            
+
             # Show first claim
             if metrics["claims"]:
                 c = metrics["claims"][0]
                 print(f"    → {c['claim'][:80]}")
             else:
                 print(f"    → (no claims extracted)")
-    
+
     # ─── Summary ────────────────────────────────────────────
     print(f"\n{'='*60}")
     print(f"SUMMARY")
     print(f"{'='*60}")
-    
+
     print(f"\n{'Variant':<35} {'Avg Claims':>10} {'Specificity':>10} {'Compliance':>10} {'Avg Latency':>10}")
     print("-" * 80)
-    
+
     for vname in ["A (Text ---CLAIMS---)", "B (JSON Schema)", "C (JSON Schema + Few-Shot)"]:
         variant_results = [r for k, r in results.items() if k.endswith(vname) and r["ok"]]
         if not variant_results:
             continue
-        
+
         avg_claims = sum(r["claims_extracted"] for r in variant_results) / len(variant_results)
         avg_specific = sum(r["specific_claims"] for r in variant_results) / len(variant_results)
         avg_specificity = sum(r["specificity_score"] for r in variant_results) / len(variant_results)
         avg_latency = sum(r["latency"] for r in variant_results) / len(variant_results)
         compliance = sum(1 for r in variant_results if r["format_compliance"]) / len(variant_results)
-        
+
         print(f"{vname:<35} {avg_claims:>10.1f} {avg_specificity:>10.2f} {compliance:>10.0%} {avg_latency:>9.2f}s")
-    
+
     # Save raw results
     with open("/tmp/claims_spike_results.json", "w") as f:
         json.dump(results, f, indent=2, default=str)

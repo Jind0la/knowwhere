@@ -1,7 +1,7 @@
 # Anchor Contamination — Root Cause Analysis & Fix
 
-**Date:** 2026-05-15  
-**Session:** Telegram DM with Nimar  
+**Date:** 2026-05-15
+**Session:** Telegram DM with Nimar
 **Status:** FIXED — 70% honest plateau achieved
 
 ## The Bug

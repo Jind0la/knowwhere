@@ -164,4 +164,3 @@ Nach dem Erstellen: `cargo check` und `cargo build` ausfuehren, Fehler zeigen un
 - Kein Python SDK (nur leeres Verzeichnis)
 - Keine OpenAPI-Spec-Generierung (kommt in Phase 1)
 - Keine Tests (kommen direkt nach dem Grundgeruest)
-

@@ -161,9 +161,10 @@ impl GoogleDriveConnector {
 
             // If watching a specific folder, filter by parent
             if let Some(ref folder_id) = self.watch_folder_id {
-                let is_in_folder = file.parents.as_ref().map_or(false, |parents| {
-                    parents.contains(folder_id)
-                });
+                let is_in_folder = file
+                    .parents
+                    .as_ref()
+                    .map_or(false, |parents| parents.contains(folder_id));
                 if !is_in_folder {
                     continue;
                 }
@@ -173,11 +174,11 @@ impl GoogleDriveConnector {
             let pointer = format!("gdrive://file/{file_id}");
 
             let name = file.name.as_deref().unwrap_or("unknown");
-            let mime_type = file.mime_type.as_deref().unwrap_or("application/octet-stream");
-            let change_type = change
-                .change_type
+            let mime_type = file
+                .mime_type
                 .as_deref()
-                .unwrap_or("unknown");
+                .unwrap_or("application/octet-stream");
+            let change_type = change.change_type.as_deref().unwrap_or("unknown");
 
             let mut metadata = HashMap::from([
                 ("source".to_string(), json!("google_drive")),

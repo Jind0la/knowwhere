@@ -223,4 +223,3 @@ flowchart TB
 - **USearch Thread-Safety**: `usearch::Index` ist nicht `Send+Sync` by default. Wrapping in `Arc<Mutex<>>` loest das.
 - **USearch Dimension-Mismatch**: Lazy-Init beim ersten Insert fixiert die Dimension. Spaetere Inserts mit anderer Dimension werden abgelehnt.
 - **API-Key fehlt**: Graceful Fallback auf LocalOllamaProvider mit Log-Warning.
-

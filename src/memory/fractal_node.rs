@@ -649,8 +649,12 @@ mod tests {
         let mut meta = HashMap::new();
         meta.insert("trust_tier".to_string(), json!("volatile"));
         let node = FractalNode::new_typed(
-            Some("test".into()), None, vec![1.0; 4],
-            meta, MemoryType::Decision, MemorySource::Conversation,
+            Some("test".into()),
+            None,
+            vec![1.0; 4],
+            meta,
+            MemoryType::Decision,
+            MemorySource::Conversation,
         );
         assert_eq!(node.trust_tier(), "volatile"); // explicit wins over Decision hard-rule
     }
@@ -660,8 +664,12 @@ mod tests {
         let mut meta = HashMap::new();
         meta.insert("trust_tier".to_string(), json!("primary"));
         let node = FractalNode::new_typed(
-            Some("test".into()), None, vec![1.0; 4],
-            meta, MemoryType::Semantic, MemorySource::Consolidation,
+            Some("test".into()),
+            None,
+            vec![1.0; 4],
+            meta,
+            MemoryType::Semantic,
+            MemorySource::Consolidation,
         );
         assert_eq!(node.trust_tier(), "primary"); // explicit wins over Consolidation→derived hard-rule
     }
@@ -670,22 +678,34 @@ mod tests {
     fn trust_tier_absent_uses_fallbacks() {
         // Decision without metadata → still primary (fallback)
         let node = FractalNode::new_typed(
-            Some("decision".into()), None, vec![1.0; 4],
-            HashMap::new(), MemoryType::Decision, MemorySource::Conversation,
+            Some("decision".into()),
+            None,
+            vec![1.0; 4],
+            HashMap::new(),
+            MemoryType::Decision,
+            MemorySource::Conversation,
         );
         assert_eq!(node.trust_tier(), "primary");
 
         // Normal conversation without metadata → primary (fallback)
         let node2 = FractalNode::new_typed(
-            Some("chat".into()), None, vec![1.0; 4],
-            HashMap::new(), MemoryType::Episodic, MemorySource::Conversation,
+            Some("chat".into()),
+            None,
+            vec![1.0; 4],
+            HashMap::new(),
+            MemoryType::Episodic,
+            MemorySource::Conversation,
         );
         assert_eq!(node2.trust_tier(), "primary");
 
         // Explicit document → reference (fallback)
         let node3 = FractalNode::new_typed(
-            Some("manual".into()), None, vec![1.0; 4],
-            HashMap::new(), MemoryType::Semantic, MemorySource::Document,
+            Some("manual".into()),
+            None,
+            vec![1.0; 4],
+            HashMap::new(),
+            MemoryType::Semantic,
+            MemorySource::Document,
         );
         assert_eq!(node3.trust_tier(), "reference");
     }

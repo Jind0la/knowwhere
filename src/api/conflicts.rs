@@ -16,13 +16,14 @@ use crate::embedding::{embed_document, embed_document_batch, embed_query};
 use crate::memory::FractalNode;
 use crate::storage::RetrievalProfile;
 
-
 // =============================================================================
 // Conflict Detection Endpoints
 // =============================================================================
 
 #[cfg(feature = "postgres-storage")]
-use crate::memory::dream::conflict_detection::{AutoResolveConfig, ConflictDetector, ConflictGroup};
+use crate::memory::dream::conflict_detection::{
+    AutoResolveConfig, ConflictDetector, ConflictGroup,
+};
 #[cfg(feature = "postgres-storage")]
 use crate::memory::dream::deduplication::{
     DeduplicationResult, DeduplicationRunRow, DeduplicationWorker, DuplicatePair,

@@ -150,12 +150,16 @@ impl<'a> EnergyDecayWorker<'a> {
     /// * `memory_id` — the memory to boost
     /// * `boost` — how many energy units to add (e.g. 20 for a retrieval)
     pub async fn boost_energy(&self, memory_id: Uuid, boost: i32) -> Result<()> {
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             UPDATE memories
             SET energy = LEAST(100, energy + $2),
                 last_energy_update = NOW()
             WHERE id = $1 AND status = 'active'
-            "#).bind(memory_id).bind(boost)
+            "#,
+        )
+        .bind(memory_id)
+        .bind(boost)
         .execute(self.pool)
         .await?;
 
@@ -358,7 +362,8 @@ impl<'a> EnergyDecayWorker<'a> {
         let new_id = Uuid::new_v4();
 
         // Insert the new consolidated memory
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             INSERT INTO memories (
                 id, memory_type, content, embedding,
                 importance, confidence, sensitivity, status,
@@ -375,7 +380,15 @@ impl<'a> EnergyDecayWorker<'a> {
                 NULL, NULL,
                 NOW(), NOW()
             )
-            "#).bind(new_id).bind(new_content).bind(max_importance).bind(max_confidence).bind(combined_provenance).bind(serde_json::json!(all_entities)).bind(all_tags.as_slice())
+            "#,
+        )
+        .bind(new_id)
+        .bind(new_content)
+        .bind(max_importance)
+        .bind(max_confidence)
+        .bind(combined_provenance)
+        .bind(serde_json::json!(all_entities))
+        .bind(all_tags.as_slice())
         .execute(self.pool)
         .await?;
 
@@ -383,14 +396,18 @@ impl<'a> EnergyDecayWorker<'a> {
         let superseded_ids: Vec<Uuid> = rows.iter().map(|r| r.id).collect();
         for mem_id in &superseded_ids {
             // Use the new consolidated memory as the superseder
-            sqlx::query(r#"
+            sqlx::query(
+                r#"
                 UPDATE memories
                 SET status = 'superseded',
                     superseded_by = $1,
                     conflict_state = 'resolved',
                     updated_at = NOW()
                 WHERE id = $2
-                "#).bind(new_id).bind(*mem_id)
+                "#,
+            )
+            .bind(new_id)
+            .bind(*mem_id)
             .execute(self.pool)
             .await?;
         }

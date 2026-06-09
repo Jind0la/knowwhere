@@ -1,8 +1,8 @@
 # Cross-Encoder Reranking for KnowWhere
 
-**Status:** Design Proposal  
-**Author:** Hermes Researcher Agent (kanban task t_9f62c4ab)  
-**Date:** 2026-05-01  
+**Status:** Design Proposal
+**Author:** Hermes Researcher Agent (kanban task t_9f62c4ab)
+**Date:** 2026-05-01
 **Version:** 1.0
 
 ---
@@ -11,7 +11,7 @@
 
 **Recommendation:** Add a cross-encoder reranking stage to KnowWhere's hybrid retrieval pipeline using `ms-marco-MiniLM-L6-v2` via ONNX Runtime (`ort` + `fastembed` crates or direct `ort`). Expected accuracy improvement: **+33-42%** on retrieval benchmarks at a latency cost of **+50-125ms** for 50-100 candidate pairs.
 
-Current pipeline: `Bi-Encoder (USearch) + BM25 → RRF Fusion → Top-K`  
+Current pipeline: `Bi-Encoder (USearch) + BM25 → RRF Fusion → Top-K`
 Proposed pipeline: `Bi-Encoder (USearch) + BM25 → RRF Fusion → Top-K×2 → Cross-Encoder → Top-K`
 
 ---

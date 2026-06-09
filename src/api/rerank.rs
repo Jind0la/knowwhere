@@ -61,7 +61,6 @@ fn default_alpha() -> f32 {
     0.7
 }
 
-
 /// Response from the reranking endpoint.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct RerankResponse {
@@ -156,7 +155,10 @@ pub async fn rerank(
         );
 
         let mut reranker = reranker_arc.lock().map_err(|e| {
-            (StatusCode::INTERNAL_SERVER_ERROR, format!("Reranker lock poisoned: {}", e))
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Reranker lock poisoned: {}", e),
+            )
         })?;
         let (results, ce_timing) = reranker
             .rerank(&req.query, candidates, req.top_n, strategy)

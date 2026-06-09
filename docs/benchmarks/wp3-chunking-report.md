@@ -1,8 +1,8 @@
 # WP3 Chunking Benchmark — Before/After Retrieval Quality
 
-**Date:** 2026-05-18 15:39 UTC  
-**Model:** nomic-embed-text (8192 token context)  
-**KnowWhere:** v0.4.0, 2620 nodes, port 3737  
+**Date:** 2026-05-18 15:39 UTC
+**Model:** nomic-embed-text (8192 token context)
+**KnowWhere:** v0.4.0, 2620 nodes, port 3737
 **Chunker:** TextChunker (6000-char chunks, 200-char overlap, sentence/paragraph boundaries)
 
 ---
