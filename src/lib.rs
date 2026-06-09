@@ -8,3 +8,5 @@ pub mod retrieval;
 pub mod scheduler;
 pub mod services;
 pub mod storage;
+pub mod summarizer;
+pub mod vlm;

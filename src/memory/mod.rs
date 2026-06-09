@@ -6,6 +6,7 @@ pub mod events;
 pub mod fact_extraction;
 pub mod fractal_node;
 pub mod governance;
+pub mod tiered;
 pub mod types;
 
 #[cfg(feature = "postgres-storage")]

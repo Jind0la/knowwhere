@@ -8,6 +8,7 @@
 //! No external HTTP calls, no new database tables, no additional dependencies.
 
 pub mod audit;
+pub mod consolidation;
 
 pub use audit::AuditScheduler;
 
@@ -27,6 +28,10 @@ pub struct SchedulerConfig {
     pub dedup_enabled: bool,
     /// Auto-resolve conflicts if confidence > this threshold. Default: 0.8.
     pub conflict_auto_resolve_threshold: f64,
+    /// How many L2 nodes to check per consolidation cycle. Default: 50.
+    pub consolidation_batch_size: usize,
+    /// Max VLM jobs per consolidation cycle. Default: 3.
+    pub vlm_max_jobs_per_cycle: usize,
 }
 
 impl Default for SchedulerConfig {
@@ -37,6 +42,8 @@ impl Default for SchedulerConfig {
             decay_enabled: true,
             dedup_enabled: true,
             conflict_auto_resolve_threshold: 0.8,
+            consolidation_batch_size: 50,
+            vlm_max_jobs_per_cycle: 3,
         }
     }
 }
@@ -50,6 +57,8 @@ impl SchedulerConfig {
     /// - `DREAM_DECAY_ENABLED` — "true" or "false" (default: true)
     /// - `DREAM_DEDUP_ENABLED` — "true" or "false" (default: true)
     /// - `DREAM_CONFLICT_AUTO_RESOLVE_THRESHOLD` — float 0.0–1.0 (default: 0.8)
+    /// - `DREAM_CONSOLIDATION_BATCH_SIZE` — nodes per cycle (default: 50)
+    /// - `DREAM_VLM_MAX_JOBS_PER_CYCLE` — max VLM jobs (default: 3)
     pub fn from_env() -> Self {
         Self {
             enabled: std::env::var("DREAM_ENABLED")
@@ -73,6 +82,16 @@ impl SchedulerConfig {
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(0.8),
+
+            consolidation_batch_size: std::env::var("DREAM_CONSOLIDATION_BATCH_SIZE")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(50),
+
+            vlm_max_jobs_per_cycle: std::env::var("DREAM_VLM_MAX_JOBS_PER_CYCLE")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(3),
         }
     }
 
