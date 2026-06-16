@@ -1,6 +1,6 @@
 # KnowWhere Architecture Map
 
-**Stand: 3. Juni 2026 | v0.6.0 | 79 Rust-Files, 31.758 LOC | 14 API-Module, routes.rs: 104 LOC**
+**Stand: 16. Juni 2026 | v0.6.0 | 88 Rust-Files, 38.874 LOC | 14 API-Module, routes.rs: 84 LOC**
 
 ---
 
@@ -102,14 +102,14 @@ Client (Hermes Plugin / REST API)
 
 | # | Datei | LOC | Verantwortung |
 |---|-------|-----|---------------|
-| 1 | `api/retrieve.rs` | 1.763 | Fractal Retrieve + Subconscious Chat |
-| 2 | `api/store.rs` | 1.176 | Session Storage + External + Self-Improve |
-| 3 | `storage/postgres_store.rs` | 2.647 | PostgreSQL-Backend: SQL, Indexes, Migrations |
-| 4 | `memory/governance.rs` | ~1.200 | Policy-Engine: Confidence, Sensitivity, Access |
-| 5 | `retrieval/hybrid.rs` | ~800 | BM25 + Dense + RRF Fusion |
-| 6 | `memory/dream/consolidation.rs` | ~700 | L0→L1→L2 Dream Mode |
-| 7 | `memory/conversation.rs` | ~600 | Turn-Level Storage + EmbeddingInfo |
-| 8 | `memory/fractal_node.rs` | 628 | FractalNode Struct (Zentral) |
+| 1 | `storage/postgres_store.rs` | 2.481 | PostgreSQL-Backend: SQL, Indexes, Migrations |
+| 2 | `storage/in_memory.rs` | 2.108 | JSON-File-Backend (Dev) |
+| 3 | `retrieval/source_weighting.rs` | 1.976 | Provenance-Scoring Pipeline |
+| 4 | `api/retrieve.rs` | 1.811 | Fractal Retrieve + Subconscious Chat |
+| 5 | `memory/dream/consolidation.rs` | 1.387 | L0→L1→L2 Dream Mode |
+| 6 | `api/store.rs` | 1.277 | Session Storage + External + Self-Improve |
+| 7 | `memory/dream/conflict_detection.rs` | 1.128 | Conflict Resolution |
+| 8 | `vlm/mod.rs` | 1.086 | Vision-Language Models |
 
 ---
 
