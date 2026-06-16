@@ -49,8 +49,12 @@ ort = { version = ">=2.0.0-rc.12, <3", optional = true }
 tokenizers = { version = "0.21", optional = true }
 ndarray = { version = "0.17", optional = true }
 
+# Prometheus metrics (feature-gated, default enabled)
+metrics = { version = "0.24", optional = true }
+metrics-exporter-prometheus = { version = "0.16", optional = true }
+
 [features]
-default = ["reranker"]
+default = ["reranker", "metrics"]
 # Enable PostgreSQL-backed storage layer (requires DATABASE_URL env var at runtime)
 postgres-storage = []
 
@@ -59,6 +63,9 @@ postgres-storage = []
 # reqwest is always included (Ollama also needs it).
 openai-provider = []
 grok-provider = []
+
+# Enable Prometheus /metrics endpoint with latency histograms
+metrics = ["dep:metrics", "dep:metrics-exporter-prometheus"]
 
 # Enable cross-encoder reranking (ONNX Runtime via ort)
 # Requires bge-reranker-v2-m3 ONNX model + tokenizer

@@ -9,7 +9,9 @@ use axum::Router;
 use http_body_util::BodyExt;
 use tower::ServiceExt;
 
-use knowwhere_server::api::{auth, routes, webhooks::DedupCache};
+use knowwhere_server::api::{auth, routes};
+#[cfg(feature = "webhooks")]
+use knowwhere_server::api::webhooks::DedupCache;
 use knowwhere_server::embedding::{EmbeddingProvider, LocalOllamaProvider};
 use knowwhere_server::memory::governance::GovernancePolicy;
 use knowwhere_server::memory::types::{MemorySource, MemoryType};
@@ -65,9 +67,13 @@ fn test_state_with_embedding(embedding: Arc<dyn EmbeddingProvider>) -> routes::A
         events: InMemoryEventStore::new(),
         #[cfg(feature = "postgres-storage")]
         trajectory_pool: None,
+        #[cfg(feature = "webhooks")]
         frigate_dedup: DedupCache::new(),
+        #[cfg(feature = "webhooks")]
         frigate_webhook_secret: std::env::var("FRIGATE_WEBHOOK_SECRET").ok(),
+        #[cfg(feature = "webhooks")]
         homeassistant_dedup: DedupCache::new(),
+        #[cfg(feature = "webhooks")]
         homeassistant_webhook_secret: std::env::var("HASS_WEBHOOK_SECRET").ok(),
         temporal_weight: Arc::new(RwLock::new(None)),
         default_source_type_weights: None,
@@ -2002,6 +2008,7 @@ async fn postgres_auth_http_e2e_register_login_refresh_rotation() {
     pg.delete_auth_user(user.id).await.expect("cleanup user");
 }
 
+#[cfg(feature = "webhooks")]
 fn app_with_webhook() -> Router {
     let state = test_state();
 
@@ -2011,6 +2018,7 @@ fn app_with_webhook() -> Router {
         .with_state(state)
 }
 
+#[cfg(feature = "webhooks")]
 #[tokio::test]
 async fn webhook_frigate_unauthorized_without_secret() {
     // Clean env FIRST to prevent leak from parallel tests
@@ -2041,6 +2049,7 @@ async fn webhook_frigate_unauthorized_without_secret() {
     std::env::remove_var("FRIGATE_WEBHOOK_SECRET");
 }
 
+#[cfg(feature = "webhooks")]
 #[tokio::test]
 async fn webhook_frigate_unauthorized_with_wrong_secret() {
     std::env::set_var("FRIGATE_WEBHOOK_SECRET", "test-secret");
@@ -2069,6 +2078,7 @@ async fn webhook_frigate_unauthorized_with_wrong_secret() {
     std::env::remove_var("FRIGATE_WEBHOOK_SECRET");
 }
 
+#[cfg(feature = "webhooks")]
 #[tokio::test]
 async fn webhook_frigate_success_with_valid_secret() {
     std::env::set_var("FRIGATE_WEBHOOK_SECRET", "test-secret");
@@ -2103,6 +2113,7 @@ async fn webhook_frigate_success_with_valid_secret() {
     std::env::remove_var("FRIGATE_WEBHOOK_SECRET");
 }
 
+#[cfg(feature = "webhooks")]
 #[tokio::test]
 async fn webhook_frigate_duplicate_event_returns_409() {
     // Clean up env FIRST to prevent leak from parallel tests
@@ -2150,6 +2161,7 @@ async fn webhook_frigate_duplicate_event_returns_409() {
     std::env::remove_var("FRIGATE_WEBHOOK_SECRET");
 }
 
+#[cfg(feature = "webhooks")]
 #[tokio::test]
 async fn webhook_frigate_success_with_query_secret() {
     std::env::set_var("FRIGATE_WEBHOOK_SECRET", "test-secret");

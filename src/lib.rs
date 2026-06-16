@@ -2,6 +2,8 @@ pub mod api;
 pub mod connectors;
 pub mod embedding;
 pub mod memory;
+#[cfg(feature = "metrics")]
+pub mod metrics;
 pub mod multimodal;
 pub mod reflector;
 pub mod retrieval;

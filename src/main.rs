@@ -24,6 +24,8 @@ use knowwhere_server::api::{auth, auth::ApiKey, docs::ApiDoc, routes, versioning
 use knowwhere_server::connectors::frigate::FrigateConnector;
 use knowwhere_server::connectors::store_external_event;
 use knowwhere_server::embedding::router::EmbeddingRouter;
+#[cfg(feature = "metrics")]
+use knowwhere_server::metrics::{metrics_endpoint, metrics_middleware, setup_metrics_recorder};
 use knowwhere_server::scheduler::consolidation::ConsolidationScheduler;
 use knowwhere_server::scheduler::SchedulerConfig;
 #[cfg(feature = "audio-embedding")]
@@ -94,6 +96,9 @@ async fn run() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
         .init();
+
+    #[cfg(feature = "metrics")]
+    setup_metrics_recorder();
 
     // -- Rate Limiter (lazy-limit) — global, initialized once at startup --
     init_rate_limiter!(
@@ -519,8 +524,14 @@ async fn run() -> anyhow::Result<()> {
                 .allow_methods(Any)
                 .allow_headers(Any),
         )
-        .layer(TraceLayer::new_for_http())
-        .with_state(state);
+        .layer(TraceLayer::new_for_http());
+
+    #[cfg(feature = "metrics")]
+    let app = app
+        .route("/metrics", get(metrics_endpoint))
+        .route_layer(middleware::from_fn(metrics_middleware));
+
+    let app = app.with_state(state);
 
     if std::env::var("KNOWWHERE_API_KEY").is_ok() {
         tracing::info!("auth enabled (Bearer token required for protected routes)");

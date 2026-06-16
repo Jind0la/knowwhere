@@ -83,6 +83,7 @@ use axum::routing::post;
 use axum::Router;
 use http_body_util::BodyExt;
 use knowwhere_server::api::routes::{self, distance_matrix};
+#[cfg(feature = "webhooks")]
 use knowwhere_server::api::webhooks::DedupCache;
 use knowwhere_server::embedding::EmbeddingProvider;
 use knowwhere_server::memory::governance::GovernancePolicy;
@@ -126,9 +127,13 @@ fn test_state() -> routes::AppState {
         events: InMemoryEventStore::new(),
         #[cfg(feature = "postgres-storage")]
         trajectory_pool: None,
+        #[cfg(feature = "webhooks")]
         frigate_dedup: DedupCache::new(),
+        #[cfg(feature = "webhooks")]
         frigate_webhook_secret: std::env::var("FRIGATE_WEBHOOK_SECRET").ok(),
+        #[cfg(feature = "webhooks")]
         homeassistant_dedup: DedupCache::new(),
+        #[cfg(feature = "webhooks")]
         homeassistant_webhook_secret: std::env::var("HASS_WEBHOOK_SECRET").ok(),
         temporal_weight: Arc::new(RwLock::new(None)),
         default_source_type_weights: None,
