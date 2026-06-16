@@ -171,6 +171,7 @@ use crate::memory::{FractalNode, MemorySource, MemoryType};
 use crate::scheduler::SchedulerConfig;
 use crate::storage::{StorageBackend, UpdateOperation};
 use crate::summarizer::TieredSummarizer;
+#[cfg(feature = "vlm")]
 use crate::vlm::{SummaryContext, VlmJob, VlmWorkerHandle};
 
 /// Consolidation Scheduler state.
@@ -192,6 +193,7 @@ use crate::vlm::{SummaryContext, VlmJob, VlmWorkerHandle};
 /// Result: L2 ↔ L1 ↔ L0 bidirectional links with embeddings
 pub struct ConsolidationScheduler {
     store: Arc<dyn StorageBackend>,
+    #[cfg(feature = "vlm")]
     vlm_worker: Option<VlmWorkerHandle>,
     local_summarizer: TieredSummarizer,
     embedding: Arc<dyn EmbeddingProvider>,
@@ -215,6 +217,7 @@ impl ConsolidationScheduler {
     /// VLM worker is optional — LocalSummarizer is always preferred.
     pub fn new(
         store: Arc<dyn StorageBackend>,
+        #[cfg(feature = "vlm")]
         vlm_worker: Option<VlmWorkerHandle>,
         embedding: Arc<dyn EmbeddingProvider>,
         config: SchedulerConfig,
@@ -229,6 +232,7 @@ impl ConsolidationScheduler {
 
         Self {
             store,
+            #[cfg(feature = "vlm")]
             vlm_worker,
             local_summarizer,
             embedding,
@@ -238,6 +242,16 @@ impl ConsolidationScheduler {
             cycle_count: Arc::new(AtomicU64::new(0)),
             is_running: AtomicBool::new(false),
         }
+    }
+
+    #[cfg(feature = "vlm")]
+    fn vlm_available(&self) -> bool {
+        self.vlm_worker.is_some()
+    }
+
+    #[cfg(not(feature = "vlm"))]
+    fn vlm_available(&self) -> bool {
+        false
     }
 
     /// Returns the number of completed consolidation cycles.
@@ -383,7 +397,7 @@ impl ConsolidationScheduler {
         tracing::info!(
             count = candidates.len(),
             local_available = self.local_summarizer.is_available(),
-            vlm_available = self.vlm_worker.is_some(),
+            vlm_available = self.vlm_available(),
             "force_run: starting full consolidation"
         );
 
@@ -403,18 +417,27 @@ impl ConsolidationScheduler {
                 }
             }
 
-            if let Some(ref handle) = self.vlm_worker {
-                let job = VlmJob::new(vec![*node_id], SummaryContext::Overview);
-                match handle.enqueue(job).await {
-                    Ok(()) => {
-                        enqueued += 1;
+            #[cfg(feature = "vlm")]
+            {
+                if let Some(ref handle) = self.vlm_worker {
+                    let job = VlmJob::new(vec![*node_id], SummaryContext::Overview);
+                    match handle.enqueue(job).await {
+                        Ok(()) => {
+                            enqueued += 1;
+                        }
+                        Err(e) => {
+                            tracing::error!(node_id = %node_id, error = %e, "force_run: VLM enqueue failed");
+                            failed += 1;
+                        }
                     }
-                    Err(e) => {
-                        tracing::error!(node_id = %node_id, error = %e, "force_run: VLM enqueue failed");
-                        failed += 1;
-                    }
+                } else if !self.vlm_available() {
+                    tracing::error!(node_id = %node_id, "force_run: no summarizer available");
+                    failed += 1;
                 }
-            } else {
+            }
+
+            #[cfg(not(feature = "vlm"))]
+            if !self.vlm_available() {
                 tracing::error!(node_id = %node_id, "force_run: no summarizer available");
                 failed += 1;
             }
@@ -422,7 +445,7 @@ impl ConsolidationScheduler {
             // Only mark as processed if failure is PERMANENT (no summarizer at all).
             // Transient errors (DNS, timeout, Ollama restart) leave the node
             // eligible for retry in the next consolidation cycle.
-            if !self.local_summarizer.is_available() && self.vlm_worker.is_none() {
+            if !self.local_summarizer.is_available() && !self.vlm_available() {
                 tracing::warn!(
                     node_id = %node_id,
                     "force_run: permanent failure — no summarizer available, marking as processed"
@@ -543,7 +566,7 @@ impl ConsolidationScheduler {
         tracing::info!(
             count = candidates.len(),
             local_available = self.local_summarizer.is_available(),
-            vlm_available = self.vlm_worker.is_some(),
+            vlm_available = self.vlm_available(),
             "ConsolidationScheduler: found candidates"
         );
 
@@ -569,24 +592,37 @@ impl ConsolidationScheduler {
             }
 
             // FALLBACK: VLM (if available)
-            if let Some(ref handle) = self.vlm_worker {
-                let job = VlmJob::new(vec![*node_id], SummaryContext::Overview);
-                match handle.enqueue(job).await {
-                    Ok(()) => {
-                        tracing::debug!(node_id = %node_id, "enqueued VLM consolidation job");
-                        enqueued += 1;
+            #[cfg(feature = "vlm")]
+            {
+                if let Some(ref handle) = self.vlm_worker {
+                    let job = VlmJob::new(vec![*node_id], SummaryContext::Overview);
+                    match handle.enqueue(job).await {
+                        Ok(()) => {
+                            tracing::debug!(node_id = %node_id, "enqueued VLM consolidation job");
+                            enqueued += 1;
+                        }
+                        Err(e) => {
+                            tracing::error!(
+                                node_id = %node_id,
+                                error = %e,
+                                "VLM enqueue failed"
+                            );
+                            failed += 1;
+                        }
                     }
-                    Err(e) => {
-                        tracing::error!(
-                            node_id = %node_id,
-                            error = %e,
-                            "VLM enqueue failed"
-                        );
-                        failed += 1;
-                    }
+                } else if !self.vlm_available() {
+                    tracing::error!(
+                        node_id = %node_id,
+                        "Compaction failed: no summarizer available. \
+                         Install Ollama (https://ollama.com) or configure VLM. \
+                         Truncation disabled — memory preserved in original form."
+                    );
+                    failed += 1;
                 }
-            } else {
-                // NO TRUNCATION — log failure but don't lose information
+            }
+
+            #[cfg(not(feature = "vlm"))]
+            if !self.vlm_available() {
                 tracing::error!(
                     node_id = %node_id,
                     "Compaction failed: no summarizer available. \
@@ -599,7 +635,7 @@ impl ConsolidationScheduler {
             // Only mark as processed if failure is PERMANENT (no summarizer at all).
             // Transient errors (DNS, timeout, Ollama restart) leave the node
             // eligible for retry in the next consolidation cycle.
-            if !self.local_summarizer.is_available() && self.vlm_worker.is_none() {
+            if !self.local_summarizer.is_available() && !self.vlm_available() {
                 tracing::warn!(
                     node_id = %node_id,
                     "permanent failure — no summarizer available, marking as processed"
@@ -1092,7 +1128,14 @@ mod trigger_tests {
 
     fn build_scheduler(store: Arc<MemoryStore>) -> ConsolidationScheduler {
         let embedding = Arc::new(DummyEmbedding);
-        ConsolidationScheduler::new(store, None, embedding, SchedulerConfig::default())
+        #[cfg(feature = "vlm")]
+        {
+            ConsolidationScheduler::new(store, None, embedding, SchedulerConfig::default())
+        }
+        #[cfg(not(feature = "vlm"))]
+        {
+            ConsolidationScheduler::new(store, embedding, SchedulerConfig::default())
+        }
     }
 
     // Test 1: 4 Raw, 4 total → should_compact() = true

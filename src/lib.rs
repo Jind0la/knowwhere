@@ -9,4 +9,5 @@ pub mod scheduler;
 pub mod services;
 pub mod storage;
 pub mod summarizer;
+#[cfg(feature = "vlm")]
 pub mod vlm;

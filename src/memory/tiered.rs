@@ -19,6 +19,7 @@ use uuid::Uuid;
 use crate::embedding::EmbeddingProvider;
 use crate::memory::types::ContextTier;
 use crate::summarizer::TieredSummarizer;
+#[cfg(feature = "vlm")]
 use crate::vlm::{SummaryContext, VlmJob, VlmWorkerHandle};
 
 /// Maximum token counts per tier (rough guidelines, not enforced)
@@ -46,6 +47,7 @@ pub struct TieredCompactionWorker {
     pool: PgPool,
     embedding: Arc<dyn EmbeddingProvider>,
     /// VLM worker for async compaction. Optional — local summarizer preferred.
+    #[cfg(feature = "vlm")]
     vlm_handle: Option<VlmWorkerHandle>,
     /// Local deterministic summarizer (DistilBART). Always preferred over VLM.
     local_summarizer: TieredSummarizer,
@@ -55,11 +57,12 @@ impl TieredCompactionWorker {
     pub fn new(
         pool: PgPool,
         embedding: Arc<dyn EmbeddingProvider>,
-        vlm_handle: Option<VlmWorkerHandle>,
+        #[cfg(feature = "vlm")] vlm_handle: Option<VlmWorkerHandle>,
     ) -> Self {
         Self {
             pool,
             embedding,
+            #[cfg(feature = "vlm")]
             vlm_handle,
             local_summarizer: TieredSummarizer::new(),
         }
@@ -153,6 +156,7 @@ impl TieredCompactionWorker {
                 );
 
                 // FALLBACK: VLM (if available)
+                #[cfg(feature = "vlm")]
                 if let Some(ref handle) = self.vlm_handle {
                     let context = match target {
                         ContextTier::Overview => SummaryContext::Overview,
@@ -162,17 +166,17 @@ impl TieredCompactionWorker {
                     let job = VlmJob::new(vec![memory_id], context);
                     handle.enqueue(job).await?;
                     tracing::debug!(memory_id = %memory_id, ?context, "compaction job enqueued (VLM fallback)");
-                    Ok(memory_id)
-                } else {
-                    // NO TRUNCATION — fail instead
-                    anyhow::bail!(
-                        "compaction failed for memory {}: no summarizer available. \
-                         Local: {}, VLM: not configured. \
-                         Truncation is disabled — cannot compact without quality loss.",
-                        memory_id,
-                        self.local_summarizer.is_available()
-                    )
+                    return Ok(memory_id);
                 }
+
+                // NO TRUNCATION — fail instead
+                anyhow::bail!(
+                    "compaction failed for memory {}: no summarizer available. \
+                     Local: {}, VLM: not configured. \
+                     Truncation is disabled — cannot compact without quality loss.",
+                    memory_id,
+                    self.local_summarizer.is_available()
+                )
             }
         }
     }

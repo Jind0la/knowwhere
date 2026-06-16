@@ -75,6 +75,9 @@ frigate-connector = []
 # Enable webhook endpoints (/webhooks/frigate, /webhooks/homeassistant)
 webhooks = []
 
+# Vision Language Model worker (cloud/Ollama summarization fallback)
+vlm = []
+
 [[bin]]
 name = "longmemeval_canary"
 path = "src/bin/longmemeval_canary.rs"
