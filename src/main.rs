@@ -24,6 +24,8 @@ use knowwhere_server::api::{auth, auth::ApiKey, docs::ApiDoc, routes};
 use knowwhere_server::connectors::frigate::FrigateConnector;
 use knowwhere_server::connectors::store_external_event;
 use knowwhere_server::embedding::router::EmbeddingRouter;
+use knowwhere_server::scheduler::consolidation::ConsolidationScheduler;
+use knowwhere_server::scheduler::SchedulerConfig;
 #[cfg(feature = "audio-embedding")]
 use knowwhere_server::embedding::AudioProvider;
 #[cfg(feature = "vision-embedding")]
@@ -146,6 +148,18 @@ async fn run() -> anyhow::Result<()> {
 
     tokio::spawn(dream.clone().micro_dream_loop());
     tracing::info!("dream mode started (micro-dream every 1h)");
+
+    // Start ConsolidationScheduler (L0→L1→L2 compaction via LocalSummarizer)
+    let sched_config = SchedulerConfig::from_env();
+    let consolidation = ConsolidationScheduler::new(
+        store.clone(),
+        #[cfg(feature = "vlm")]
+        None, // VLM worker not wired here — use LocalSummarizer only
+        embedding.clone(),
+        sched_config,
+    );
+    let (_scheduler, _consolidation_handle) = consolidation.start_safety_net();
+    tracing::info!("consolidation scheduler started (safety-net every 1h)");
 
     #[cfg(feature = "frigate-connector")]
     if let Ok(frigate_url) = std::env::var("FRIGATE_URL") {
