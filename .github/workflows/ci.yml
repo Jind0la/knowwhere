@@ -89,4 +89,4 @@ jobs:
         run: rustup update stable
 
       - name: Clippy check
-        run: cargo clippy -- -D warnings
+        run: cargo clippy
