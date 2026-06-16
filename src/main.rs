@@ -19,7 +19,7 @@ use utoipa_swagger_ui::SwaggerUi;
 
 #[cfg(feature = "webhooks")]
 use knowwhere_server::api::webhooks::DedupCache;
-use knowwhere_server::api::{auth, auth::ApiKey, docs::ApiDoc, routes};
+use knowwhere_server::api::{auth, auth::ApiKey, docs::ApiDoc, routes, versioning};
 #[cfg(feature = "frigate-connector")]
 use knowwhere_server::connectors::frigate::FrigateConnector;
 use knowwhere_server::connectors::store_external_event;
@@ -400,12 +400,101 @@ async fn run() -> anyhow::Result<()> {
         None
     };
 
-    let protected = match rate_limit_layer {
-        Some(layer) => protected.layer(layer),
+    let protected = match &rate_limit_layer {
+        Some(layer) => protected.layer(layer.clone()),
         None => protected,
     }
     .route_layer(middleware::from_fn(auth::auth_middleware))
     .layer(axum::Extension(auth_state.clone()));
+
+    // ── API Versioning (H4) ──────────────────────────────────────────
+    // Legacy routes get deprecation headers; /v1/ routes are current.
+    // Both share the same handler functions; only the middleware differs.
+    let protected_legacy = protected
+        .layer(middleware::from_fn(versioning::deprecation_warning));
+
+    // Build a fresh /v1/ router with the same routes using a macro
+    macro_rules! v1_routes {
+        ($state:expr) => {{
+            let mut r = Router::new()
+                .route("/auth/me", get(auth::me))
+                .route("/embed", post(routes::embed_text))
+                .route("/store_session", post(routes::store_session))
+                .route("/store_session_batch", post(routes::store_session_batch))
+                .route("/store_external", post(routes::store_external))
+                .route("/memory/self_improve", post(routes::self_improve))
+                .route("/retrieve/{id}", get(routes::retrieve))
+                .route("/retrieve_fractal", post(routes::retrieve_fractal_safe))
+                .route("/rerank", post(routes::rerank))
+                .route("/chat/subconscious", post(routes::subconscious_chat))
+                .route("/nodes/recent", get(routes::recent_nodes))
+                .route("/nodes/purge_dummy", post(routes::purge_dummy))
+                .route("/nodes/reembed_all", post(routes::reembed_all))
+                .route("/maintenance/repair_embeddings", post(routes::repair_embeddings))
+                .route("/nodes/{id}", delete(routes::delete_node))
+                .route("/nodes/batch_delete", post(routes::batch_delete_nodes))
+                .route("/nodes/deduplicate", post(routes::deduplicate_nodes))
+                .route("/dream/status", get(routes::dream_status))
+                .route("/distance-matrix", post(routes::distance_matrix))
+                .route("/events", get(routes::list_events))
+                .route("/governance/policy", get(routes::get_governance_policy))
+                .route("/governance/policy", post(routes::update_governance_policy))
+                .route("/config/temporal_weight", get(routes::get_temporal_weight))
+                .route("/config/temporal_weight", post(routes::update_temporal_weight))
+                .route("/voice/upload", post(routes::voice_upload::upload_voice));
+            #[cfg(feature = "webhooks")] {
+                r = r.route("/webhooks/frigate", post(routes::webhook_frigate))
+                     .route("/webhooks/homeassistant", post(routes::webhook_homeassistant));
+            }
+            #[cfg(feature = "postgres-storage")] {
+                r = r.route("/entities", get(routes::entity_search))
+                     .route("/retrieval/runs", get(routes::list_retrieval_runs))
+                     .route("/retrieval/runs/{id}", get(routes::get_retrieval_run))
+                     .route("/retrieval/runs/{id}/trajectory", get(routes::get_retrieval_trajectory))
+                     .route("/memories/{id}/compact", post(routes::compact_memory))
+                     .route("/memories/{id}", get(routes::get_memory))
+                     .route("/conflicts", get(routes::list_conflicts))
+                     .route("/conflicts/{id}/resolve", post(routes::resolve_conflict))
+                     .route("/conflicts/auto-resolve", post(routes::auto_resolve_conflicts))
+                     .route("/memories/{id}/energy/boost", post(routes::boost_memory_energy))
+                     .route("/energy/low", get(routes::list_low_energy_memories))
+                     .route("/energy/decay", post(routes::apply_energy_decay))
+                     .route("/energy/compress", post(routes::compress_memory_cluster))
+                     .route("/deduplication/candidates", get(routes::list_deduplication_candidates))
+                     .route("/deduplication/run", post(routes::run_deduplication))
+                     .route("/deduplication/runs", get(routes::list_deduplication_runs))
+                     .route("/memories/{id}/reindex", post(routes::reindex_external_node))
+                     .route("/memories/{id}/health", get(routes::memory_health_check))
+                     .route("/self-healing/stats", get(routes::self_healing_stats))
+                     .route("/namespaces", get(routes::list_namespaces))
+                     .route("/namespaces", post(routes::create_namespace))
+                     .route("/namespaces/{path}", get(routes::get_namespace))
+                     .route("/namespaces/{path}/memories", get(routes::namespace_memories))
+                     .route("/namespaces/{path}/search", get(routes::namespace_search))
+                     .route("/skills", post(routes::create_skill))
+                     .route("/skills", get(routes::list_skills))
+                     .route("/skills/{id}", get(routes::get_skill))
+                     .route("/skills/{id}", put(routes::update_skill))
+                     .route("/skills/{id}", delete(routes::delete_skill))
+                     .route("/skills/{id}/use", post(routes::use_skill))
+                     .route("/skills/match", get(routes::match_skills))
+                     .route("/store_turn", post(routes::store_turn))
+                     .route("/store_turns", post(routes::store_turns_batch))
+                     .route("/retrieve/turns", post(routes::retrieve_turns))
+                     .route("/sessions/{session_id}/turns", get(routes::get_session_turns));
+            }
+            r.with_state($state)
+        }};
+    }
+
+    let v1_protected = v1_routes!(state.clone());
+    let v1_protected = match &rate_limit_layer {
+        Some(layer) => v1_protected.layer(layer.clone()),
+        None => v1_protected,
+    }
+    .route_layer(middleware::from_fn(auth::auth_middleware))
+    .layer(axum::Extension(auth_state.clone()))
+    .layer(middleware::from_fn(versioning::api_version_header));
 
     #[cfg(feature = "postgres-storage")]
     let auth_router = auth_router_with_pg_store(
@@ -419,7 +508,8 @@ async fn run() -> anyhow::Result<()> {
 
     let app = Router::new()
         .route("/health", get(routes::health))
-        .merge(protected)
+        .merge(protected_legacy)
+        .nest("/v1", v1_protected)
         .merge(auth_router)
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
         .fallback_service(ServeDir::new("frontend"))
