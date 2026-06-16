@@ -16,6 +16,14 @@
         <string>kw_testkey_12345</string>
         <key>OLLAMA_SUMMARIZER_MODEL</key>
         <string>qwen2.5:3b</string>
+        <key>KNOWWHERE_RERANKER_MODEL_PATH</key>
+        <string>/Users/nimarfranklinmac/.cache/knowwhere/reranker-minilm/model.onnx</string>
+        <key>KNOWWHERE_RERANKER_TOKENIZER_PATH</key>
+        <string>/Users/nimarfranklinmac/.cache/knowwhere/reranker-minilm/tokenizer.json</string>
+        <key>KNOWWHERE_RERANKER_MODEL_FORMAT</key>
+        <string>minilm</string>
+        <key>KNOWWHERE_RERANKER_MAX_LENGTH</key>
+        <string>512</string>
     </dict>
     <key>RunAtLoad</key>
     <true/>
