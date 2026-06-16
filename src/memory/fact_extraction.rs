@@ -388,7 +388,8 @@ impl FactExtractor {
 /// # Examples
 ///
 /// ```
-/// let key = fact_extraction::compute_schema_key("self", "PREFERENCE", "language");
+/// use knowwhere_server::memory::fact_extraction::compute_schema_key;
+/// let key = compute_schema_key("self", "PREFERENCE", "language");
 /// assert_eq!(key, "self_preference_language");
 /// ```
 pub fn compute_schema_key(head_type: &str, relation: &str, tail_type: &str) -> String {

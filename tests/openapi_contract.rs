@@ -37,9 +37,16 @@ fn openapi_contains_beta_core_routes() {
         "/dream/status",
         "/events",
         "/governance/policy",
-        "/webhooks/frigate",
     ];
 
+    assert_has_paths(&paths, &expected);
+}
+
+#[cfg(feature = "webhooks")]
+#[test]
+fn openapi_contains_webhook_routes() {
+    let paths = openapi_paths();
+    let expected = ["/webhooks/frigate"];
     assert_has_paths(&paths, &expected);
 }
 
