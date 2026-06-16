@@ -70,6 +70,11 @@ jobs:
       - name: Install PostgreSQL client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
 
+      - name: Enable pgvector extension
+        env:
+          PGPASSWORD: postgres
+        run: psql -h localhost -U postgres -d knowwhere_test -c "CREATE EXTENSION IF NOT EXISTS vector;"
+
       - name: Run migrations
         env:
           PGPASSWORD: postgres
