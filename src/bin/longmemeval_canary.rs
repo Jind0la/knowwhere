@@ -14,7 +14,7 @@ fn read_max_cases() -> usize {
 
 fn read_dataset_path() -> String {
     std::env::var("KNOWWHERE_LONGMEMEVAL_CANARY")
-        .unwrap_or_else(|_| "benchmarks/hf/fixtures/longmemeval_oracle_canary.json".to_string())
+        .unwrap_or_else(|_| "benchmarks/hf/fixtures/longmemeval_oracle_canary.jsonl".to_string())
 }
 
 fn read_base_url() -> String {
