@@ -1,5 +1,6 @@
 #[cfg(feature = "google-drive")]
 pub mod drive;
+#[cfg(feature = "frigate-connector")]
 pub mod frigate;
 
 use std::collections::HashMap;

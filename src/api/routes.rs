@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
+#[cfg(feature = "webhooks")]
 use crate::api::webhooks::check_webhook_secret;
 #[cfg(feature = "postgres-storage")]
 use crate::memory::skills::CreateSkillResponse;
@@ -18,8 +19,10 @@ use crate::multimodal::MultimodalData;
 #[path = "routes/governance_events.rs"]
 mod governance_events;
 pub use governance_events::*;
+#[cfg(feature = "webhooks")]
 #[path = "routes/webhooks.rs"]
 mod webhook_routes;
+#[cfg(feature = "webhooks")]
 pub use webhook_routes::*;
 
 #[path = "distance_matrix.rs"]

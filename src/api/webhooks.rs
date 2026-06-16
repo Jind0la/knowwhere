@@ -1,6 +1,8 @@
 //! Webhook layer: shared deduplication cache and per-type secret validation.
 //! Used by POST /webhooks/frigate, /webhooks/homeassistant, etc.
 
+#![cfg(feature = "webhooks")]
+
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};

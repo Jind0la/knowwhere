@@ -69,6 +69,12 @@ reranker = ["dep:ort", "dep:tokenizers", "dep:ndarray"]
 # Adds ~20 transitive dependencies (hyper, yup-oauth2, google-drive3)
 google-drive = ["dep:google-drive3", "dep:yup-oauth2", "dep:hyper", "dep:hyper-rustls", "dep:hyper-util"]
 
+# Enable Frigate NVR connector (optional video surveillance integration)
+frigate-connector = []
+
+# Enable webhook endpoints (/webhooks/frigate, /webhooks/homeassistant)
+webhooks = []
+
 [[bin]]
 name = "longmemeval_canary"
 path = "src/bin/longmemeval_canary.rs"

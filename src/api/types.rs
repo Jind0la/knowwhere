@@ -5,6 +5,7 @@ use tokio::sync::RwLock;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+#[cfg(feature = "webhooks")]
 use crate::api::webhooks::DedupCache;
 use crate::embedding::router::EmbeddingRouter;
 use crate::embedding::EmbeddingProvider;
@@ -328,12 +329,16 @@ pub struct AppState {
         std::sync::Arc<std::sync::Mutex<crate::retrieval::cross_encoder::CrossEncoderReranker>>,
     >,
     /// Dedup cache for Frigate webhook events.
+    #[cfg(feature = "webhooks")]
     pub frigate_dedup: DedupCache,
     /// Frigate webhook secret (read once at startup, not per-request).
+    #[cfg(feature = "webhooks")]
     pub frigate_webhook_secret: Option<String>,
     /// Dedup cache for HomeAssistant webhook events.
+    #[cfg(feature = "webhooks")]
     pub homeassistant_dedup: DedupCache,
     /// HomeAssistant webhook secret (read once at startup, not per-request).
+    #[cfg(feature = "webhooks")]
     pub homeassistant_webhook_secret: Option<String>,
     /// Server-wide temporal_weight default for hybrid retrieval scoring.
     /// Per-query overrides via `temporal_weight` in RetrieveFractalRequest

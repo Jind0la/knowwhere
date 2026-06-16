@@ -356,9 +356,13 @@ mod tests {
             pg_store: None,
             #[cfg(feature = "reranker")]
             reranker: None,
+            #[cfg(feature = "webhooks")]
             frigate_dedup: crate::api::webhooks::DedupCache::new(),
+            #[cfg(feature = "webhooks")]
             frigate_webhook_secret: None,
+            #[cfg(feature = "webhooks")]
             homeassistant_dedup: crate::api::webhooks::DedupCache::new(),
+            #[cfg(feature = "webhooks")]
             homeassistant_webhook_secret: None,
             temporal_weight: Arc::new(RwLock::new(None)),
             default_source_type_weights: None,

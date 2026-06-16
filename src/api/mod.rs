@@ -5,4 +5,5 @@ pub mod routes;
 pub(crate) mod subconscious_qa;
 pub mod turns;
 pub mod types;
+#[cfg(feature = "webhooks")]
 pub mod webhooks;

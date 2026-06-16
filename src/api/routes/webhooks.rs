@@ -1,3 +1,5 @@
+#![cfg(feature = "webhooks")]
+
 use super::*;
 use crate::connectors::store_external_event;
 use crate::connectors::ExternalEvent;

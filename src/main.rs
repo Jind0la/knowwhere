@@ -17,7 +17,10 @@ use tracing_subscriber::EnvFilter;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
-use knowwhere_server::api::{auth, auth::ApiKey, docs::ApiDoc, routes, webhooks::DedupCache};
+#[cfg(feature = "webhooks")]
+use knowwhere_server::api::webhooks::DedupCache;
+use knowwhere_server::api::{auth, auth::ApiKey, docs::ApiDoc, routes};
+#[cfg(feature = "frigate-connector")]
 use knowwhere_server::connectors::frigate::FrigateConnector;
 use knowwhere_server::connectors::store_external_event;
 use knowwhere_server::embedding::router::EmbeddingRouter;
@@ -125,6 +128,7 @@ async fn run() -> anyhow::Result<()> {
     tokio::spawn(dream.clone().micro_dream_loop());
     tracing::info!("dream mode started (micro-dream every 1h)");
 
+    #[cfg(feature = "frigate-connector")]
     if let Ok(frigate_url) = std::env::var("FRIGATE_URL") {
         let connector_embedding = embedding.clone();
         tracing::info!(url = %frigate_url, "connector manager started (frigate poller every 30s)");
@@ -213,9 +217,13 @@ async fn run() -> anyhow::Result<()> {
         pg_store: pg_store_for_auth.clone(),
         #[cfg(feature = "reranker")]
         reranker: knowwhere_server::retrieval::cross_encoder::load_reranker(),
+        #[cfg(feature = "webhooks")]
         frigate_dedup: DedupCache::new(),
+        #[cfg(feature = "webhooks")]
         frigate_webhook_secret: std::env::var("FRIGATE_WEBHOOK_SECRET").ok(),
+        #[cfg(feature = "webhooks")]
         homeassistant_dedup: DedupCache::new(),
+        #[cfg(feature = "webhooks")]
         homeassistant_webhook_secret: std::env::var("HASS_WEBHOOK_SECRET").ok(),
         temporal_weight: Arc::new(RwLock::new(temporal_weight)),
         default_source_type_weights,
@@ -265,14 +273,15 @@ async fn run() -> anyhow::Result<()> {
             "/config/temporal_weight",
             post(routes::update_temporal_weight),
         )
-        // -- Webhook routes --
+        // -- Voice message routes --
+        .route("/voice/upload", post(routes::voice_upload::upload_voice));
+    #[cfg(feature = "webhooks")]
+    let protected = protected
         .route("/webhooks/frigate", post(routes::webhook_frigate))
         .route(
             "/webhooks/homeassistant",
             post(routes::webhook_homeassistant),
-        )
-        // -- Voice message routes --
-        .route("/voice/upload", post(routes::voice_upload::upload_voice));
+        );
     #[cfg(feature = "postgres-storage")]
     let protected = protected.route("/entities", get(routes::entity_search));
 
