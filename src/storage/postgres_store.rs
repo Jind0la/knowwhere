@@ -2068,75 +2068,23 @@ impl StorageBackend for PostgresStore {
         max_depth: usize,
         pruning_threshold: f32,
     ) -> anyhow::Result<Vec<ScoredNode>> {
-        use crate::memory::fractal_node::{cosine_similarity, truncate_vector};
+        let max_extra = Self::PG_EXPAND_FRACTAL_MAX_EXTRA;
+        let store = self.clone(); // cheap: PgPool is Arc internally
 
-        if max_depth == 0 || query_vector.is_empty() {
-            return Ok(nodes);
-        }
-
-        let max_depth = max_depth.min(2);
-        let mut expanded: Vec<ScoredNode> = nodes.clone();
-        let mut seen: HashSet<Uuid> = nodes.iter().map(|s| s.node.id).collect();
-        let max_total = nodes
-            .len()
-            .saturating_add(Self::PG_EXPAND_FRACTAL_MAX_EXTRA);
-
-        if max_depth >= 1 {
-            if let Some(coarse_256) = truncate_vector(query_vector, 256) {
-                let neighbors = self
-                    .search_by_truncated_vector(&coarse_256, 256, 10)
-                    .await?;
-                for n in neighbors {
-                    if expanded.len() >= max_total {
-                        break;
-                    }
-                    if !seen.insert(n.id) {
-                        continue;
-                    }
-                    let sim = cosine_similarity(&n.vector, query_vector);
-                    if sim >= pruning_threshold {
-                        expanded.push(ScoredNode {
-                            id: n.id,
-                            score: sim,
-                            distribution_scores: None,
-                            debug: None,
-                            node: n,
-                        });
-                    }
+        pipeline::expand_fractal_shared(
+            nodes,
+            query_vector,
+            max_depth,
+            pruning_threshold,
+            max_extra,
+            move |dim, truncated_vec, k| {
+                let store = store.clone();
+                async move {
+                    store.search_by_truncated_vector(&truncated_vec, dim, k).await
                 }
-            }
-        }
-
-        if max_depth >= 2 {
-            if let Some(coarse_64) = truncate_vector(query_vector, 64) {
-                let clusters = self.search_by_truncated_vector(&coarse_64, 64, 5).await?;
-                for c in clusters {
-                    if expanded.len() >= max_total {
-                        break;
-                    }
-                    if !seen.insert(c.id) {
-                        continue;
-                    }
-                    let sim = cosine_similarity(&c.vector, query_vector);
-                    if sim >= pruning_threshold * 0.8 {
-                        expanded.push(ScoredNode {
-                            id: c.id,
-                            score: sim,
-                            distribution_scores: None,
-                            debug: None,
-                            node: c,
-                        });
-                    }
-                }
-            }
-        }
-
-        expanded.sort_by(|a, b| {
-            b.score
-                .partial_cmp(&a.score)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-        Ok(expanded)
+            },
+        )
+        .await
     }
 
     async fn search_bm25(

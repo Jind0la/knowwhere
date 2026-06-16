@@ -205,6 +205,123 @@ pub(crate) fn finalize_retrieval(
     weighted
 }
 
+// ── Shared Fractal Zoom ──────────────────────────────────────────────
+
+/// Backend-agnostic fractal zoom expansion (H2 dedup).
+///
+/// Both `MemoryStore` and `PostgresStore` implemented identical logic:
+/// Depth 1 → 256d truncation → 10 neighbors → cosine verify → threshold
+/// Depth 2 → 64d truncation → 5 clusters → cosine verify → threshold×0.8
+///
+/// This function extracts the algorithm; backends supply a search callback
+/// `search_fn(dim, truncated_vec, k) -> Vec<FractalNode>`.
+///
+/// # Parameters
+/// * `nodes` — initial result set (from Stage 1 retrieval)
+/// * `query_vector` — full-dimensional query embedding (768d)
+/// * `max_depth` — fractal zoom depth (0–2, clamped)
+/// * `pruning_threshold` — minimum cosine similarity to include a node
+/// * `max_extra` — max additional nodes beyond the initial set
+/// * `search_fn` — `async FnMut(usize, &[f32], usize) -> Result<Vec<FractalNode>>`
+pub(crate) async fn expand_fractal_shared<F, Fut>(
+    nodes: Vec<ScoredNode>,
+    query_vector: &[f32],
+    max_depth: usize,
+    pruning_threshold: f32,
+    max_extra: usize,
+    mut search_fn: F,
+) -> anyhow::Result<Vec<ScoredNode>>
+where
+    F: FnMut(usize, Vec<f32>, usize) -> Fut,
+    Fut: std::future::Future<Output = anyhow::Result<Vec<FractalNode>>>,
+{
+    use crate::memory::fractal_node::{cosine_similarity, truncate_vector};
+    use std::collections::HashSet;
+    use uuid::Uuid;
+
+    if max_depth == 0 || query_vector.is_empty() {
+        return Ok(nodes);
+    }
+
+    let max_depth = max_depth.min(2);
+    let mut expanded: Vec<ScoredNode> = nodes.clone();
+    let mut seen: HashSet<Uuid> = nodes.iter().map(|s| s.node.id).collect();
+    let max_total = nodes.len().saturating_add(max_extra);
+
+    // Depth 1 — 256d coarse search (10 neighbors)
+    if max_depth >= 1 {
+        if let Some(coarse_256) = truncate_vector(query_vector, 256) {
+            let neighbors = search_fn(256, coarse_256, 10).await?;
+            for n in neighbors {
+                if expanded.len() >= max_total {
+                    break;
+                }
+                if !seen.insert(n.id) {
+                    continue;
+                }
+                let sim = cosine_similarity(&n.vector, query_vector);
+                if sim >= pruning_threshold {
+                    expanded.push(ScoredNode {
+                        id: n.id,
+                        score: sim,
+                        distribution_scores: None,
+                        debug: None,
+                        node: n,
+                    });
+                }
+            }
+        }
+    }
+
+    // Depth 2 — 64d ultra-coarse cluster search (5 clusters)
+    if max_depth >= 2 {
+        if let Some(coarse_64) = truncate_vector(query_vector, 64) {
+            let clusters = search_fn(64, coarse_64, 5).await?;
+            for c in clusters {
+                if expanded.len() >= max_total {
+                    break;
+                }
+                if !seen.insert(c.id) {
+                    continue;
+                }
+                let sim = cosine_similarity(&c.vector, query_vector);
+                if sim >= pruning_threshold * 0.8 {
+                    expanded.push(ScoredNode {
+                        id: c.id,
+                        score: sim,
+                        distribution_scores: None,
+                        debug: None,
+                        node: c,
+                    });
+                }
+            }
+        }
+    }
+
+    expanded.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    Ok(expanded)
+}
+
+// ── Shared Sort + Truncate ────────────────────────────────────────────
+
+/// Sort scored nodes by score descending (UUID tiebreaker) and truncate to `top_k`.
+///
+/// Used by both backends after materializing search results.
+/// Extracted from 4 identical sort+truncate blocks (H2 dedup).
+pub(crate) fn sort_and_truncate(nodes: &mut Vec<ScoredNode>, top_k: usize) {
+    nodes.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.id.cmp(&b.id))
+    });
+    nodes.truncate(top_k);
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // Tests
 // ═══════════════════════════════════════════════════════════════════════

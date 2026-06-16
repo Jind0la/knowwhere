@@ -350,70 +350,29 @@ impl StorageBackend for MemoryStore {
         max_depth: usize,
         pruning_threshold: f32,
     ) -> anyhow::Result<Vec<ScoredNode>> {
-        use crate::memory::fractal_node::{cosine_similarity, truncate_vector};
-
-        if max_depth == 0 || query_vector.is_empty() {
-            return Ok(nodes);
-        }
-
         const EXPAND_FRACTAL_MAX_EXTRA: usize = 100;
-        let max_depth = max_depth.min(2);
-        let mut expanded: Vec<ScoredNode> = nodes.clone();
-        let mut seen: HashSet<Uuid> = nodes.iter().map(|s| s.node.id).collect();
-        let max_total = nodes.len().saturating_add(EXPAND_FRACTAL_MAX_EXTRA);
-
         let all_nodes = self.nodes.read().await;
+        // Clone the data we need so the RwLock is dropped before the async callback
+        let node_map: std::collections::HashMap<Uuid, FractalNode> =
+            all_nodes.clone();
+        drop(all_nodes);
 
-        if max_depth >= 1 {
-            if let Some(coarse_256) = truncate_vector(query_vector, 256) {
-                let neighbors = Self::search_by_truncated_vector(&all_nodes, &coarse_256, 256, 10);
-                for n in neighbors {
-                    if expanded.len() >= max_total {
-                        break;
-                    }
-                    if !seen.insert(n.id) {
-                        continue;
-                    }
-                    let sim = cosine_similarity(&n.vector, query_vector);
-                    if sim >= pruning_threshold {
-                        expanded.push(ScoredNode {
-                            id: n.id,
-                            score: sim,
-                            distribution_scores: None,
-                            debug: None,
-                            node: n,
-                        });
-                    }
+        pipeline::expand_fractal_shared(
+            nodes,
+            query_vector,
+            max_depth,
+            pruning_threshold,
+            EXPAND_FRACTAL_MAX_EXTRA,
+            move |dim, truncated_vec, k| {
+                let nodes = node_map.clone();
+                async move {
+                    let results =
+                        MemoryStore::search_by_truncated_vector(&nodes, &truncated_vec, dim, k);
+                    Ok(results)
                 }
-            }
-        }
-
-        if max_depth >= 2 {
-            if let Some(coarse_64) = truncate_vector(query_vector, 64) {
-                let clusters = Self::search_by_truncated_vector(&all_nodes, &coarse_64, 64, 5);
-                for c in clusters {
-                    if expanded.len() >= max_total {
-                        break;
-                    }
-                    if !seen.insert(c.id) {
-                        continue;
-                    }
-                    let sim = cosine_similarity(&c.vector, query_vector);
-                    if sim >= pruning_threshold * 0.8 {
-                        expanded.push(ScoredNode {
-                            id: c.id,
-                            score: sim,
-                            distribution_scores: None,
-                            debug: None,
-                            node: c,
-                        });
-                    }
-                }
-            }
-        }
-
-        expanded.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(Ordering::Equal));
-        Ok(expanded)
+            },
+        )
+        .await
     }
 }
 
