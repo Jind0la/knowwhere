@@ -3,7 +3,9 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use serde_json::Value;
 
+#[cfg(feature = "audio-embedding")]
 use super::audio::AudioProvider;
+#[cfg(feature = "vision-embedding")]
 use super::clip::ClipProvider;
 use super::provider::EmbeddingProvider;
 use super::sensor::sensor_to_text;
@@ -18,19 +20,23 @@ use super::sensor::sensor_to_text;
 /// All output embeddings are guaranteed to be 768-dimensional.
 pub struct EmbeddingRouter {
     text_provider: Arc<dyn EmbeddingProvider>,
+    #[cfg(feature = "vision-embedding")]
     clip_provider: Arc<ClipProvider>,
+    #[cfg(feature = "audio-embedding")]
     audio_provider: Arc<AudioProvider>,
 }
 
 impl EmbeddingRouter {
     pub fn new(
         text_provider: Arc<dyn EmbeddingProvider>,
-        clip_provider: Arc<ClipProvider>,
-        audio_provider: Arc<AudioProvider>,
+        #[cfg(feature = "vision-embedding")] clip_provider: Arc<ClipProvider>,
+        #[cfg(feature = "audio-embedding")] audio_provider: Arc<AudioProvider>,
     ) -> Self {
         Self {
             text_provider,
+            #[cfg(feature = "vision-embedding")]
             clip_provider,
+            #[cfg(feature = "audio-embedding")]
             audio_provider,
         }
     }
@@ -50,11 +56,25 @@ impl EmbeddingRouter {
             let text = std::str::from_utf8(payload).context("text payload is not valid UTF-8")?;
             self.text_provider.embed(text).await
         } else if content_type.starts_with("image/") {
-            self.clip_provider.embed_image(payload).await
+            #[cfg(feature = "vision-embedding")]
+            {
+                self.clip_provider.embed_image(payload).await
+            }
+            #[cfg(not(feature = "vision-embedding"))]
+            {
+                anyhow::bail!("unsupported content type: {}", content_type)
+            }
         } else if content_type.starts_with("audio/") {
-            self.audio_provider
-                .embed_audio(payload, &*self.text_provider)
-                .await
+            #[cfg(feature = "audio-embedding")]
+            {
+                self.audio_provider
+                    .embed_audio(payload, &*self.text_provider)
+                    .await
+            }
+            #[cfg(not(feature = "audio-embedding"))]
+            {
+                anyhow::bail!("unsupported content type: {}", content_type)
+            }
         } else if content_type == "application/json" {
             let value: Value =
                 serde_json::from_slice(payload).context("sensor payload is not valid JSON")?;
@@ -126,11 +146,27 @@ mod tests {
     // ---------- helper: build a test router ----------
 
     fn test_router() -> EmbeddingRouter {
-        EmbeddingRouter::new(
-            Arc::new(MockTextProvider::new()),
-            Arc::new(ClipProvider::default()),
-            Arc::new(AudioProvider::default()),
-        )
+        let text = Arc::new(MockTextProvider::new());
+        #[cfg(all(feature = "vision-embedding", feature = "audio-embedding"))]
+        {
+            return EmbeddingRouter::new(
+                text,
+                Arc::new(ClipProvider::default()),
+                Arc::new(AudioProvider::default()),
+            );
+        }
+        #[cfg(all(feature = "vision-embedding", not(feature = "audio-embedding")))]
+        {
+            return EmbeddingRouter::new(text, Arc::new(ClipProvider::default()));
+        }
+        #[cfg(all(not(feature = "vision-embedding"), feature = "audio-embedding"))]
+        {
+            return EmbeddingRouter::new(text, Arc::new(AudioProvider::default()));
+        }
+        #[cfg(not(any(feature = "vision-embedding", feature = "audio-embedding")))]
+        {
+            return EmbeddingRouter::new(text);
+        }
     }
 
     // ==================================================================
@@ -263,6 +299,7 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
+    #[cfg(feature = "vision-embedding")]
     async fn test_route_image_png() {
         let router = test_router();
         let result = router
@@ -274,6 +311,7 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
+    #[cfg(feature = "audio-embedding")]
     async fn test_route_audio_wav() {
         let router = test_router();
         let result = router.route("audio/wav", b"RIFF....WAVE").await.unwrap();
@@ -282,6 +320,7 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
+    #[cfg(all(feature = "vision-embedding", feature = "audio-embedding"))]
     async fn test_all_outputs_768_dim() {
         let router = test_router();
 

@@ -78,6 +78,10 @@ webhooks = []
 # Vision Language Model worker (cloud/Ollama summarization fallback)
 vlm = []
 
+# Cross-modal embedding providers (optional; not part of standard text core)
+audio-embedding = []
+vision-embedding = []
+
 [[bin]]
 name = "longmemeval_canary"
 path = "src/bin/longmemeval_canary.rs"

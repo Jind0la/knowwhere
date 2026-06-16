@@ -217,8 +217,7 @@ impl ConsolidationScheduler {
     /// VLM worker is optional — LocalSummarizer is always preferred.
     pub fn new(
         store: Arc<dyn StorageBackend>,
-        #[cfg(feature = "vlm")]
-        vlm_worker: Option<VlmWorkerHandle>,
+        #[cfg(feature = "vlm")] vlm_worker: Option<VlmWorkerHandle>,
         embedding: Arc<dyn EmbeddingProvider>,
         config: SchedulerConfig,
     ) -> Self {

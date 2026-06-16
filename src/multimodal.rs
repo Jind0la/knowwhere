@@ -6,7 +6,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use utoipa::ToSchema;
 
+#[cfg(feature = "audio-embedding")]
 use crate::embedding::audio::AudioProvider;
+#[cfg(feature = "vision-embedding")]
 use crate::embedding::clip::ClipProvider;
 use crate::embedding::provider::EmbeddingProvider;
 use crate::embedding::router::EmbeddingRouter;
@@ -80,13 +82,15 @@ pub struct KnowWhereCrossModalEmbedder {
 impl KnowWhereCrossModalEmbedder {
     pub fn new(
         text_provider: Arc<dyn EmbeddingProvider>,
-        clip_provider: Arc<ClipProvider>,
-        audio_provider: Arc<AudioProvider>,
+        #[cfg(feature = "vision-embedding")] clip_provider: Arc<ClipProvider>,
+        #[cfg(feature = "audio-embedding")] audio_provider: Arc<AudioProvider>,
     ) -> Self {
         Self {
             router: Arc::new(EmbeddingRouter::new(
                 text_provider,
+                #[cfg(feature = "vision-embedding")]
                 clip_provider,
+                #[cfg(feature = "audio-embedding")]
                 audio_provider,
             )),
         }
@@ -139,15 +143,35 @@ mod tests {
         }
     }
 
+    fn test_embedder() -> KnowWhereCrossModalEmbedder {
+        let text = Arc::new(MockTextProvider::new());
+        #[cfg(all(feature = "vision-embedding", feature = "audio-embedding"))]
+        {
+            return KnowWhereCrossModalEmbedder::new(
+                text,
+                Arc::new(ClipProvider::default()),
+                Arc::new(AudioProvider::default()),
+            );
+        }
+        #[cfg(all(feature = "vision-embedding", not(feature = "audio-embedding")))]
+        {
+            return KnowWhereCrossModalEmbedder::new(text, Arc::new(ClipProvider::default()));
+        }
+        #[cfg(all(not(feature = "vision-embedding"), feature = "audio-embedding"))]
+        {
+            return KnowWhereCrossModalEmbedder::new(text, Arc::new(AudioProvider::default()));
+        }
+        #[cfg(not(any(feature = "vision-embedding", feature = "audio-embedding")))]
+        {
+            return KnowWhereCrossModalEmbedder::new(text);
+        }
+    }
+
     // ---- tests ----
 
     #[tokio::test]
     async fn test_cross_embed_text() {
-        let embedder = KnowWhereCrossModalEmbedder::new(
-            Arc::new(MockTextProvider::new()),
-            Arc::new(ClipProvider::default()),
-            Arc::new(AudioProvider::default()),
-        );
+        let embedder = test_embedder();
 
         let result = embedder
             .cross_embed("text/plain", b"hello world")
@@ -158,11 +182,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_cross_embed_sensor() {
-        let embedder = KnowWhereCrossModalEmbedder::new(
-            Arc::new(MockTextProvider::new()),
-            Arc::new(ClipProvider::default()),
-            Arc::new(AudioProvider::default()),
-        );
+        let embedder = test_embedder();
 
         let emb = embedder
             .cross_embed("application/json", b"{\"temp\":23}")
@@ -173,11 +193,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_cross_embed_unsupported_type() {
-        let embedder = KnowWhereCrossModalEmbedder::new(
-            Arc::new(MockTextProvider::new()),
-            Arc::new(ClipProvider::default()),
-            Arc::new(AudioProvider::default()),
-        );
+        let embedder = test_embedder();
 
         let err = embedder
             .cross_embed("video/mp4", b"fake")
@@ -196,12 +212,9 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
+    #[cfg(feature = "vision-embedding")]
     async fn test_cross_embed_image() {
-        let embedder = KnowWhereCrossModalEmbedder::new(
-            Arc::new(MockTextProvider::new()),
-            Arc::new(ClipProvider::default()),
-            Arc::new(AudioProvider::default()),
-        );
+        let embedder = test_embedder();
         let result = embedder
             .cross_embed("image/png", b"\x89PNG\r\n\x1a\n")
             .await
@@ -211,12 +224,9 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
+    #[cfg(feature = "audio-embedding")]
     async fn test_cross_embed_audio() {
-        let embedder = KnowWhereCrossModalEmbedder::new(
-            Arc::new(MockTextProvider::new()),
-            Arc::new(ClipProvider::default()),
-            Arc::new(AudioProvider::default()),
-        );
+        let embedder = test_embedder();
         let result = embedder
             .cross_embed("audio/wav", b"RIFFdata")
             .await

@@ -1,10 +1,14 @@
+#[cfg(feature = "audio-embedding")]
 pub mod audio;
+#[cfg(feature = "vision-embedding")]
 pub mod clip;
 pub mod provider;
 pub mod router;
 pub mod sensor;
 
+#[cfg(feature = "audio-embedding")]
 pub use audio::AudioProvider;
+#[cfg(feature = "vision-embedding")]
 pub use clip::ClipProvider;
 pub use provider::{
     embed_document, embed_document_batch, embed_query, embed_query_batch, EmbeddingProvider,
@@ -22,6 +26,7 @@ use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy)]
 pub enum ProviderKind {
+    #[cfg(feature = "vision-embedding")]
     Clip,
     LocalOllama,
     #[cfg(feature = "openai-provider")]
@@ -33,6 +38,7 @@ pub enum ProviderKind {
 impl std::fmt::Display for ProviderKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            #[cfg(feature = "vision-embedding")]
             ProviderKind::Clip => write!(f, "clip"),
             ProviderKind::LocalOllama => write!(f, "local_ollama"),
             #[cfg(feature = "openai-provider")]
@@ -48,6 +54,7 @@ impl ProviderKind {
     /// any available provider (given the current feature flags).
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
+            #[cfg(feature = "vision-embedding")]
             "clip" => Some(ProviderKind::Clip),
             "local_ollama" | "ollama" => Some(ProviderKind::LocalOllama),
             #[cfg(feature = "openai-provider")]
@@ -64,6 +71,7 @@ pub fn create_provider(
     #[allow(unused)] api_key: Option<String>,
 ) -> Arc<dyn EmbeddingProvider> {
     match kind {
+        #[cfg(feature = "vision-embedding")]
         ProviderKind::Clip => panic!(
             "ClipProvider is not an EmbeddingProvider — use clip::ClipProvider directly for image embeddings"
         ),

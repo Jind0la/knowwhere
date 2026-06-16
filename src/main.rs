@@ -24,7 +24,10 @@ use knowwhere_server::api::{auth, auth::ApiKey, docs::ApiDoc, routes};
 use knowwhere_server::connectors::frigate::FrigateConnector;
 use knowwhere_server::connectors::store_external_event;
 use knowwhere_server::embedding::router::EmbeddingRouter;
-use knowwhere_server::embedding::{AudioProvider, ClipProvider};
+#[cfg(feature = "audio-embedding")]
+use knowwhere_server::embedding::AudioProvider;
+#[cfg(feature = "vision-embedding")]
+use knowwhere_server::embedding::ClipProvider;
 use knowwhere_server::memory::events::InMemoryEventStore;
 use knowwhere_server::memory::{DreamMode, GovernancePolicy};
 #[cfg(feature = "postgres-storage")]
@@ -116,14 +119,30 @@ async fn run() -> anyhow::Result<()> {
     tracing::info!(provider = embedding.name(), "embedding provider ready");
 
     // Build cross-modal embedding router for content-type based dispatch.
-    let router = Arc::new(EmbeddingRouter::new(
-        embedding.clone(),
-        Arc::new(ClipProvider::new()),
-        Arc::new(AudioProvider::new()),
-    ));
-    tracing::info!(
-        "cross-modal embedding router ready (text → Ollama, image → CLIP, audio → Whisper)"
-    );
+    let router = Arc::new({
+        let text = embedding.clone();
+        #[cfg(all(feature = "vision-embedding", feature = "audio-embedding"))]
+        {
+            EmbeddingRouter::new(
+                text,
+                Arc::new(ClipProvider::new()),
+                Arc::new(AudioProvider::new()),
+            )
+        }
+        #[cfg(all(feature = "vision-embedding", not(feature = "audio-embedding")))]
+        {
+            EmbeddingRouter::new(text, Arc::new(ClipProvider::new()))
+        }
+        #[cfg(all(not(feature = "vision-embedding"), feature = "audio-embedding"))]
+        {
+            EmbeddingRouter::new(text, Arc::new(AudioProvider::new()))
+        }
+        #[cfg(not(any(feature = "vision-embedding", feature = "audio-embedding")))]
+        {
+            EmbeddingRouter::new(text)
+        }
+    });
+    tracing::info!("cross-modal embedding router ready");
 
     tokio::spawn(dream.clone().micro_dream_loop());
     tracing::info!("dream mode started (micro-dream every 1h)");
