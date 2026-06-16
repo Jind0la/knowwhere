@@ -2065,3 +2065,1248 @@ mod temporal_scoring_tests {
         assert_eq!(store.count().await, 3);
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// Proptest Roundtrip Properties
+// ═══════════════════════════════════════════════════════════════════════
+
+#[cfg(test)]
+mod proptest_tests {
+    use super::*;
+    use crate::memory::fractal_node::FractalNode;
+    use crate::memory::types::{MemorySource, MemoryType};
+    use crate::storage::{FusionStrategy, ScoredNode};
+    use proptest::prelude::*;
+    use std::collections::HashMap;
+    use tempfile::TempDir;
+
+    fn any_small_vector() -> impl Strategy<Value = Vec<f32>> {
+        proptest::collection::vec(-1.0f32..=1.0, 4)
+    }
+
+    fn any_option_content() -> impl Strategy<Value = Option<String>> {
+        proptest::option::of("[a-zA-Z0-9 ]{0,30}")
+    }
+
+    proptest! {
+        #[test]
+        fn store_and_retrieve_roundtrip(
+            vec in any_small_vector(),
+            content in any_option_content(),
+        ) {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(async {
+                let store = MemoryStore::new();
+                let node = FractalNode::new_typed(
+                    content.clone(),
+                    None,
+                    vec.clone(),
+                    HashMap::new(),
+                    MemoryType::Semantic,
+                    MemorySource::Conversation,
+                );
+                let id = store.insert(node.clone()).await.unwrap();
+                let retrieved = store.get(&id).await.unwrap().unwrap();
+
+                assert_eq!(retrieved.id, id);
+                assert_eq!(retrieved.content, content);
+                assert_eq!(retrieved.vector, vec);
+                assert_eq!(retrieved.memory_type, MemoryType::Semantic);
+                assert_eq!(retrieved.source, MemorySource::Conversation);
+                assert_eq!(retrieved.weight, 1.0);
+            });
+        }
+
+        #[test]
+        fn json_persistence_roundtrip(
+            vec in any_small_vector(),
+            content in any_option_content(),
+        ) {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(async {
+                let dir = TempDir::new().unwrap();
+                let store = MemoryStore::with_persistence(dir.path()).unwrap();
+
+                let node = FractalNode::new_typed(
+                    content.clone(),
+                    None,
+                    vec.clone(),
+                    HashMap::new(),
+                    MemoryType::Episodic,
+                    MemorySource::Conversation,
+                );
+                let id = store.insert(node.clone()).await.unwrap();
+                store.save_to_disk().await.unwrap();
+
+                let loaded = MemoryStore::with_persistence(dir.path()).unwrap();
+                let retrieved = loaded.get(&id).await.unwrap().unwrap();
+
+                assert_eq!(retrieved.id, id);
+                assert_eq!(retrieved.content, content);
+                assert_eq!(retrieved.vector, vec);
+                assert_eq!(loaded.count().await, 1);
+            });
+        }
+
+        #[test]
+        fn vector_search_ordering(
+            query_vec in any_small_vector(),
+        ) {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(async {
+                let store = MemoryStore::new();
+
+                let n1 = FractalNode::new_typed(
+                    None, None, query_vec.clone(),
+                    HashMap::new(), MemoryType::Semantic, MemorySource::Conversation,
+                );
+                let n2 = FractalNode::new_typed(
+                    None, None, vec![0.0f32; 4],
+                    HashMap::new(), MemoryType::Semantic, MemorySource::Conversation,
+                );
+                let _ = store.insert(n1).await.unwrap();
+                let _ = store.insert(n2).await.unwrap();
+
+                #[cfg(feature = "postgres-storage")]
+                let results = store.retrieve_fractal(&query_vec, 5, 0, 0.5, None).await;
+                #[cfg(not(feature = "postgres-storage"))]
+                let results = store.retrieve_fractal(&query_vec, 5, 0).await;
+
+                assert!(!results.is_empty(), "Should return at least 1 result");
+                assert!(results.len() <= 5, "Should not exceed top_k=5");
+            });
+        }
+    }
+
+    #[tokio::test]
+    async fn bm25_index_consistency() {
+        let store = MemoryStore::new();
+
+        let n1 = FractalNode::new_typed(
+            Some("apple banana fruit".into()),
+            None,
+            vec![0.1, 0.2, 0.3, 0.4],
+            HashMap::new(),
+            MemoryType::Semantic,
+            MemorySource::Conversation,
+        );
+        let n2 = FractalNode::new_typed(
+            Some("dog cat animal".into()),
+            None,
+            vec![0.5, 0.6, 0.7, 0.8],
+            HashMap::new(),
+            MemoryType::Semantic,
+            MemorySource::Conversation,
+        );
+        let id1 = store.insert(n1).await.unwrap();
+        store.insert(n2).await.unwrap();
+
+        let fruit_results = store.search_bm25("fruit", 10).await;
+        assert!(
+            fruit_results.iter().any(|(id, _)| *id == id1),
+            "BM25 should find fruit node"
+        );
+
+        *store.bm25_dirty.lock().unwrap() = true;
+        let fruit_after = store.search_bm25("fruit", 10).await;
+        assert!(
+            fruit_after.iter().any(|(id, _)| *id == id1),
+            "BM25 should still find fruit node after rebuild"
+        );
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Expand Fractal Edge Cases
+// ═══════════════════════════════════════════════════════════════════════
+
+#[cfg(test)]
+mod expand_fractal_edge_tests {
+    use super::*;
+    use crate::memory::fractal_node::FractalNode;
+    use crate::memory::types::{MemorySource, MemoryType};
+    use crate::storage::ScoredNode;
+
+    fn vec768(first: f32, second: f32) -> Vec<f32> {
+        let mut v = vec![0.0f32; 768];
+        v[0] = first;
+        v[1] = second;
+        v
+    }
+
+    #[tokio::test]
+    async fn expand_fractal_max_depth_one_with_empty_store() {
+        let store = MemoryStore::new();
+        let node = FractalNode::new_typed(
+            Some("lonely".into()),
+            None,
+            vec768(1.0, 0.0),
+            Default::default(),
+            MemoryType::Semantic,
+            MemorySource::Conversation,
+        );
+        let seed = ScoredNode {
+            id: node.id,
+            score: 0.9,
+            distribution_scores: None,
+            debug: None,
+            node: node.clone(),
+        };
+
+        let result = store
+            .expand_fractal(vec![seed], &vec768(1.0, 0.0), 2, 0.5)
+            .await
+            .unwrap();
+
+        assert_eq!(result.len(), 1, "lonely seed should still return itself");
+    }
+
+    #[tokio::test]
+    async fn expand_fractal_high_threshold_returns_self_only() {
+        let store = MemoryStore::new();
+
+        let seed_node = FractalNode::new_typed(
+            Some("seed".into()),
+            None,
+            vec768(1.0, 0.0),
+            Default::default(),
+            MemoryType::Semantic,
+            MemorySource::Conversation,
+        );
+        let seed_id = seed_node.id;
+
+        let mut neighbor = FractalNode::new_typed(
+            Some("neighbor".into()),
+            None,
+            vec768(0.99, 0.01),
+            Default::default(),
+            MemoryType::Semantic,
+            MemorySource::Conversation,
+        );
+        neighbor.id = uuid::Uuid::new_v4();
+
+        store.insert(seed_node.clone()).await.unwrap();
+        store.insert(neighbor).await.unwrap();
+
+        let seed = ScoredNode {
+            id: seed_id,
+            score: 0.95,
+            distribution_scores: None,
+            debug: None,
+            node: seed_node,
+        };
+
+        let expanded = store
+            .expand_fractal(vec![seed], &vec768(1.0, 0.0), 1, 0.99)
+            .await
+            .unwrap();
+
+        assert!(expanded.len() <= 2, "Should find at most 2 nodes with high threshold");
+    }
+
+    #[tokio::test]
+    async fn expand_fractal_low_threshold_finds_more() {
+        let store = MemoryStore::new();
+
+        let seed_node = FractalNode::new_typed(
+            Some("seed".into()),
+            None,
+            vec768(1.0, 0.0),
+            Default::default(),
+            MemoryType::Semantic,
+            MemorySource::Conversation,
+        );
+        let seed_id = seed_node.id;
+
+        let mut neighbor = FractalNode::new_typed(
+            Some("close".into()),
+            None,
+            vec768(0.85, 0.15),
+            Default::default(),
+            MemoryType::Semantic,
+            MemorySource::Conversation,
+        );
+        neighbor.id = uuid::Uuid::new_v4();
+
+        store.insert(seed_node.clone()).await.unwrap();
+        store.insert(neighbor).await.unwrap();
+
+        let seed = ScoredNode {
+            id: seed_id,
+            score: 0.95,
+            distribution_scores: None,
+            debug: None,
+            node: seed_node,
+        };
+
+        let expanded_low = store
+            .expand_fractal(vec![seed.clone()], &vec768(1.0, 0.0), 1, 0.1)
+            .await
+            .unwrap();
+
+        let expanded_high = store
+            .expand_fractal(vec![seed], &vec768(1.0, 0.0), 1, 0.99)
+            .await
+            .unwrap();
+
+        assert!(expanded_low.len() >= expanded_high.len(),
+            "lower threshold ({}) should yield >= results vs high threshold ({})",
+            expanded_low.len(), expanded_high.len());
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// BM25 Search Edge Cases
+// ═══════════════════════════════════════════════════════════════════════
+
+#[cfg(test)]
+mod bm25_search_tests {
+    use super::*;
+    use crate::memory::fractal_node::FractalNode;
+    use crate::memory::types::{MemorySource, MemoryType};
+
+    #[tokio::test]
+    async fn bm25_search_empty_corpus_returns_empty() {
+        let store = MemoryStore::new();
+        let results = store.search_bm25("anything", 10).await;
+        assert!(results.is_empty(), "empty corpus should return empty results");
+    }
+
+    #[tokio::test]
+    async fn bm25_search_empty_query_returns_empty() {
+        let store = MemoryStore::new();
+        let node = FractalNode::new_typed(
+            Some("some content here".into()),
+            None,
+            vec![0.1, 0.2, 0.3, 0.4],
+            Default::default(),
+            MemoryType::Semantic,
+            MemorySource::Conversation,
+        );
+        store.insert(node).await.unwrap();
+        let results = store.search_bm25("", 10).await;
+        assert!(results.is_empty(), "empty query string should return empty results");
+    }
+
+    #[tokio::test]
+    async fn bm25_search_no_match_returns_empty() {
+        let store = MemoryStore::new();
+        let node = FractalNode::new_typed(
+            Some("apple banana fruit".into()),
+            None,
+            vec![0.1, 0.2, 0.3, 0.4],
+            Default::default(),
+            MemoryType::Semantic,
+            MemorySource::Conversation,
+        );
+        store.insert(node).await.unwrap();
+        let results = store.search_bm25("zzzzzzz_not_a_word_12345", 10).await;
+        assert!(results.is_empty(), "no-match query should return empty results");
+    }
+
+    #[tokio::test]
+    async fn bm25_search_top_k_respected() {
+        let store = MemoryStore::new();
+        for i in 0..5 {
+            let node = FractalNode::new_typed(
+                Some(format!("unique_word_{} is here", i)),
+                None,
+                vec![0.1, 0.2, 0.3, 0.4],
+                Default::default(),
+                MemoryType::Semantic,
+                MemorySource::Conversation,
+            );
+            store.insert(node).await.unwrap();
+        }
+        let results = store.search_bm25("unique_word", 3).await;
+        assert!(results.len() <= 3, "top_k=3, got {} results", results.len());
+    }
+
+    #[tokio::test]
+    async fn bm25_search_without_content_returns_empty() {
+        let store = MemoryStore::new();
+        let node = FractalNode::new_typed(
+            None, None,
+            vec![0.1, 0.2, 0.3, 0.4],
+            Default::default(),
+            MemoryType::Semantic,
+            MemorySource::Conversation,
+        );
+        store.insert(node).await.unwrap();
+        let results = store.search_bm25("anything", 10).await;
+        assert!(results.is_empty(), "nodes without text content yield no BM25 results");
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Hybrid Retrieve Edge Cases
+// ═══════════════════════════════════════════════════════════════════════
+
+#[cfg(test)]
+mod hybrid_retrieve_tests {
+    use super::*;
+    use crate::memory::fractal_node::FractalNode;
+    use crate::memory::types::{MemorySource, MemoryType};
+    use crate::storage::FusionStrategy;
+    use std::collections::HashMap;
+
+    #[tokio::test]
+    async fn hybrid_retrieve_with_no_text_returns_vector_only() {
+        let store = MemoryStore::new();
+        let node = FractalNode::new_typed(
+            Some("test content".into()),
+            None,
+            vec![0.9, 0.1, 0.0, 0.0],
+            HashMap::new(),
+            MemoryType::Semantic,
+            MemorySource::Conversation,
+        );
+        store.insert(node).await.unwrap();
+
+        let results = store.hybrid_retrieve(
+            None, &[0.9, 0.1, 0.0, 0.0], 5, 0, None, None, false,
+        ).await;
+
+        assert!(!results.is_empty(), "should return vector-only results when no text query");
+        for (score, _node) in &results {
+            assert!(*score >= 0.0, "scores should be non-negative");
+        }
+    }
+
+    #[tokio::test]
+    async fn hybrid_retrieve_with_empty_text_returns_vector_only() {
+        let store = MemoryStore::new();
+        let node = FractalNode::new_typed(
+            Some("test content".into()),
+            None,
+            vec![0.9, 0.1, 0.0, 0.0],
+            HashMap::new(),
+            MemoryType::Semantic,
+            MemorySource::Conversation,
+        );
+        store.insert(node).await.unwrap();
+
+        let results = store.hybrid_retrieve(
+            Some(""), &[0.9, 0.1, 0.0, 0.0], 5, 0, None, None, false,
+        ).await;
+
+        assert!(!results.is_empty(), "should return vector-only results when text is empty string");
+    }
+
+    #[tokio::test]
+    async fn hybrid_retrieve_empty_store_returns_empty() {
+        let store = MemoryStore::new();
+        let results = store.hybrid_retrieve(
+            Some("query"), &[0.1, 0.2, 0.3, 0.4], 5, 0, None, None, false,
+        ).await;
+        assert!(results.is_empty(), "empty store should return empty results");
+    }
+
+    #[tokio::test]
+    async fn hybrid_retrieve_with_text_and_vector_uses_fusion() {
+        let store = MemoryStore::new();
+        let node = FractalNode::new_typed(
+            Some("apple banana fruit".into()),
+            None,
+            vec![0.9, 0.1, 0.0, 0.0],
+            HashMap::new(),
+            MemoryType::Semantic,
+            MemorySource::Conversation,
+        );
+        let id = store.insert(node).await.unwrap();
+
+        let results = store.hybrid_retrieve(
+            Some("fruit"),
+            &[0.9, 0.1, 0.0, 0.0],
+            5, 0, None,
+            Some(FusionStrategy::ReciprocalRankFusion { k: 60.0 }),
+            false,
+        ).await;
+
+        assert!(!results.is_empty(), "should return fused results with text + vector query");
+        let found = results.iter().any(|(_, n)| n.id == id);
+        assert!(found, "inserted node should appear in fused results");
+    }
+
+    #[tokio::test]
+    async fn hybrid_retrieve_top_k_is_honored() {
+        let store = MemoryStore::new();
+        for i in 0..10 {
+            let node = FractalNode::new_typed(
+                Some(format!("item number {}", i)),
+                None,
+                vec![0.9 - i as f32 * 0.05, 0.1, 0.0, 0.0],
+                HashMap::new(),
+                MemoryType::Semantic,
+                MemorySource::Conversation,
+            );
+            store.insert(node).await.unwrap();
+        }
+
+        let results = store.hybrid_retrieve(
+            Some("item"), &[0.9, 0.1, 0.0, 0.0], 3, 0, None, None, false,
+        ).await;
+
+        assert!(results.len() <= 3, "top_k=3, got {} results", results.len());
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Auto-Save Debounce Tests
+// ═══════════════════════════════════════════════════════════════════════
+
+#[cfg(test)]
+mod auto_save_tests {
+    use super::*;
+    use crate::memory::fractal_node::FractalNode;
+    use crate::memory::types::{MemorySource, MemoryType};
+    use std::collections::HashMap;
+    use std::time::Instant;
+    use tempfile::TempDir;
+
+    #[tokio::test]
+    async fn maybe_save_no_data_dir_returns_early() {
+        let store = MemoryStore::new();
+        store.maybe_save().await;
+    }
+
+    #[tokio::test]
+    async fn maybe_save_with_data_dir_creates_state_file() {
+        let dir = TempDir::new().unwrap();
+        let store = MemoryStore::with_persistence(dir.path()).unwrap();
+
+        let node = FractalNode::new_typed(
+            Some("test data".into()),
+            None,
+            vec![0.1, 0.2, 0.3, 0.4],
+            HashMap::new(),
+            MemoryType::Semantic,
+            MemorySource::Conversation,
+        );
+        store.insert(node).await.unwrap();
+
+        {
+            let mut last = store.last_save.lock().unwrap();
+            *last = Instant::now()
+                .checked_sub(std::time::Duration::from_secs(SAVE_DEBOUNCE_SECS + 1))
+                .unwrap();
+        }
+
+        store.maybe_save().await;
+        assert!(dir.path().join("state.json").exists(), "state.json should exist after maybe_save");
+    }
+
+    #[tokio::test]
+    async fn maybe_save_debounce_skips_fast_saves() {
+        let dir = TempDir::new().unwrap();
+        let store = MemoryStore::with_persistence(dir.path()).unwrap();
+
+        let node = FractalNode::new_typed(
+            Some("debounce test".into()),
+            None,
+            vec![0.1, 0.2, 0.3, 0.4],
+            HashMap::new(),
+            MemoryType::Semantic,
+            MemorySource::Conversation,
+        );
+        store.insert(node).await.unwrap();
+
+        {
+            let mut last = store.last_save.lock().unwrap();
+            *last = Instant::now()
+                .checked_sub(std::time::Duration::from_secs(SAVE_DEBOUNCE_SECS + 1))
+                .unwrap();
+        }
+        store.maybe_save().await;
+        assert!(dir.path().join("state.json").exists(), "first save should write state.json");
+
+        std::fs::remove_file(dir.path().join("state.json")).ok();
+        store.maybe_save().await;
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Persistence Roundtrip Tests
+// ═══════════════════════════════════════════════════════════════════════
+
+#[cfg(test)]
+mod persistence_tests {
+    use super::*;
+    use crate::memory::fractal_node::FractalNode;
+    use crate::memory::types::{MemorySource, MemoryType};
+    use std::collections::HashMap;
+    use tempfile::TempDir;
+
+    #[tokio::test]
+    async fn save_and_load_preserves_all_fields() {
+        let dir = TempDir::new().unwrap();
+        let store = MemoryStore::with_persistence(dir.path()).unwrap();
+
+        let node = FractalNode::new_typed(
+            Some("hello world".into()),
+            Some("ext:123".into()),
+            vec![0.5, 0.5, 0.5, 0.5],
+            {
+                let mut m = HashMap::new();
+                m.insert("key".to_string(), serde_json::Value::String("val".into()));
+                m
+            },
+            MemoryType::Episodic,
+            MemorySource::Conversation,
+        );
+        let original_id = node.id;
+        store.insert(node.clone()).await.unwrap();
+        store.save_to_disk().await.unwrap();
+
+        let loaded = MemoryStore::with_persistence(dir.path()).unwrap();
+        let retrieved = loaded.get(&original_id).await.unwrap().unwrap();
+
+        assert_eq!(retrieved.id, original_id);
+        assert_eq!(retrieved.content, Some("hello world".into()));
+        assert_eq!(retrieved.original_pointer, Some("ext:123".into()));
+        assert_eq!(retrieved.vector, vec![0.5, 0.5, 0.5, 0.5]);
+        assert_eq!(retrieved.weight, 1.0);
+        assert_eq!(
+            retrieved.metadata.get("key").and_then(|v| v.as_str()),
+            Some("val")
+        );
+        assert_eq!(loaded.count().await, 1);
+    }
+
+    #[tokio::test]
+    async fn save_and_load_multiple_nodes() {
+        let dir = TempDir::new().unwrap();
+        let store = MemoryStore::with_persistence(dir.path()).unwrap();
+
+        let mut ids = Vec::new();
+        for i in 0..5 {
+            let node = FractalNode::new_typed(
+                Some(format!("node {}", i)),
+                None,
+                vec![i as f32 / 10.0; 4],
+                HashMap::new(),
+                MemoryType::Semantic,
+                MemorySource::Conversation,
+            );
+            let id = store.insert(node).await.unwrap();
+            ids.push(id);
+        }
+        store.save_to_disk().await.unwrap();
+
+        let loaded = MemoryStore::with_persistence(dir.path()).unwrap();
+        assert_eq!(loaded.count().await, 5);
+
+        for id in &ids {
+            let retrieved = loaded.get(id).await.unwrap();
+            assert!(retrieved.is_some(), "node {} should exist after reload", id);
+        }
+    }
+
+    #[tokio::test]
+    async fn save_to_disk_without_data_dir_is_noop() {
+        let store = MemoryStore::new();
+        let result = store.save_to_disk().await;
+        assert!(result.is_ok(), "save_to_disk with no data_dir should be ok");
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// retrieve_fractal Integration Tests — Linear Scan & Cascade Paths
+// ═══════════════════════════════════════════════════════════════════════
+
+#[cfg(test)]
+#[allow(
+    deprecated,
+    reason = "tests intentionally exercise legacy FractalNode::new_session constructor"
+)]
+mod retrieve_fractal_integration_tests {
+    use super::*;
+    use crate::memory::fractal_node::FractalNode;
+    use crate::memory::types::{MemorySource, MemoryType};
+    use std::collections::{HashMap, HashSet};
+
+    fn vec768(first: f32, second: f32) -> Vec<f32> {
+        let mut v = vec![0.0f32; 768];
+        v[0] = first;
+        v[1] = second;
+        v
+    }
+
+    #[tokio::test]
+    async fn retrieve_fractal_linear_scan_returns_matching_nodes() {
+        let store = MemoryStore::new();
+
+        let n1 = FractalNode::new_typed(
+            Some("seed".into()), None,
+            vec![1.0, 0.0, 0.0, 0.0],
+            HashMap::new(), MemoryType::Semantic, MemorySource::Conversation,
+        );
+        let n2 = FractalNode::new_typed(
+            Some("neighbor".into()), None,
+            vec![0.99, 0.01, 0.0, 0.0],
+            HashMap::new(), MemoryType::Semantic, MemorySource::Conversation,
+        );
+        let n3 = FractalNode::new_typed(
+            Some("distant".into()), None,
+            vec![0.0, 1.0, 0.0, 0.0],
+            HashMap::new(), MemoryType::Semantic, MemorySource::Conversation,
+        );
+
+        let id1 = store.insert(n1).await.unwrap();
+        let id2 = store.insert(n2).await.unwrap();
+        store.insert(n3).await.unwrap();
+
+        #[cfg(feature = "postgres-storage")]
+        let results = store.retrieve_fractal(&[1.0, 0.0, 0.0, 0.0], 5, 0, 0.5, None).await;
+        #[cfg(not(feature = "postgres-storage"))]
+        let results = store.retrieve_fractal(&[1.0, 0.0, 0.0, 0.0], 5, 0).await;
+
+        assert!(!results.is_empty(), "linear scan should return results");
+        let result_ids: HashSet<_> = results.iter().map(|n| n.id).collect();
+        assert!(result_ids.contains(&id1), "seed should be in results");
+        assert!(result_ids.contains(&id2), "close neighbor should be in results");
+    }
+
+    #[tokio::test]
+    async fn retrieve_fractal_respects_top_k() {
+        let store = MemoryStore::new();
+
+        for i in 0..8 {
+            let node = FractalNode::new_typed(
+                Some(format!("node {}", i)), None,
+                vec![0.9 - i as f32 * 0.1; 4],
+                HashMap::new(), MemoryType::Semantic, MemorySource::Conversation,
+            );
+            store.insert(node).await.unwrap();
+        }
+
+        #[cfg(feature = "postgres-storage")]
+        let results = store.retrieve_fractal(&[0.9, 0.9, 0.9, 0.9], 3, 0, 0.5, None).await;
+        #[cfg(not(feature = "postgres-storage"))]
+        let results = store.retrieve_fractal(&[0.9, 0.9, 0.9, 0.9], 3, 0).await;
+
+        assert!(results.len() <= 3, "top_k=3 should be respected, got {}", results.len());
+    }
+
+    #[tokio::test]
+    async fn retrieve_fractal_cascade_with_50_nodes_768d() {
+        let store = MemoryStore::new();
+
+        let mut ids = Vec::new();
+        for i in 0..55 {
+            let node = FractalNode::new_typed(
+                Some(format!("cascade_node_{}", i)), None,
+                vec768(0.9 - i as f32 * 0.005, 0.1 + i as f32 * 0.003),
+                HashMap::new(), MemoryType::Semantic, MemorySource::Conversation,
+            );
+            let id = store.insert(node).await.unwrap();
+            ids.push(id);
+        }
+
+        assert_eq!(store.count().await, 55);
+        assert!(
+            store.usearch_index.lock().unwrap().is_some(),
+            "usearch index should exist for cascade"
+        );
+
+        #[cfg(feature = "postgres-storage")]
+        let results = store.retrieve_fractal(&vec768(0.9, 0.1), 10, 0, 0.5, None).await;
+        #[cfg(not(feature = "postgres-storage"))]
+        let results = store.retrieve_fractal(&vec768(0.9, 0.1), 10, 0).await;
+
+        assert!(!results.is_empty(), "cascade should return results");
+        assert!(results.len() <= 10, "top_k=10 should be respected, got {}", results.len());
+
+        let result_ids: HashSet<_> = results.iter().map(|n| n.id).collect();
+        assert!(result_ids.contains(&ids[0]), "closest node should be in cascade results");
+    }
+
+    #[tokio::test]
+    async fn retrieve_fractal_cascade_uses_coarse_and_ultra() {
+        let store = MemoryStore::new();
+
+        for i in 0..55 {
+            let node = FractalNode::new_typed(
+                Some(format!("node_{}", i)), None,
+                vec768(0.5, 0.5),
+                HashMap::new(), MemoryType::Semantic, MemorySource::Conversation,
+            );
+            store.insert(node).await.unwrap();
+        }
+
+        assert!(store.coarse_index.lock().unwrap().is_some(), "coarse index should exist");
+        assert!(store.ultra_coarse_index.lock().unwrap().is_some(), "ultra-coarse index should exist");
+
+        let coarse_results = store.coarse_search(
+            &vec768(0.5, 0.5)[..COARSE_DIM], 10
+        ).await;
+        assert!(!coarse_results.is_empty(), "coarse_search should find matches");
+
+        let ultra_results = store.ultra_coarse_search(
+            &vec768(0.5, 0.5)[..ULTRA_COARSE_DIM], 10
+        ).await;
+        assert!(!ultra_results.is_empty(), "ultra_coarse_search should find matches");
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Coarse and Ultra-Coarse Search Tests
+// ═══════════════════════════════════════════════════════════════════════
+
+#[cfg(test)]
+mod coarse_search_tests {
+    use super::*;
+    use crate::memory::fractal_node::FractalNode;
+    use crate::memory::types::{MemorySource, MemoryType};
+    use std::collections::HashMap;
+
+    #[tokio::test]
+    async fn coarse_search_finds_matches() {
+        let store = MemoryStore::new();
+
+        let n1 = FractalNode::new_typed(
+            Some("match_1".into()), None,
+            {
+                let mut v = vec![0.0f32; 768];
+                v[0] = 0.9; v[1] = 0.1;
+                v
+            },
+            HashMap::new(), MemoryType::Semantic, MemorySource::Conversation,
+        );
+        let n2 = FractalNode::new_typed(
+            Some("match_2".into()), None,
+            {
+                let mut v = vec![0.0f32; 768];
+                v[0] = 0.85; v[1] = 0.15;
+                v
+            },
+            HashMap::new(), MemoryType::Semantic, MemorySource::Conversation,
+        );
+        let n3 = FractalNode::new_typed(
+            Some("far".into()), None,
+            {
+                let mut v = vec![0.0f32; 768];
+                v[0] = 0.0; v[1] = 0.9;
+                v
+            },
+            HashMap::new(), MemoryType::Semantic, MemorySource::Conversation,
+        );
+
+        let id1 = store.insert(n1).await.unwrap();
+        let id2 = store.insert(n2).await.unwrap();
+        store.insert(n3).await.unwrap();
+
+        let query_coarse: Vec<f32> = {
+            let mut v = vec![0.0f32; COARSE_DIM];
+            v[0] = 0.9; v[1] = 0.1;
+            v
+        };
+        let results = store.coarse_search(&query_coarse, 5).await;
+
+        assert!(!results.is_empty(), "coarse_search should return results");
+        assert!(results.contains(&id1), "id1 should be in coarse search results");
+        assert!(results.contains(&id2), "id2 should be in coarse search results");
+    }
+
+    #[tokio::test]
+    async fn ultra_coarse_search_finds_matches() {
+        let store = MemoryStore::new();
+
+        let n1 = FractalNode::new_typed(
+            Some("ultra_match_1".into()), None,
+            {
+                let mut v = vec![0.0f32; 768];
+                v[0] = 0.9; v[1] = 0.1;
+                v
+            },
+            HashMap::new(), MemoryType::Semantic, MemorySource::Conversation,
+        );
+        let n2 = FractalNode::new_typed(
+            Some("ultra_far".into()), None,
+            {
+                let mut v = vec![0.0f32; 768];
+                v[0] = 0.0; v[1] = 0.9;
+                v
+            },
+            HashMap::new(), MemoryType::Semantic, MemorySource::Conversation,
+        );
+
+        let id1 = store.insert(n1).await.unwrap();
+        store.insert(n2).await.unwrap();
+
+        let query_ultra: Vec<f32> = {
+            let mut v = vec![0.0f32; ULTRA_COARSE_DIM];
+            v[0] = 0.9; v[1] = 0.1;
+            v
+        };
+        let results = store.ultra_coarse_search(&query_ultra, 5).await;
+
+        assert!(!results.is_empty(), "ultra_coarse_search should return results");
+        assert!(results.contains(&id1), "matching node should be in ultra-coarse results");
+    }
+
+    #[tokio::test]
+    async fn coarse_search_empty_store_returns_empty() {
+        let store = MemoryStore::new();
+        let query: Vec<f32> = {
+            let mut v = vec![0.0f32; COARSE_DIM];
+            v[0] = 1.0;
+            v
+        };
+        let results = store.coarse_search(&query, 5).await;
+        assert!(results.is_empty(), "empty store should return empty coarse results");
+    }
+
+    #[tokio::test]
+    async fn ultra_coarse_search_empty_store_returns_empty() {
+        let store = MemoryStore::new();
+        let query = vec![1.0f32; ULTRA_COARSE_DIM];
+        let results = store.ultra_coarse_search(&query, 5).await;
+        assert!(results.is_empty(), "empty store should return empty ultra-coarse results");
+    }
+
+    #[tokio::test]
+    async fn coarse_search_no_256d_vectors() {
+        let store = MemoryStore::new();
+
+        let node = FractalNode::new_typed(
+            Some("small".into()), None,
+            vec![0.9, 0.1, 0.0],
+            HashMap::new(), MemoryType::Semantic, MemorySource::Conversation,
+        );
+        store.insert(node).await.unwrap();
+
+        let query = vec![0.9f32; COARSE_DIM];
+        let results = store.coarse_search(&query, 5).await;
+        assert!(results.is_empty(), "no nodes with >=256 dims → no coarse index");
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// insert_many, find_by_external_id, delete, purge_dummy_vectors Tests
+// ═══════════════════════════════════════════════════════════════════════
+
+#[cfg(test)]
+#[allow(
+    deprecated,
+    reason = "tests intentionally exercise legacy FractalNode::new_session constructor"
+)]
+mod batch_and_crud_tests {
+    use super::*;
+    use crate::memory::fractal_node::FractalNode;
+    use crate::memory::types::{MemorySource, MemoryType};
+    use std::collections::HashMap;
+
+    #[tokio::test]
+    async fn insert_many_batch_insert() {
+        let store = MemoryStore::new();
+
+        let nodes: Vec<FractalNode> = (0..5)
+            .map(|i| {
+                FractalNode::new_typed(
+                    Some(format!("batch_node_{}", i)),
+                    None,
+                    vec![i as f32 / 5.0; 4],
+                    HashMap::new(),
+                    MemoryType::Semantic,
+                    MemorySource::Conversation,
+                )
+            })
+            .collect();
+
+        let ids = store.insert_many(nodes).await.unwrap();
+        assert_eq!(ids.len(), 5, "should return 5 ids");
+        assert_eq!(store.count().await, 5);
+
+        for id in &ids {
+            let retrieved = store.get(id).await.unwrap();
+            assert!(retrieved.is_some(), "node {} should be retrievable", id);
+        }
+    }
+
+    #[tokio::test]
+    async fn find_by_external_id_found() {
+        let store = MemoryStore::new();
+
+        let mut metadata = HashMap::new();
+        metadata.insert(
+            "external_id".to_string(),
+            serde_json::Value::String("ext-abc-123".to_string()),
+        );
+
+        let node = FractalNode::new_typed(
+            Some("external test".into()),
+            None,
+            vec![0.1, 0.2, 0.3, 0.4],
+            metadata,
+            MemoryType::Semantic,
+            MemorySource::Conversation,
+        );
+        let inserted_id = store.insert(node).await.unwrap();
+
+        let found_id = store.find_by_external_id("ext-abc-123").await;
+        assert_eq!(found_id, Some(inserted_id), "should find node by external_id");
+    }
+
+    #[tokio::test]
+    async fn find_by_external_id_not_found() {
+        let store = MemoryStore::new();
+
+        let mut metadata = HashMap::new();
+        metadata.insert(
+            "external_id".to_string(),
+            serde_json::Value::String("existing-id".to_string()),
+        );
+
+        let node = FractalNode::new_typed(
+            Some("existing".into()),
+            None,
+            vec![0.1, 0.2, 0.3, 0.4],
+            metadata,
+            MemoryType::Semantic,
+            MemorySource::Conversation,
+        );
+        store.insert(node).await.unwrap();
+
+        let not_found = store.find_by_external_id("non-existent-id").await;
+        assert_eq!(not_found, None, "non-existent external_id should return None");
+    }
+
+    #[tokio::test]
+    async fn find_by_external_id_no_metadata() {
+        let store = MemoryStore::new();
+
+        let node = FractalNode::new_typed(
+            Some("no meta".into()),
+            None,
+            vec![0.1, 0.2, 0.3, 0.4],
+            HashMap::new(),
+            MemoryType::Semantic,
+            MemorySource::Conversation,
+        );
+        store.insert(node).await.unwrap();
+
+        let result = store.find_by_external_id("anything").await;
+        assert_eq!(result, None, "no metadata → no external_id found");
+    }
+
+    #[tokio::test]
+    async fn delete_removes_node() {
+        let store = MemoryStore::new();
+
+        let node = FractalNode::new_typed(
+            Some("to delete".into()),
+            None,
+            vec![0.5, 0.5, 0.5, 0.5],
+            HashMap::new(),
+            MemoryType::Semantic,
+            MemorySource::Conversation,
+        );
+        let id = store.insert(node).await.unwrap();
+        assert_eq!(store.count().await, 1);
+
+        let deleted = store.delete(&id).await.unwrap();
+        assert!(deleted, "delete should return true");
+
+        let retrieved = store.get(&id).await.unwrap();
+        assert!(retrieved.is_none(), "deleted node should be gone");
+        assert_eq!(store.count().await, 0);
+    }
+
+    #[tokio::test]
+    async fn delete_nonexistent_returns_false() {
+        let store = MemoryStore::new();
+        let fake_id = uuid::Uuid::new_v4();
+        let result = store.delete(&fake_id).await.unwrap();
+        assert!(!result, "deleting non-existent node should return false");
+    }
+
+    #[tokio::test]
+    async fn purge_dummy_vectors_removes_only_dummies() {
+        let store = MemoryStore::new();
+
+        let dummy = FractalNode::new_typed(
+            Some("dummy".into()),
+            None,
+            vec![0.1, 0.1, 0.1, 0.1],
+            HashMap::new(),
+            MemoryType::Semantic,
+            MemorySource::Conversation,
+        );
+
+        let real = FractalNode::new_typed(
+            Some("real".into()),
+            None,
+            vec![0.5, 0.3, 0.7, 0.2],
+            HashMap::new(),
+            MemoryType::Semantic,
+            MemorySource::Conversation,
+        );
+
+        let dummy2 = FractalNode::new_typed(
+            Some("dummy2".into()),
+            None,
+            vec![0.1, 0.1, 0.1, 0.1],
+            HashMap::new(),
+            MemoryType::Semantic,
+            MemorySource::Conversation,
+        );
+
+        let real_id = store.insert(real).await.unwrap();
+        store.insert(dummy).await.unwrap();
+        store.insert(dummy2).await.unwrap();
+
+        assert_eq!(store.count().await, 3);
+
+        let purged = store.purge_dummy_vectors().await;
+        assert_eq!(purged, 2, "should purge 2 dummy vectors");
+
+        assert_eq!(store.count().await, 1);
+        let real_node = store.get(&real_id).await.unwrap();
+        assert!(real_node.is_some(), "real node should survive purge");
+    }
+
+    #[tokio::test]
+    async fn purge_dummy_vectors_no_dummies() {
+        let store = MemoryStore::new();
+
+        for i in 0..3 {
+            let node = FractalNode::new_typed(
+                Some(format!("real_{}", i)),
+                None,
+                vec![0.5 + i as f32 * 0.1; 4],
+                HashMap::new(),
+                MemoryType::Semantic,
+                MemorySource::Conversation,
+            );
+            store.insert(node).await.unwrap();
+        }
+
+        let purged = store.purge_dummy_vectors().await;
+        assert_eq!(purged, 0, "no dummy vectors to purge");
+        assert_eq!(store.count().await, 3, "all nodes should remain");
+    }
+
+    #[tokio::test]
+    async fn purge_dummy_vectors_empty_store() {
+        let store = MemoryStore::new();
+        let purged = store.purge_dummy_vectors().await;
+        assert_eq!(purged, 0, "empty store should purge 0");
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Binary Persistence Tests — save_binaries_sync & Index Roundtrip
+// ═══════════════════════════════════════════════════════════════════════
+
+#[cfg(test)]
+#[allow(
+    deprecated,
+    reason = "tests intentionally exercise legacy FractalNode::new_session constructor"
+)]
+mod binary_persistence_tests {
+    use super::*;
+    use crate::memory::fractal_node::FractalNode;
+    use crate::memory::types::{MemorySource, MemoryType};
+    use std::collections::HashMap;
+    use tempfile::TempDir;
+
+    fn vec768(first: f32, second: f32) -> Vec<f32> {
+        let mut v = vec![0.0f32; 768];
+        v[0] = first;
+        v[1] = second;
+        v
+    }
+
+    #[tokio::test]
+    async fn save_binaries_sync_creates_binary_files() {
+        let dir = TempDir::new().unwrap();
+        let store = MemoryStore::with_persistence(dir.path()).unwrap();
+
+        let node = FractalNode::new_typed(
+            Some("binary test".into()),
+            None,
+            vec768(0.9, 0.1),
+            HashMap::new(),
+            MemoryType::Semantic,
+            MemorySource::Conversation,
+        );
+        store.insert(node).await.unwrap();
+
+        store.save_binaries_sync();
+
+        assert!(dir.path().join("usearch.bin").exists(), "usearch.bin should exist");
+        assert!(dir.path().join("usearch_coarse.bin").exists(), "usearch_coarse.bin should exist");
+        assert!(dir.path().join("usearch_ultra.bin").exists(), "usearch_ultra.bin should exist");
+        assert!(dir.path().join("usearch_version.txt").exists(), "usearch_version.txt should exist");
+
+        let version = std::fs::read_to_string(dir.path().join("usearch_version.txt")).unwrap();
+        assert_eq!(version.trim(), BINARY_INDEX_VERSION, "version should match");
+    }
+
+    #[tokio::test]
+    async fn save_binaries_sync_no_index_noop() {
+        let dir = TempDir::new().unwrap();
+        let store = MemoryStore::with_persistence(dir.path()).unwrap();
+        store.save_binaries_sync();
+        assert!(!dir.path().join("usearch.bin").exists());
+    }
+
+    #[tokio::test]
+    async fn save_binaries_sync_no_data_dir_noop() {
+        let store = MemoryStore::new();
+        store.save_binaries_sync();
+    }
+
+    #[tokio::test]
+    async fn binary_persistence_full_roundtrip() {
+        let dir = TempDir::new().unwrap();
+
+        // Phase 1: populate and persist
+        {
+            let store = MemoryStore::with_persistence(dir.path()).unwrap();
+            for i in 0..5 {
+                let node = FractalNode::new_typed(
+                    Some(format!("node_{}", i)),
+                    None,
+                    vec768(0.9 - i as f32 * 0.1, 0.1 + i as f32 * 0.05),
+                    HashMap::new(),
+                    MemoryType::Semantic,
+                    MemorySource::Conversation,
+                );
+                store.insert(node).await.unwrap();
+            }
+            store.save_to_disk().await.unwrap();
+            store.save_binaries_sync();
+            assert_eq!(store.count().await, 5);
+        }
+
+        // Phase 2: reload and verify binary indices loaded
+        {
+            let loaded = MemoryStore::with_persistence(dir.path()).unwrap();
+            assert_eq!(loaded.count().await, 5, "should have 5 nodes after reload");
+
+            let all_nodes = loaded.list_all().await.unwrap();
+            assert_eq!(all_nodes.len(), 5);
+
+            assert!(
+                loaded.usearch_index.lock().unwrap().is_some(),
+                "usearch index should load from binary"
+            );
+            assert!(
+                loaded.coarse_index.lock().unwrap().is_some(),
+                "coarse index should load from binary"
+            );
+            assert!(
+                loaded.ultra_coarse_index.lock().unwrap().is_some(),
+                "ultra-coarse index should load from binary"
+            );
+
+            #[cfg(feature = "postgres-storage")]
+            let results = loaded.retrieve_fractal(&vec768(0.9, 0.1), 5, 0, 0.5, None).await;
+            #[cfg(not(feature = "postgres-storage"))]
+            let results = loaded.retrieve_fractal(&vec768(0.9, 0.1), 5, 0).await;
+            assert!(!results.is_empty(), "should search after binary reload");
+        }
+    }
+}

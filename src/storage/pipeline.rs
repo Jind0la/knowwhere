@@ -453,4 +453,110 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].id, a);
     }
+
+    // ── sort_and_truncate Tests ──
+
+    #[test]
+    fn sort_and_truncate_empty_list() {
+        let mut nodes: Vec<ScoredNode> = vec![];
+        sort_and_truncate(&mut nodes, 10);
+        assert!(nodes.is_empty());
+    }
+
+    #[test]
+    fn sort_and_truncate_truncates_to_top_k() {
+        let mut nodes: Vec<ScoredNode> = (0..10)
+            .map(|i| {
+                let mut node = test_node(Uuid::new_v4(), MemoryType::Semantic);
+                node.content = Some(format!("node {}", i));
+                ScoredNode {
+                    id: node.id,
+                    score: i as f32,
+                    distribution_scores: None,
+                    debug: None,
+                    node,
+                }
+            })
+            .collect();
+        sort_and_truncate(&mut nodes, 3);
+        assert_eq!(nodes.len(), 3);
+        // Highest scores should survive
+        assert!((nodes[0].score - 9.0).abs() < 0.001);
+        assert!((nodes[1].score - 8.0).abs() < 0.001);
+        assert!((nodes[2].score - 7.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn sort_and_truncate_sorts_descending() {
+        let mut nodes: Vec<ScoredNode> = vec![
+            ScoredNode {
+                id: Uuid::new_v4(),
+                score: 0.3,
+                distribution_scores: None,
+                debug: None,
+                node: test_node(Uuid::new_v4(), MemoryType::Semantic),
+            },
+            ScoredNode {
+                id: Uuid::new_v4(),
+                score: 0.9,
+                distribution_scores: None,
+                debug: None,
+                node: test_node(Uuid::new_v4(), MemoryType::Semantic),
+            },
+            ScoredNode {
+                id: Uuid::new_v4(),
+                score: 0.5,
+                distribution_scores: None,
+                debug: None,
+                node: test_node(Uuid::new_v4(), MemoryType::Semantic),
+            },
+        ];
+        sort_and_truncate(&mut nodes, 3);
+        assert_eq!(nodes.len(), 3);
+        assert!((nodes[0].score - 0.9).abs() < 0.001);
+        assert!((nodes[1].score - 0.5).abs() < 0.001);
+        assert!((nodes[2].score - 0.3).abs() < 0.001);
+    }
+
+    #[test]
+    fn sort_and_truncate_uuid_tiebreaker() {
+        // Same score → lower UUID first
+        let a = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+        let b = Uuid::parse_str("00000000-0000-0000-0000-000000000002").unwrap();
+        let mut nodes = vec![
+            ScoredNode {
+                id: b,
+                score: 0.5,
+                distribution_scores: None,
+                debug: None,
+                node: test_node(b, MemoryType::Semantic),
+            },
+            ScoredNode {
+                id: a,
+                score: 0.5,
+                distribution_scores: None,
+                debug: None,
+                node: test_node(a, MemoryType::Semantic),
+            },
+        ];
+        sort_and_truncate(&mut nodes, 2);
+        assert_eq!(nodes.len(), 2);
+        assert_eq!(nodes[0].id, a, "lower UUID should come first on tie");
+        assert_eq!(nodes[1].id, b);
+    }
+
+    #[test]
+    fn sort_and_truncate_k_larger_than_len_is_noop() {
+        let mut nodes: Vec<ScoredNode> = (0..3)
+            .map(|i| ScoredNode {
+                id: Uuid::new_v4(),
+                score: i as f32,
+                distribution_scores: None,
+                debug: None,
+                node: test_node(Uuid::new_v4(), MemoryType::Semantic),
+            })
+            .collect();
+        sort_and_truncate(&mut nodes, 100);
+        assert_eq!(nodes.len(), 3);
+    }
 }
