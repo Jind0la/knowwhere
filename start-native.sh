@@ -1,6 +1,6 @@
 #!/bin/bash
 # KnowWhere Native Start — sourced from launchd plist
-# Reads secrets from ~/.knowwhere/.env
+# Reads secrets from ~/.knowwhere/.env and ~/.zshrc for API keys
 
 set -e
 
@@ -11,11 +11,18 @@ if [ -f "$ENV_FILE" ]; then
   set +a
 fi
 
-export OLLAMA_URL="http://127.0.0.1:11434"
-export KNOWWHERE_EMBEDDING_PROVIDER="ollama"
+# Source zshrc for API keys (VOYAGE_API_KEY, DEEPSEEK_API_KEY)
+if [ -f "$HOME/.zshrc" ]; then
+  set -a
+  source "$HOME/.zshrc" 2>/dev/null
+  set +a
+fi
+
+# Auto-detection: knows VOYAGE_API_KEY → Voyage, DEEPSEEK_API_KEY → DeepSeek
+# Falls back to Ollama if keys not set. No hardcoded provider override.
 export KNOWWHERE_DATA_DIR="./native_data"
 export KNOWWHERE_RERANKER_MODEL_PATH="/Users/nimarfranklinmac/.cache/knowwhere/reranker/model.onnx"
 export KNOWWHERE_RERANKER_TOKENIZER_PATH="/Users/nimarfranklinmac/.cache/knowwhere/reranker/tokenizer.json"
 
 cd "$(dirname "$0")"
-exec ./target/release/knowwhere-server
+exec ./target/debug/knowwhere-server
