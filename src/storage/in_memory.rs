@@ -323,21 +323,35 @@ impl StorageBackend for MemoryStore {
             skipped: 0,
             target_dimension,
         };
-        for node in nodes {
-            if node_dimension(&node) == Some(target_dimension) {
+
+        // Collect (node_id, text) pairs for nodes needing repair
+        let mut to_repair: Vec<(uuid::Uuid, String)> = Vec::new();
+        for node in &nodes {
+            if node_dimension(node) == Some(target_dimension) {
                 continue;
             }
-            let Some(text) = repair_text(&node) else {
-                report.skipped += 1;
-                continue;
-            };
-            let vector = embed_document(provider, text).await?;
-            if self.update_vector(&node.id, vector).await? {
-                report.repaired += 1;
+            if let Some(text) = repair_text(node) {
+                to_repair.push((node.id, text.to_string()));
             } else {
                 report.skipped += 1;
             }
         }
+
+        // Batch-embed in groups of 64 (Voyage API supports up to 128)
+        const BATCH_SIZE: usize = 64;
+        for chunk in to_repair.chunks(BATCH_SIZE) {
+            let texts: Vec<&str> = chunk.iter().map(|(_, t)| t.as_str()).collect();
+            let vectors = embed_document_batch(provider, &texts).await?;
+
+            for ((node_id, _), vector) in chunk.iter().zip(vectors) {
+                if self.update_vector(node_id, vector).await? {
+                    report.repaired += 1;
+                } else {
+                    report.skipped += 1;
+                }
+            }
+        }
+
         let _ = self.rebuild_index_for_dimension(target_dimension).await?;
         Ok(report)
     }
