@@ -2,7 +2,11 @@ use std::sync::Arc;
 
 use knowwhere_server::embedding::EmbeddingProvider;
 use knowwhere_server::embedding::LocalOllamaProvider;
-#[cfg(any(feature = "openai-provider", feature = "grok-provider"))]
+#[cfg(any(
+    feature = "openai-provider",
+    feature = "grok-provider",
+    feature = "voyage-provider"
+))]
 use knowwhere_server::embedding::{create_provider, ProviderKind};
 #[cfg(feature = "postgres-storage")]
 use knowwhere_server::storage::PostgresStore;
@@ -73,6 +77,7 @@ pub async fn init_store() -> anyhow::Result<Arc<dyn StorageBackend>> {
 /// When set, overrides automatic embedding selection (API keys, defaults).
 /// `ollama` / `local` → always [`LocalOllamaProvider`] (useful when the shell/IDE exports cloud keys but you want local dev).
 /// `grok` / `xai` → Grok if `grok-provider` feature + `GROK_API_KEY`; else Ollama with a warning.
+/// `voyage` → Voyage if `voyage-provider` feature + `VOYAGE_API_KEY`; else Ollama with a warning.
 /// `openai` → OpenAI if `openai-provider` feature + `OPENAI_API_KEY`; else Ollama with a warning.
 pub const EMBEDDING_PROVIDER_ENV: &str = "KNOWWHERE_EMBEDDING_PROVIDER";
 
@@ -117,6 +122,36 @@ fn embedding_provider_from_env_override() -> Option<Arc<dyn EmbeddingProvider>> 
                     "set to grok but grok-provider feature disabled — using Ollama"
                 );
                 Some(local_ollama_provider_with_log("grok feature off"))
+            }
+        }
+        "voyage" => {
+            #[cfg(feature = "voyage-provider")]
+            {
+                match std::env::var("VOYAGE_API_KEY") {
+                    Ok(key) => {
+                        tracing::info!(
+                            env = EMBEDDING_PROVIDER_ENV,
+                            dimension = 1024,
+                            "using Voyage embedding provider (forced); new embeddings are 1024d — existing Ollama nodes may be 768d"
+                        );
+                        Some(create_provider(ProviderKind::Voyage, Some(key)))
+                    }
+                    Err(_) => {
+                        tracing::warn!(
+                            env = EMBEDDING_PROVIDER_ENV,
+                            "set to voyage but VOYAGE_API_KEY missing — using Ollama"
+                        );
+                        Some(local_ollama_provider_with_log("forced voyage, no key"))
+                    }
+                }
+            }
+            #[cfg(not(feature = "voyage-provider"))]
+            {
+                tracing::warn!(
+                    env = EMBEDDING_PROVIDER_ENV,
+                    "set to voyage but voyage-provider feature disabled — using Ollama"
+                );
+                Some(local_ollama_provider_with_log("voyage feature off"))
             }
         }
         "openai" => {
@@ -188,7 +223,24 @@ pub fn init_embedding_provider() -> Arc<dyn EmbeddingProvider> {
     if let Some(provider) = embedding_provider_from_env_override() {
         return provider;
     }
-    if let Ok(key) = std::env::var("GROK_API_KEY") {
+    if let Ok(key) = std::env::var("VOYAGE_API_KEY") {
+        #[cfg(feature = "voyage-provider")]
+        {
+            tracing::info!(
+                dimension = 1024,
+                "using Voyage embedding provider (voyage-code-3); new embeddings are 1024d — existing Ollama nodes may be 768d"
+            );
+            create_provider(ProviderKind::Voyage, Some(key))
+        }
+        #[cfg(not(feature = "voyage-provider"))]
+        {
+            drop(key);
+            tracing::warn!(
+                "VOYAGE_API_KEY is set but voyage-provider feature is not enabled — falling back to Ollama"
+            );
+            Arc::new(LocalOllamaProvider::new())
+        }
+    } else if let Ok(key) = std::env::var("GROK_API_KEY") {
         #[cfg(feature = "grok-provider")]
         {
             tracing::info!("using Grok embedding provider");

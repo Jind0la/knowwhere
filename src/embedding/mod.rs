@@ -33,6 +33,8 @@ pub enum ProviderKind {
     OpenAI,
     #[cfg(feature = "grok-provider")]
     Grok,
+    #[cfg(feature = "voyage-provider")]
+    Voyage,
 }
 
 impl std::fmt::Display for ProviderKind {
@@ -45,6 +47,8 @@ impl std::fmt::Display for ProviderKind {
             ProviderKind::OpenAI => write!(f, "openai"),
             #[cfg(feature = "grok-provider")]
             ProviderKind::Grok => write!(f, "grok"),
+            #[cfg(feature = "voyage-provider")]
+            ProviderKind::Voyage => write!(f, "voyage"),
         }
     }
 }
@@ -61,6 +65,8 @@ impl ProviderKind {
             "openai" => Some(ProviderKind::OpenAI),
             #[cfg(feature = "grok-provider")]
             "grok" => Some(ProviderKind::Grok),
+            #[cfg(feature = "voyage-provider")]
+            "voyage" => Some(ProviderKind::Voyage),
             _ => None,
         }
     }
@@ -85,6 +91,11 @@ pub fn create_provider(
         #[cfg(feature = "grok-provider")]
         ProviderKind::Grok => Arc::new(provider::GrokProvider::new(
             api_key.expect("GROK_API_KEY must be set when grok-provider feature is enabled"),
+        )),
+
+        #[cfg(feature = "voyage-provider")]
+        ProviderKind::Voyage => Arc::new(provider::VoyageProvider::new(
+            api_key.expect("VOYAGE_API_KEY must be set when voyage-provider feature is enabled"),
         )),
     }
 }

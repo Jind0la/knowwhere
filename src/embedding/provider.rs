@@ -75,16 +75,28 @@ pub async fn embed_query_batch(
 // =============================================================================
 // At most one of openai-provider or grok-provider should be enabled at a time.
 
-#[cfg(any(feature = "openai-provider", feature = "grok-provider"))]
+#[cfg(any(
+    feature = "openai-provider",
+    feature = "grok-provider",
+    feature = "voyage-provider"
+))]
 use serde::Deserialize as SharedDeserialize;
 
-#[cfg(any(feature = "openai-provider", feature = "grok-provider"))]
+#[cfg(any(
+    feature = "openai-provider",
+    feature = "grok-provider",
+    feature = "voyage-provider"
+))]
 #[derive(SharedDeserialize)]
 struct EmbeddingResponse {
     data: Vec<EmbeddingData>,
 }
 
-#[cfg(any(feature = "openai-provider", feature = "grok-provider"))]
+#[cfg(any(
+    feature = "openai-provider",
+    feature = "grok-provider",
+    feature = "voyage-provider"
+))]
 #[derive(SharedDeserialize)]
 struct EmbeddingData {
     index: usize,
@@ -165,6 +177,83 @@ impl EmbeddingProvider for GrokProvider {
     }
     fn name(&self) -> &str {
         "grok"
+    }
+}
+
+// -- Voyage AI --
+
+#[cfg(feature = "voyage-provider")]
+pub struct VoyageProvider {
+    api_key: String,
+    client: reqwest::Client,
+}
+
+#[cfg(feature = "voyage-provider")]
+impl VoyageProvider {
+    pub fn new(api_key: String) -> Self {
+        Self {
+            api_key,
+            client: reqwest::Client::new(),
+        }
+    }
+
+    async fn embed_batch_raw(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+        let resp: EmbeddingResponse = self
+            .client
+            .post("https://api.voyageai.com/v1/embeddings")
+            .bearer_auth(&self.api_key)
+            .json(&serde_json::json!({
+                "model": "voyage-code-3",
+                "input": texts
+            }))
+            .send()
+            .await
+            .context("voyage batch embedding request failed")?
+            .error_for_status()
+            .context("voyage API returned error status")?
+            .json()
+            .await
+            .context("failed to parse voyage batch response")?;
+
+        let mut data = resp.data;
+        data.sort_by_key(|d| d.index);
+        Ok(data.into_iter().map(|d| d.embedding).collect())
+    }
+}
+
+#[cfg(feature = "voyage-provider")]
+#[async_trait]
+impl EmbeddingProvider for VoyageProvider {
+    fn document_prefix(&self) -> &str {
+        "search_document: "
+    }
+    fn query_prefix(&self) -> &str {
+        "search_query: "
+    }
+
+    async fn embed(&self, text: &str) -> Result<Vec<f32>> {
+        let mut batch = self.embed_batch_raw(&[text]).await?;
+        batch
+            .pop()
+            .filter(|v| !v.is_empty())
+            .context("empty embedding response from voyage")
+    }
+
+    async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+        if texts.is_empty() {
+            return Ok(vec![]);
+        }
+        if texts.len() == 1 {
+            return Ok(vec![self.embed(texts[0]).await?]);
+        }
+        self.embed_batch_raw(texts).await
+    }
+
+    fn dimension(&self) -> usize {
+        1024
+    }
+    fn name(&self) -> &str {
+        "voyage"
     }
 }
 

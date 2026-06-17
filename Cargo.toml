@@ -63,6 +63,8 @@ postgres-storage = []
 # reqwest is always included (Ollama also needs it).
 openai-provider = []
 grok-provider = []
+voyage-provider = []
+deepseek-summarizer = []
 
 # Enable Prometheus /metrics endpoint with latency histograms
 metrics = ["dep:metrics", "dep:metrics-exporter-prometheus"]

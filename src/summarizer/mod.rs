@@ -33,8 +33,49 @@
 //! 2. Pull model: `ollama pull llama3.2`
 //! 3. Set env: `OLLAMA_URL=http://127.0.0.1:11434` (optional)
 
+#[cfg(feature = "deepseek-summarizer")]
+pub mod deepseek;
+
 use anyhow::Result;
 use serde_json::json;
+
+#[cfg(feature = "deepseek-summarizer")]
+pub use deepseek::DeepSeekSummarizer;
+
+/// Auto-detected summarizer backend: DeepSeek (cloud) or Local (Ollama).
+pub enum SummarizerBackend {
+    #[cfg(feature = "deepseek-summarizer")]
+    DeepSeek(DeepSeekSummarizer),
+    Local(LocalSummarizer),
+}
+
+/// Create the best available summarizer.
+///
+/// Priority: `DEEPSEEK_API_KEY` → [`DeepSeekSummarizer`] (if `deepseek-summarizer` feature),
+/// else [`LocalSummarizer`] (respects `OLLAMA_SUMMARIZER_MODEL`).
+pub fn create_summarizer() -> Option<SummarizerBackend> {
+    if std::env::var("DEEPSEEK_API_KEY").is_ok() {
+        #[cfg(feature = "deepseek-summarizer")]
+        {
+            match DeepSeekSummarizer::new() {
+                Ok(s) => return Some(SummarizerBackend::DeepSeek(s)),
+                Err(e) => {
+                    tracing::error!(error = %e, "DeepSeek summarizer init failed — falling back to Ollama");
+                }
+            }
+        }
+        #[cfg(not(feature = "deepseek-summarizer"))]
+        {
+            tracing::warn!(
+                "DEEPSEEK_API_KEY is set but deepseek-summarizer feature is not enabled — falling back to Ollama"
+            );
+        }
+    }
+
+    LocalSummarizer::new()
+        .ok()
+        .map(SummarizerBackend::Local)
+}
 
 /// Local summarizer using Ollama HTTP API.
 ///
