@@ -12,7 +12,7 @@ use tokio::sync::RwLock;
 use usearch::{new_index, Index, IndexOptions, MetricKind, ScalarKind};
 use uuid::Uuid;
 
-use crate::embedding::{embed_document, EmbeddingProvider};
+use crate::embedding::{embed_document, embed_document_batch, EmbeddingProvider};
 use crate::memory::FractalNode;
 use crate::storage::backend::EmbeddingRepairReport;
 use crate::storage::pipeline;
