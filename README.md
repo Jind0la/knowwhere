@@ -7,6 +7,7 @@
 **Pointer-first. Fractal Zoom. 0% information loss.**
 
 [![CI](https://github.com/Jind0la/knowwhere/actions/workflows/ci.yml/badge.svg)](https://github.com/Jind0la/knowwhere/actions/workflows/ci.yml)
+[![Tests](https://github.com/Jind0la/knowwhere/actions/workflows/test.yml/badge.svg)](https://github.com/Jind0la/knowwhere/actions/workflows/test.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Rust 1.85+](https://img.shields.io/badge/Rust-1.85%2B-orange.svg)](https://www.rust-lang.org)
 

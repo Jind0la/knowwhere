@@ -1,0 +1,42 @@
+name: KnowWhere Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  SCCACHE_CACHE_SIZE: 2G
+  SCCACHE_GHA_ENABLED: "true"
+
+jobs:
+  test:
+    name: cargo test --lib (ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Install sccache
+        run: |
+          SCCACHE_VERSION=0.9.1
+          curl -L "https://github.com/mozilla/sccache/releases/download/v${SCCACHE_VERSION}/sccache-v${SCCACHE_VERSION}-x86_64-unknown-linux-musl.tar.gz" | tar xz
+          sudo mv sccache-v${SCCACHE_VERSION}-x86_64-unknown-linux-musl/sccache /usr/local/bin/
+          echo "RUSTC_WRAPPER=/usr/local/bin/sccache" >> $GITHUB_ENV
+
+      - name: Cache (Swatinem/rust-cache for target/ + sccache)
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "test-lib"
+          cache-directories: |
+            ~/.cache/sccache
+
+      - name: Run tests
+        run: cargo test --lib
+        timeout-minutes: 15
