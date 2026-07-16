@@ -427,11 +427,49 @@ async fn store_session_json(
         if let Some(sens) = req.sensitivity {
             node.sensitivity = sens;
         }
+
+        // ── Surprise-weighted salience boost (embedding-space novelty) ──
+        // If the new embedding is dissimilar to all existing memories (max cosine
+        // similarity < 0.4), boost importance and initial energy to make novel
+        // information more salient in retrieval and delay its decay.
+        let mut surprise_boosted = false;
+        #[cfg(feature = "postgres-storage")]
+        if let Some(ref pg) = state.pg_store {
+            match pg.compute_max_novelty_similarity(&vector, 5).await {
+                Ok(max_sim) => {
+                    if let Some((imp_boost, _initial_energy)) = compute_surprise_boost(max_sim) {
+                        node.importance = (node.importance + imp_boost).clamp(1, 10);
+                        surprise_boosted = true;
+                        tracing::info!(
+                            max_sim, importance = node.importance,
+                            "surprise boost applied to single-turn node (novel memory)"
+                        );
+                    }
+                }
+                Err(e) => tracing::warn!("novelty check failed (non-fatal): {e}"),
+            }
+        }
+
         let id = state
             .store
             .insert(node)
             .await
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+        // Post-insert: set elevated initial energy for surprise-boosted memories
+        #[cfg(feature = "postgres-storage")]
+        if surprise_boosted {
+            if let Some(ref pg) = state.pg_store {
+                let _ = pg.set_memory_energy(id, SURPRISE_INITIAL_ENERGY).await;
+                // Boost sibling memories in the same session (+1 importance)
+                if let Some(ref sid_str) = req.session_id {
+                    if let Ok(sid_uuid) = Uuid::parse_str(sid_str) {
+                        let _ = pg.boost_sibling_importance(sid_uuid, 1, id).await;
+                    }
+                }
+            }
+        }
+
         tracing::info!(%id, %speaker, ?memory_type, "turn node stored (single-turn session)");
         // ── Inline fact extraction (regex-based, no LLM) ──
         // Extract obvious facts immediately so they're available
@@ -554,11 +592,46 @@ async fn store_session_json(
         if let Some(sens) = req.sensitivity {
             node.sensitivity = sens;
         }
+
+        // ── Surprise-weighted salience boost (multi-turn path) ──
+        let mut turn_surprise = false;
+        #[cfg(feature = "postgres-storage")]
+        if let Some(ref pg) = state.pg_store {
+            match pg.compute_max_novelty_similarity(&vector, 5).await {
+                Ok(max_sim) => {
+                    if let Some((imp_boost, _initial_energy)) = compute_surprise_boost(max_sim) {
+                        node.importance = (node.importance + imp_boost).clamp(1, 10);
+                        turn_surprise = true;
+                        tracing::info!(
+                            turn = idx, max_sim, importance = node.importance,
+                            "surprise boost applied to multi-turn node"
+                        );
+                    }
+                }
+                Err(e) => tracing::warn!("novelty check failed (non-fatal): {e}"),
+            }
+        }
+
         let id = state
             .store
             .insert(node)
             .await
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+        // Post-insert energy + sibling boost for surprising turns
+        #[cfg(feature = "postgres-storage")]
+        if turn_surprise {
+            if let Some(ref pg) = state.pg_store {
+                let _ = pg.set_memory_energy(id, SURPRISE_INITIAL_ENERGY).await;
+                // Boost siblings once per session if any turn is surprising
+                if let Some(ref sid_str) = req.session_id {
+                    if let Ok(sid_uuid) = Uuid::parse_str(sid_str) {
+                        let _ = pg.boost_sibling_importance(sid_uuid, 1, id).await;
+                    }
+                }
+            }
+        }
+
         all_ids.push(id);
     }
 
@@ -1274,4 +1347,82 @@ pub async fn store_external(
             chunk_ids: None,
         }),
     ))
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Surprise-weighted salience boost
+// ═══════════════════════════════════════════════════════════════════════
+
+/// Threshold below which a new embedding is considered "surprising" (novel).
+/// Cosine similarity to the nearest existing node must be below this value
+/// to trigger the surprise boost.
+const SURPRISE_SIMILARITY_THRESHOLD: f32 = 0.4;
+
+/// Importance boost applied to novel (surprising) memories.
+const SURPRISE_IMPORTANCE_BOOST: i32 = 3;
+
+/// Initial energy for novel memories (higher than the DB default of 50),
+/// delaying their decay relative to routine content.
+const SURPRISE_INITIAL_ENERGY: i32 = 80;
+
+/// Determine whether a new embedding is "surprising" relative to existing memories.
+///
+/// Returns `Some((importance_boost, initial_energy))` if the new memory is novel
+/// (max cosine similarity to any existing node is below the threshold),
+/// or `None` if it's similar enough to existing content that no boost is warranted.
+///
+/// This maps conceptually to Titans' "surprise" metric — embedding-space
+/// prediction error (cosine distance to nearest neighbor) as a proxy for
+/// gradient-based surprise without requiring gradients.
+fn compute_surprise_boost(max_cosine_similarity: f32) -> Option<(i32, i32)> {
+    if max_cosine_similarity < SURPRISE_SIMILARITY_THRESHOLD {
+        Some((SURPRISE_IMPORTANCE_BOOST, SURPRISE_INITIAL_ENERGY))
+    } else {
+        None
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Tests
+// ═══════════════════════════════════════════════════════════════════════
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn surprise_boost_novel_below_threshold() {
+        let result = compute_surprise_boost(0.1);
+        assert_eq!(result, Some((3, 80)), "max_sim=0.1 should trigger boost");
+    }
+
+    #[test]
+    fn surprise_boost_familiar_above_threshold() {
+        let result = compute_surprise_boost(0.5);
+        assert_eq!(result, None, "max_sim=0.5 should not trigger boost");
+    }
+
+    #[test]
+    fn surprise_boost_boundary_at_threshold() {
+        let result = compute_surprise_boost(0.4);
+        assert_eq!(result, None, "max_sim=0.4 (at threshold) should not trigger boost");
+    }
+
+    #[test]
+    fn surprise_boost_completely_novel() {
+        let result = compute_surprise_boost(0.0);
+        assert_eq!(result, Some((3, 80)), "max_sim=0.0 (completely novel) should trigger boost");
+    }
+
+    #[test]
+    fn surprise_boost_almost_identical() {
+        let result = compute_surprise_boost(0.95);
+        assert_eq!(result, None, "max_sim=0.95 (near-identical) should not trigger boost");
+    }
+
+    #[test]
+    fn surprise_boost_just_below_threshold() {
+        let result = compute_surprise_boost(0.399);
+        assert_eq!(result, Some((3, 80)), "max_sim just below threshold should trigger boost");
+    }
 }
