@@ -539,7 +539,7 @@ async fn run() -> anyhow::Result<()> {
         tracing::warn!("KNOWWHERE_API_KEY not set – auth disabled (dev mode)");
     }
 
-    let port = std::env::var("PORT").unwrap_or_else(|_| "3737".into());
+    let port = std::env::var("PORT").or_else(|_| std::env::var("KNOWWHERE_PORT")).unwrap_or_else(|_| "3737".into());
     let addr = format!("0.0.0.0:{port}");
     tracing::info!("KnowWhere server listening on {addr}");
     tracing::info!("Swagger UI: http://localhost:{port}/swagger-ui/");
