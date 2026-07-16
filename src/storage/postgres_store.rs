@@ -406,6 +406,118 @@ impl PostgresStore {
         Ok(id)
     }
 
+    /// Query the top-K nearest neighbors for a new embedding and return the
+    /// maximum cosine similarity. Used to detect surprise/novelty at ingestion time.
+    ///
+    /// Returns max similarity in [0.0, 1.0]. Returns 0.0 if no neighbors exist
+    /// (empty DB — every memory is maximally novel).
+    ///
+    /// Uses pgvector `<=>` (cosine distance) operator: similarity = 1 - distance.
+    pub async fn compute_max_novelty_similarity(
+        &self,
+        embedding: &[f32],
+        k: usize,
+    ) -> Result<f32> {
+        if embedding.is_empty() {
+            return Ok(0.0);
+        }
+
+        let embedding_str = format!(
+            "[{}]",
+            embedding
+                .iter()
+                .map(|f| f.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+
+        // Find nearest neighbors via pgvector cosine distance
+        let rows = sqlx::query(
+            r#"
+            SELECT COALESCE((1 - (embedding <=> $1::vector))::float, 0.0) AS similarity
+            FROM memories
+            WHERE status = 'active'
+              AND embedding IS NOT NULL
+              AND vector_dims(embedding) = $3
+            ORDER BY embedding <=> $1::vector
+            LIMIT $2::bigint
+            "#,
+        )
+        .bind(&embedding_str)
+        .bind(k as i64)
+        .bind(embedding.len() as i32)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let max_sim = rows
+            .iter()
+            .filter_map(|row| row.try_get::<f32, _>(0).ok())
+            .fold(0.0f32, f32::max);
+
+        tracing::debug!(
+            dim = embedding.len(),
+            k,
+            neighbors = rows.len(),
+            max_sim,
+            "novelty similarity check"
+        );
+
+        Ok(max_sim)
+    }
+
+    /// Post-insert energy setter for surprise-weighted memories.
+    /// Used to override the DB default (50) with a higher initial energy
+    /// for novel/surprising memories, delaying their decay.
+    pub async fn set_memory_energy(&self, memory_id: Uuid, energy: i32) -> Result<()> {
+        sqlx::query(
+            r#"
+            UPDATE memories
+            SET energy = LEAST(100, $2),
+                last_energy_update = NOW()
+            WHERE id = $1
+            "#,
+        )
+        .bind(memory_id)
+        .bind(energy)
+        .execute(&self.pool)
+        .await?;
+
+        tracing::debug!(%memory_id, energy, "initial energy set (surprise boost)");
+        Ok(())
+    }
+
+    /// Boost importance for sibling memories in the same session.
+    /// Approximates "past-surprise momentum" — when a surprising memory
+    /// appears in a session, its siblings get a small importance bump.
+    ///
+    /// Returns the number of memories updated.
+    pub async fn boost_sibling_importance(
+        &self,
+        session_id: Uuid,
+        boost: i32,
+        exclude_id: Uuid,
+    ) -> Result<usize> {
+        let result = sqlx::query(
+            r#"
+            UPDATE memories
+            SET importance = LEAST(10, importance + $2)
+            WHERE status = 'active'
+              AND (metadata->>'session_id')::text IS NOT NULL
+              AND (metadata->>'session_id')::text = $3::text
+              AND id != $1
+            "#,
+        )
+        .bind(exclude_id)
+        .bind(boost)
+        .bind(session_id.to_string())
+        .execute(&self.pool)
+        .await?;
+
+        let count = result.rows_affected() as usize;
+        tracing::debug!(%session_id, boost, count, "sibling importance boosted (surprise momentum)");
+        Ok(count)
+    }
+
     /// Retrieve a single memory by ID.
     pub async fn get_memory(&self, id: Uuid) -> Result<Option<MemoryRow>> {
         let row = sqlx::query_as::<_, MemoryRow>(

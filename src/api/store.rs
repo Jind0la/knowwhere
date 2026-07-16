@@ -432,7 +432,7 @@ async fn store_session_json(
         // If the new embedding is dissimilar to all existing memories (max cosine
         // similarity < 0.4), boost importance and initial energy to make novel
         // information more salient in retrieval and delay its decay.
-        let mut surprise_boosted = false;
+        let mut _surprise_boosted = false;
         #[cfg(feature = "postgres-storage")]
         if let Some(ref pg) = state.pg_store {
             match pg.compute_max_novelty_similarity(&vector, 5).await {
@@ -594,14 +594,14 @@ async fn store_session_json(
         }
 
         // ── Surprise-weighted salience boost (multi-turn path) ──
-        let mut turn_surprise = false;
+        let mut _turn_surprise = false;
         #[cfg(feature = "postgres-storage")]
         if let Some(ref pg) = state.pg_store {
             match pg.compute_max_novelty_similarity(&vector, 5).await {
                 Ok(max_sim) => {
                     if let Some((imp_boost, _initial_energy)) = compute_surprise_boost(max_sim) {
                         node.importance = (node.importance + imp_boost).clamp(1, 10);
-                        turn_surprise = true;
+                        _turn_surprise = true;
                         tracing::info!(
                             turn = idx, max_sim, importance = node.importance,
                             "surprise boost applied to multi-turn node"
@@ -620,7 +620,7 @@ async fn store_session_json(
 
         // Post-insert energy + sibling boost for surprising turns
         #[cfg(feature = "postgres-storage")]
-        if turn_surprise {
+        if _turn_surprise {
             if let Some(ref pg) = state.pg_store {
                 let _ = pg.set_memory_energy(id, SURPRISE_INITIAL_ENERGY).await;
                 // Boost siblings once per session if any turn is surprising
@@ -827,11 +827,37 @@ async fn store_session_binary(
     );
     node.importance = 5; // default for binary payloads
 
+    // ── Surprise-weighted salience boost for binary payloads ──
+    let mut _binary_surprise = false;
+    #[cfg(feature = "postgres-storage")]
+    if let Some(ref pg) = state.pg_store {
+        match pg.compute_max_novelty_similarity(&vector, 5).await {
+            Ok(max_sim) => {
+                if let Some((imp_boost, _)) = compute_surprise_boost(max_sim) {
+                    node.importance = (node.importance + imp_boost).clamp(1, 10);
+                    _binary_surprise = true;
+                    tracing::info!(
+                        max_sim, importance = node.importance,
+                        "surprise boost applied to binary payload node"
+                    );
+                }
+            }
+            Err(e) => tracing::warn!("novelty check failed (non-fatal): {e}"),
+        }
+    }
+
     let id = state
         .store
         .insert(node)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    #[cfg(feature = "postgres-storage")]
+    if _binary_surprise {
+        if let Some(ref pg) = state.pg_store {
+            let _ = pg.set_memory_energy(id, SURPRISE_INITIAL_ENERGY).await;
+        }
+    }
 
     tracing::info!(%id, %content_type, payload_bytes = body.len(), "binary session node stored");
     Ok((
@@ -978,11 +1004,35 @@ pub async fn store_session_batch(
             if let Some(sens) = session.sensitivity {
                 node.sensitivity = sens;
             }
+
+            // ── Surprise-weighted salience boost (batch path) ──
+            let mut _batch_surprise = false;
+            #[cfg(feature = "postgres-storage")]
+            if let Some(ref pg) = state.pg_store {
+                match pg.compute_max_novelty_similarity(&vector, 5).await {
+                    Ok(max_sim) => {
+                        if let Some((imp_boost, _)) = compute_surprise_boost(max_sim) {
+                            node.importance = (node.importance + imp_boost).clamp(1, 10);
+                            _batch_surprise = true;
+                        }
+                    }
+                    Err(e) => tracing::warn!("novelty check failed (non-fatal): {e}"),
+                }
+            }
+
             let id = state
                 .store
                 .insert(node)
                 .await
                 .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+            // Post-insert energy boost for surprising batch turns
+            #[cfg(feature = "postgres-storage")]
+            if _batch_surprise {
+                if let Some(ref pg) = state.pg_store {
+                    let _ = pg.set_memory_energy(id, SURPRISE_INITIAL_ENERGY).await;
+                }
+            }
             turn_ids.push(id);
 
             // ── Turn-level PostgreSQL storage ──
@@ -1130,11 +1180,37 @@ pub async fn self_improve(
     );
     node.importance = importance;
 
+    // ── Surprise-weighted salience boost for self-improvement nodes ──
+    let mut _si_surprise = false;
+    #[cfg(feature = "postgres-storage")]
+    if let Some(ref pg) = state.pg_store {
+        match pg.compute_max_novelty_similarity(&vector, 5).await {
+            Ok(max_sim) => {
+                if let Some((imp_boost, _)) = compute_surprise_boost(max_sim) {
+                    node.importance = (node.importance + imp_boost).clamp(1, 10);
+                    _si_surprise = true;
+                    tracing::info!(
+                        max_sim, importance = node.importance,
+                        "surprise boost applied to self-improvement node"
+                    );
+                }
+            }
+            Err(e) => tracing::warn!("novelty check failed (non-fatal): {e}"),
+        }
+    }
+
     let id = state
         .store
         .insert(node)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    #[cfg(feature = "postgres-storage")]
+    if _si_surprise {
+        if let Some(ref pg) = state.pg_store {
+            let _ = pg.set_memory_energy(id, SURPRISE_INITIAL_ENERGY).await;
+        }
+    }
 
     tracing::info!(%id, ?memory_type, importance, "self-improvement memory stored");
 
@@ -1270,6 +1346,25 @@ pub async fn store_external(
         node.multimodal = Some(mm);
     }
 
+    // ── Surprise-weighted salience boost for external nodes ──
+    let mut _external_surprise = false;
+    #[cfg(feature = "postgres-storage")]
+    if let Some(ref pg) = state.pg_store {
+        match pg.compute_max_novelty_similarity(&vector, 5).await {
+            Ok(max_sim) => {
+                if let Some((imp_boost, _initial_energy)) = compute_surprise_boost(max_sim) {
+                    node.importance = (node.importance + imp_boost).clamp(1, 10);
+                    _external_surprise = true;
+                    tracing::info!(
+                        max_sim, importance = node.importance,
+                        "surprise boost applied to external node"
+                    );
+                }
+            }
+            Err(e) => tracing::warn!("novelty check failed (non-fatal): {e}"),
+        }
+    }
+
     // ── Dedup: skip if node with same external_id already exists ──
     if let Some(meta) = node.metadata.get("external_id") {
         if let Some(external_id) = meta.as_str() {
@@ -1296,6 +1391,14 @@ pub async fn store_external(
         .insert(node)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    // Post-insert energy boost for surprising external nodes
+    #[cfg(feature = "postgres-storage")]
+    if _external_surprise {
+        if let Some(ref pg) = state.pg_store {
+            let _ = pg.set_memory_energy(id, SURPRISE_INITIAL_ENERGY).await;
+        }
+    }
 
     tracing::info!(%id, ?memory_type, "external pointer node stored");
     // ── Inline fact extraction for external content ──
