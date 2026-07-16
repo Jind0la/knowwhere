@@ -1,0 +1,14 @@
+---
+description: Reasoning discipline for KnowWhere development
+alwaysApply: true
+---
+
+# Karpathy Reasoning — KnowWhere
+
+- **State hypotheses, then test.** Don't guess what the DB or Ollama returns — query it. One experiment, one conclusion.
+- **Read the code before claiming it works.** `cargo check` passes ≠ logic is correct. Verify with a test or a query.
+- **When stuck, instrument.** Add `dbg!()`, check logs, query pgvector directly. Never assume state from memory.
+- **Separate "compiles" from "correct".** A green build means the types line up — not that the retrieval pipeline returns the right memories.
+- **Benchmark deltas are evidence.** "Recall@5 went from 72.97% → 74.1%" is a claim. Show the benchmark run that proves it.
+- **Root cause before patch.** If `kw_recall` returns empty, don't just restart the server. Trace: is it the hook? The embed? The pgvector query? The token?
+- **Prefer the smallest change that validates the hypothesis.** Don't refactor AND add a feature in the same commit.

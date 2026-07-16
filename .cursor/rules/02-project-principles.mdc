@@ -1,0 +1,35 @@
+---
+description: KnowWhere architecture principles and project structure
+alwaysApply: true
+---
+
+# Project Principles — KnowWhere
+
+## Architecture
+
+- **Fractal memory system**: L0 (raw session) → L1 (turn-level summaries) → L2 (cross-session insights). Never skip layers.
+- **5-Lever Pipeline**: Turn-Level + Hybrid (keyword+vector) + Cross-Encoder Reranking + Source-Weights + Temporal Decay. Changes to one lever must not break the others.
+- **pgvector on Railway** (`hayabusa.proxy.rlwy.net:27590`). No local PostgreSQL in production. Feature flag: `postgres-storage`.
+- **Ollama** for embeddings (`nomic-embed-text`) and summarization (`qwen2.5:3b`). Not configurable via env — hard dependency.
+- **Plugin v3** (`~/.hermes/plugins/knowwhere/`): `pre_llm_call` (inject), `post_llm_call` (store), `on_session_finalize` (DeepSeek full summary). Hook-based, not cron-based.
+
+## Build & Test
+
+- `cargo check` — fast compilation check (backend-eng's responsibility)
+- `cargo test --lib --features postgres-storage,reranker` — full test suite (ops' responsibility, 600s timeout)
+- `cargo build --release --features postgres-storage,summarizer,reranker -j 2` — release binary
+- Feature flags control optional deps: `postgres-storage`, `summarizer`, `reranker`
+
+## Key Files
+
+- `src/routes.rs` — API endpoints
+- `src/fractal_node.rs` — core data model
+- `src/storage/` — in_memory.rs, postgres_store.rs
+- `src/summarizer/` — summarization pipeline
+- `tests/integration.rs` — PostgreSQL integration tests
+
+## Server
+
+- Port: 3737 (configurable via `KNOWWHERE_PORT` or `PORT`)
+- Auth: `Bearer kw_testkey_12345`
+- Health: `GET /health`

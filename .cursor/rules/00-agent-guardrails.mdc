@@ -1,0 +1,15 @@
+---
+description: Safety guardrails for KnowWhere development
+alwaysApply: true
+---
+
+# Agent Guardrails — KnowWhere
+
+- **Feature branches only.** Never commit directly to `main`. Branch: `feat/<name>` or `fix/<name>`.
+- **Tests before push.** Run `cargo test --lib` locally. CI must be green before merge. `--no-verify` only for pre-commit-hook failures.
+- **Never commit secrets.** No `.env`, no API keys, no tokens. Railway env vars manage secrets.
+- **Never touch repo `.cargo/config.toml`.** sccache paths are OS-specific. CI sets `RUSTC_WRAPPER` via environment.
+- **One logical change per commit.** Conventional commits: `feat:`, `fix:`, `refactor:`, `test:`, `docs:`, `chore:`.
+- **Don't force-push to main.** Ever.
+- **Ask before deleting:** production data, pgvector tables, Railway services, benchmarks with >30min runtime.
+- **Local-only config** (Ollama URLs, dev tokens) stays in `~/.zshrc` or `.env` — never in committed files.
